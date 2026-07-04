@@ -1,0 +1,30 @@
+# syntax=docker/dockerfile:1
+FROM node:22-alpine AS base
+RUN npm install -g pnpm@10.12.1 turbo@2.5.4
+
+FROM base AS pruner
+WORKDIR /app
+COPY . .
+RUN turbo prune @repo/web --docker
+
+FROM base AS builder
+WORKDIR /app
+COPY --from=pruner /app/out/json/ .
+RUN pnpm install --frozen-lockfile
+COPY --from=pruner /app/out/full/ .
+ARG NEXT_PUBLIC_API_URL=/api
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+# Server-only env is provided at runtime by compose.
+ENV SKIP_ENV_VALIDATION=true
+RUN pnpm turbo run build --filter=@repo/web
+
+FROM node:22-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ENV HOSTNAME=0.0.0.0
+ENV PORT=3000
+COPY --from=builder --chown=node:node /app/apps/web/.next/standalone ./
+COPY --from=builder --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static
+USER node
+EXPOSE 3000
+CMD ["node", "apps/web/server.js"]

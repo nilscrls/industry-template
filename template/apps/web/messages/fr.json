@@ -1,0 +1,87 @@
+{
+  "shell": {
+    "appName": "Industry App",
+    "openMenu": "Ouvrir le menu",
+    "toggleTheme": "Changer de thème",
+    "changeLocale": "Changer de langue",
+    "signOut": "Se déconnecter",
+    "locales": { "en": "English", "fr": "Français" },
+    "nav": { "dashboard": "Tableau de bord", "projects": "Projets" }
+  },
+  "auth": {
+    "loginTitle": "Bon retour",
+    "loginDescription": "Connectez-vous à votre compte",
+    "registerTitle": "Créer un compte",
+    "registerDescription": "Quelques secondes et c'est parti",
+    "name": "Nom",
+    "email": "E-mail",
+    "password": "Mot de passe",
+    "loginAction": "Se connecter",
+    "registerAction": "S'inscrire",
+    "noAccount": "Pas encore de compte ?",
+    "hasAccount": "Déjà un compte ?",
+    "invalidCredentials": "E-mail ou mot de passe invalide",
+    "registerFailed": "L'inscription a échoué",
+    "registerSuccess": "Bienvenue ! Vérifiez votre boîte mail pour confirmer votre adresse."
+  },
+  "dashboard": {
+    "title": "Tableau de bord",
+    "totalProjects": "Projets au total",
+    "createdPerDay": "Projets créés",
+    "createdPerDayDescription": "30 derniers jours",
+    "byStatus": "Projets par statut",
+    "byStatusDescription": "Répartition actuelle"
+  },
+  "projects": {
+    "title": "Projets",
+    "searchPlaceholder": "Rechercher des projets…",
+    "createTitle": "Créer un projet",
+    "editTitle": "Modifier le projet",
+    "formDescription": "Nommez votre projet et choisissez un statut.",
+    "createAction": "Nouveau projet",
+    "createSubmit": "Créer",
+    "saveAction": "Enregistrer",
+    "editAction": "Modifier",
+    "deleteAction": "Supprimer",
+    "rowActions": "Actions",
+    "empty": "Aucun projet pour le moment.",
+    "previous": "Précédent",
+    "next": "Suivant",
+    "pageInfo": "Page {page} sur {totalPages}",
+    "fields": {
+      "name": "Nom",
+      "description": "Description",
+      "status": "Statut",
+      "createdAt": "Créé le"
+    },
+    "status": {
+      "draft": "Brouillon",
+      "active": "Actif",
+      "archived": "Archivé"
+    }
+  },
+  "feedback": {
+    "projectCreated": "Projet créé",
+    "projectUpdated": "Projet mis à jour",
+    "projectDeleted": "Projet supprimé"
+  },
+  "errors": {
+    "AUTH_UNAUTHORIZED": "Vous devez vous connecter pour continuer.",
+    "AUTH_FORBIDDEN": "Vous n'êtes pas autorisé à effectuer cette action ({action} {subject}).",
+    "RESOURCE_NOT_FOUND": "{resource} introuvable.",
+    "RESOURCE_CONFLICT": "Ce {resource} existe déjà.",
+    "VALIDATION_FAILED": "Certains champs sont invalides. Corrigez puis réessayez.",
+    "FILE_TOO_LARGE": "Fichier trop volumineux (max {maxSizeMb} Mo).",
+    "FILE_TYPE_NOT_ALLOWED": "Type de fichier non autorisé. Autorisés : {allowed}.",
+    "RATE_LIMITED": "Trop de requêtes — réessayez dans {retryAfterSeconds}s.",
+    "INTERNAL": "Une erreur est survenue. Veuillez réessayer."
+  },
+  "errorPages": {
+    "errorTitle": "Une erreur est survenue",
+    "errorDescription": "Une erreur inattendue s'est produite. Notre équipe est notifiée via la trace de requête.",
+    "notFoundTitle": "Page introuvable",
+    "notFoundDescription": "La page que vous cherchez n'existe pas ou a été déplacée.",
+    "retry": "Réessayer",
+    "backHome": "Retour au tableau de bord"
+  }
+}

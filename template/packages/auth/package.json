@@ -7,6 +7,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./ability": {
+      "types": "./dist/ability.d.ts",
+      "default": "./dist/ability.js"
     }
   },
   "scripts": {
