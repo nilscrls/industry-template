@@ -6,10 +6,10 @@ import { fileObject } from "@repo/db";
 import { and, count, desc, eq, ilike } from "drizzle-orm";
 import { forbidden, notFound } from "../common/app-error";
 import { currentAbility, currentUser } from "../common/request-context";
-import type { DbService } from "../db/db.module";
+import { DbService } from "../db/db.module";
 import {
   PRESIGN_TTL_SECONDS,
-  type StorageService,
+  StorageService,
 } from "../storage/storage.service";
 
 type ListQuery = PaginationQuery & { search?: string | undefined };

@@ -17,7 +17,8 @@ import { FilesModule } from "./files/files.module";
 import { HealthModule } from "./health/health.module";
 import { MailModule } from "./mail/mail.module";
 import { ProjectsModule } from "./projects/projects.module";
-import { REDIS, RedisModule } from "./redis/redis.module";
+import { REDIS } from "./redis/redis.constants";
+import { RedisModule } from "./redis/redis.module";
 import { UsersModule } from "./users/users.module";
 
 /** Plain options keep BullMQ decoupled from our ioredis instance's version. */

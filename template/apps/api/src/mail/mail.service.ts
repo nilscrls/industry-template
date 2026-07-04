@@ -2,7 +2,7 @@ import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable } from "@nestjs/common";
 import type { AuthEmail } from "@repo/auth";
 import type { Queue } from "bullmq";
-import { MAIL_QUEUE } from "./mail.module";
+import { MAIL_QUEUE } from "./mail.constants";
 
 /** Enqueue-only — sending happens in the worker with retries and backoff. */
 @Injectable()

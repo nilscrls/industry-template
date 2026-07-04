@@ -1,5 +1,5 @@
-import swc from "unplugin-swc";
 import { defineConfig } from "vitest/config";
+import { swcPlugin } from "./vitest.swc";
 
 export default defineConfig({
   test: {
@@ -10,5 +10,5 @@ export default defineConfig({
     // One suite at a time — each boots a full Nest app against real containers.
     fileParallelism: false,
   },
-  plugins: [swc.vite({ module: { type: "es6" } })],
+  plugins: [swcPlugin],
 });

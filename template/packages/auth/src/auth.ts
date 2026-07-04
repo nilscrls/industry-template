@@ -21,6 +21,10 @@ export interface SecondaryStorage {
 
 export interface CreateAuthOptions {
   /** Public URL of the API as the browser reaches it, e.g. https://app.example.com/api */
+  /**
+   * Full public base of the auth endpoints as the BROWSER reaches them,
+   * e.g. https://app.example.com/api/auth.
+   */
   baseUrl: string;
   db: Database;
   requireEmailVerification?: boolean;
@@ -36,9 +40,10 @@ export function createAuth(options: CreateAuthOptions) {
   return betterAuth({
     database: drizzleAdapter(options.db, { provider: "pg", schema }),
     secret: options.secret,
+    // NOTE: a path inside baseURL replaces basePath entirely — the path of
+    // baseUrl IS the mount path better-auth matches requests against, and
+    // the base for generated links (verification emails, redirects).
     baseURL: options.baseUrl,
-    // The Next.js rewrite maps <web>/api/auth/* → <api>/auth/*.
-    basePath: "/auth",
     trustedOrigins: options.trustedOrigins,
     ...(options.secondaryStorage
       ? { secondaryStorage: options.secondaryStorage }

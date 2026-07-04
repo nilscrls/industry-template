@@ -8,8 +8,8 @@ import {
 import { type PermissionRule, permissionRuleSchema } from "@repo/contracts";
 import { rolePermission, userPermissionOverride } from "@repo/db";
 import { eq } from "drizzle-orm";
-import type { DbService } from "../db/db.module";
-import type { CacheService } from "../redis/cache.service";
+import { DbService } from "../db/db.module";
+import { CacheService } from "../redis/cache.service";
 
 const RULES_TTL_SECONDS = 300;
 

@@ -4,13 +4,13 @@ import {
   Inject,
   Injectable,
 } from "@nestjs/common";
-import type { Reflector } from "@nestjs/core";
+import { Reflector } from "@nestjs/core";
 import type { Auth } from "@repo/auth";
 import { fromNodeHeaders } from "better-auth/node";
 import type { Request } from "express";
 import { appError } from "../common/app-error";
 import { requestContext } from "../common/request-context";
-import type { AbilityFactory } from "./ability.factory";
+import { AbilityFactory } from "./ability.factory";
 import { AUTH } from "./auth.module";
 import { IS_PUBLIC_KEY } from "./decorators";
 

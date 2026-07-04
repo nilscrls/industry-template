@@ -34,12 +34,20 @@ export async function createApp(): Promise<NestExpressApplication> {
   app.enableCors({ origin: env.WEB_URL, credentials: true });
   app.enableShutdownHooks();
 
-  await app.init();
-
-  // Mounted after init so Nest routes win; unmatched /auth/* falls through
-  // here before Express's final 404 handler.
+  // Better-Auth must mount BEFORE app.init(): Nest registers a catch-all 404
+  // there, so anything added later never sees a request. The DI container is
+  // already instantiated at create-time, so app.get() is safe here.
   const auth = app.get<Auth>(AUTH);
-  express.all("/auth/*splat", toNodeHandler(auth));
+  const authHandler = toNodeHandler(auth);
+  express.all("/auth/*splat", (req, res) => {
+    // Better-Auth matches against its public base (<WEB_URL>/api/auth), but
+    // the /api prefix is stripped by the Next rewrite / reverse proxy before
+    // the request reaches us — restore it so the router matches.
+    req.url = `/api${req.url}`;
+    return authHandler(req, res);
+  });
+
+  await app.init();
 
   return app;
 }

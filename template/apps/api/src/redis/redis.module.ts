@@ -7,8 +7,7 @@ import {
 import { Redis } from "ioredis";
 import { env } from "../config/env";
 import { CacheService } from "./cache.service";
-
-export const REDIS = "REDIS_CLIENT";
+import { REDIS } from "./redis.constants";
 
 @Global()
 @Module({

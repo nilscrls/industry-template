@@ -27,8 +27,8 @@ async function main(): Promise<void> {
     db,
     secret: process.env.BETTER_AUTH_SECRET ?? "dev-only-seed-secret",
     baseUrl: process.env.WEB_URL
-      ? `${process.env.WEB_URL}/api`
-      : "http://localhost:3000/api",
+      ? `${process.env.WEB_URL}/api/auth`
+      : "http://localhost:3000/api/auth",
     trustedOrigins: [process.env.WEB_URL ?? "http://localhost:3000"],
     sendEmail: () => Promise.resolve(),
   });

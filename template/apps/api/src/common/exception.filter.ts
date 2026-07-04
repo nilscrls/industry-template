@@ -3,7 +3,7 @@ import { Catch, HttpException } from "@nestjs/common";
 import { ORPCError } from "@orpc/nest";
 import { type ApiErrorData, errorData, isApiErrorData } from "@repo/contracts";
 import type { Request, Response } from "express";
-import type { PinoLogger } from "nestjs-pino";
+import { PinoLogger } from "nestjs-pino";
 
 const STATUS_TO_ORPC_CODE: Record<number, string> = {
   400: "BAD_REQUEST",

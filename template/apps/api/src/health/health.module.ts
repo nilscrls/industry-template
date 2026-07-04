@@ -1,14 +1,14 @@
 import { Controller, Get, Inject, Module } from "@nestjs/common";
 import {
   HealthCheck,
-  type HealthCheckService,
+  HealthCheckService,
   type HealthIndicatorResult,
   TerminusModule,
 } from "@nestjs/terminus";
 import type { Redis } from "ioredis";
 import { Public } from "../auth/decorators";
-import type { DbService } from "../db/db.module";
-import { REDIS } from "../redis/redis.module";
+import { DbService } from "../db/db.module";
+import { REDIS } from "../redis/redis.constants";
 
 @Controller("health")
 export class HealthController {

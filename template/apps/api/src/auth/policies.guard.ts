@@ -3,7 +3,7 @@ import {
   type ExecutionContext,
   Injectable,
 } from "@nestjs/common";
-import type { Reflector } from "@nestjs/core";
+import { Reflector } from "@nestjs/core";
 import { forbidden } from "../common/app-error";
 import { requestContext } from "../common/request-context";
 import { ABILITY_KEY, type AbilityRequirement } from "./decorators";

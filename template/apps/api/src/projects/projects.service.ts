@@ -14,8 +14,8 @@ import { and, asc, count, desc, eq, gte, ilike, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { forbidden, notFound } from "../common/app-error";
 import { currentAbility, currentUser } from "../common/request-context";
-import type { DbService } from "../db/db.module";
-import type { CacheService } from "../redis/cache.service";
+import { DbService } from "../db/db.module";
+import { CacheService } from "../redis/cache.service";
 
 type ListQuery = z.infer<typeof listProjectsQuerySchema>;
 type CreateInput = z.infer<typeof createProjectSchema>;

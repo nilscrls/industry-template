@@ -1,6 +1,6 @@
 import { HttpException } from "@nestjs/common";
 import { ORPCError } from "@orpc/nest";
-import type { PinoLogger } from "nestjs-pino";
+import { PinoLogger } from "nestjs-pino";
 import { describe, expect, it, vi } from "vitest";
 import { AllExceptionsFilter } from "./exception.filter";
 

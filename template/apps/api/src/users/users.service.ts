@@ -10,10 +10,10 @@ import {
 } from "@repo/contracts";
 import { user, userPermissionOverride } from "@repo/db";
 import { count, desc, eq, ilike, or } from "drizzle-orm";
-import type { AbilityFactory } from "../auth/ability.factory";
+import { AbilityFactory } from "../auth/ability.factory";
 import { notFound } from "../common/app-error";
 import { currentUser } from "../common/request-context";
-import type { DbService } from "../db/db.module";
+import { DbService } from "../db/db.module";
 
 type ListQuery = PaginationQuery & { search?: string | undefined };
 type UserRow = typeof user.$inferSelect;

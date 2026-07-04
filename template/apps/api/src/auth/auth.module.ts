@@ -5,7 +5,7 @@ import { env } from "../config/env";
 import { DbService } from "../db/db.module";
 import { MailModule } from "../mail/mail.module";
 import { MailService } from "../mail/mail.service";
-import { REDIS } from "../redis/redis.module";
+import { REDIS } from "../redis/redis.constants";
 import { AbilityFactory } from "./ability.factory";
 
 export const AUTH = "BETTER_AUTH_INSTANCE";
@@ -25,7 +25,7 @@ export const AUTH = "BETTER_AUTH_INSTANCE";
         createAuth({
           db: dbService.db,
           secret: env.BETTER_AUTH_SECRET,
-          baseUrl: `${env.WEB_URL}/api`,
+          baseUrl: `${env.WEB_URL}/api/auth`,
           trustedOrigins: [env.WEB_URL],
           sendEmail: async (email) => {
             await mail.enqueueAuthEmail(email);

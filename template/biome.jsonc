@@ -21,6 +21,10 @@
         "rules": {
           // React-only rules misfire on express `app.use` / Nest patterns.
           "correctness": { "useHookAtTopLevel": "off" },
+          // Nest resolves constructor DI from emitDecoratorMetadata — an
+          // `import type` of an injected class erases it and breaks DI at
+          // runtime, so imports must stay value imports here.
+          "style": { "useImportType": "off" },
           // DI-only constructors are idiomatic NestJS.
           "suspicious": { "noEmptyBlockStatements": "off" }
         }

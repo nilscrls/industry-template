@@ -2,11 +2,9 @@ import { BullModule } from "@nestjs/bullmq";
 import { Module } from "@nestjs/common";
 import { createTransport } from "nodemailer";
 import { env } from "../config/env";
+import { MAIL_QUEUE, MAIL_TRANSPORT } from "./mail.constants";
 import { MailProcessor } from "./mail.processor";
 import { MailService } from "./mail.service";
-
-export const MAIL_QUEUE = "mail";
-export const MAIL_TRANSPORT = "MAIL_TRANSPORT";
 
 @Module({
   imports: [BullModule.registerQueue({ name: MAIL_QUEUE })],

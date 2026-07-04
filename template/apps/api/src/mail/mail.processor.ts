@@ -3,10 +3,10 @@ import { Inject } from "@nestjs/common";
 import type { AuthEmail } from "@repo/auth";
 import { renderAuthEmail } from "@repo/emails";
 import type { Job } from "bullmq";
-import type { PinoLogger } from "nestjs-pino";
+import { PinoLogger } from "nestjs-pino";
 import type { Transporter } from "nodemailer";
 import { env } from "../config/env";
-import { MAIL_QUEUE, MAIL_TRANSPORT } from "./mail.module";
+import { MAIL_QUEUE, MAIL_TRANSPORT } from "./mail.constants";
 
 @Processor(MAIL_QUEUE)
 export class MailProcessor extends WorkerHost {

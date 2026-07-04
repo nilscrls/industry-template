@@ -60,6 +60,8 @@ export const loggerOptions: Params = {
     autoLogging: {
       ignore: (req) => req.url?.startsWith("/health") ?? false,
     },
-    transport: buildTransport(),
+    // Transports spawn worker threads, which crash inside vitest's forked
+    // workers — under test, pino writes JSON to stdout directly.
+    ...(env.NODE_ENV === "test" ? {} : { transport: buildTransport() }),
   },
 };

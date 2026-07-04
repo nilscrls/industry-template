@@ -2,7 +2,7 @@ import { Controller } from "@nestjs/common";
 import { Implement, implement } from "@orpc/nest";
 import { contract } from "@repo/contracts";
 import { RequireAbility } from "../auth/decorators";
-import type { ProjectsService } from "./projects.service";
+import { ProjectsService } from "./projects.service";
 
 @Controller()
 export class ProjectsController {
