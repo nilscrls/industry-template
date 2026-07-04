@@ -63,6 +63,7 @@ Each of these broke once; the integration suite guards most of them.
 | `migrate.ts` uses `__dirname` (with a biome-ignore) | the unsafe autofix rewrites it to `import.meta.dirname`, which breaks CJS |
 | Template dotfiles stored as `_gitignore`; template `biome.jsonc` sets `vcs.useIgnoreFile: false` | npm strips `.gitignore` from packages; biome would otherwise demand the missing ignore file |
 | BullMQ gets plain connection options parsed from `REDIS_URL` | passing an ioredis instance couples to bullmq's own ioredis version (nominal type clash) |
+| `NODE_ENV` is never set in `.env` / `.env.example` | the root build script injects `.env` via dotenv; a forced `NODE_ENV=development` makes `next build` mix React dev/prod builds and `/_global-error` prerendering crashes (`useContext` of null). The runtime owns NODE_ENV: next/compose/tests set it, the api defaults to `development` |
 
 When you add a new hard-won rule, record it here **and** as a comment at the
 site that would regress.
