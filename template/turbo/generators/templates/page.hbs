@@ -1,0 +1,47 @@
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { orpc } from "@/lib/api";
+import { useApiErrorMessage } from "@/lib/use-app-mutation";
+
+export default function {{ pascalCase plural }}Page() {
+  const errorMessage = useApiErrorMessage();
+  const { data, isPending, error } = useQuery(
+    orpc.{{ camelCase plural }}.list.queryOptions({
+      input: { page: 1, pageSize: 20, sortOrder: "desc" },
+    })
+  );
+
+  if (isPending) {
+    return <Skeleton className="h-72" />;
+  }
+  if (error) {
+    return <p className="text-destructive text-sm">{errorMessage(error)}</p>;
+  }
+
+  return (
+    <div className="grid gap-4">
+      <h1 className="font-semibold text-2xl">{{ pascalCase plural }}</h1>
+      <div className="rounded-lg border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Created</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.items.map((item) => (
+              <TableRow key={item.id}>
+                <TableCell>{item.name}</TableCell>
+                <TableCell>{new Date(item.createdAt).toLocaleDateString()}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}

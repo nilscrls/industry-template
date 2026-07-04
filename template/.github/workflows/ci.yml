@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TURBO_TELEMETRY_DISABLED: "1"
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Materialize env for turbo hashing and the web build
+        run: |
+          cp .env.example .env
+          sed -i "s/^BETTER_AUTH_SECRET=$/BETTER_AUTH_SECRET=$(openssl rand -hex 32)/" .env
+      - run: pnpm lint
+      - run: pnpm build
+      - run: pnpm check-types
+      - run: pnpm test
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Materialize env
+        run: |
+          cp .env.example .env
+          sed -i "s/^BETTER_AUTH_SECRET=$/BETTER_AUTH_SECRET=$(openssl rand -hex 32)/" .env
+      - name: Integration tests (Testcontainers)
+        run: pnpm test:integration
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Materialize env
+        run: |
+          cp .env.example .env
+          sed -i "s/^BETTER_AUTH_SECRET=$/BETTER_AUTH_SECRET=$(openssl rand -hex 32)/" .env
+      - name: Start infrastructure
+        run: docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile dev up -d --wait
+      - run: pnpm build
+      - run: pnpm db:migrate && pnpm db:seed
+      - name: Start apps
+        run: |
+          (cd apps/api && nohup node dist/main.js > /tmp/api.log 2>&1 &)
+          (cd apps/web && nohup pnpm start > /tmp/web.log 2>&1 &)
+          npx wait-on --timeout 60000 http://localhost:3001/health/ready http://localhost:3000
+      - name: Install Playwright browsers
+        run: pnpm --filter @repo/web exec playwright install --with-deps chromium
+      - name: E2E
+        run: pnpm --filter @repo/web exec playwright test --project=chromium
+      - name: Logs on failure
+        if: failure()
+        run: |
+          echo "── api ──"; cat /tmp/api.log || true
+          echo "── web ──"; cat /tmp/web.log || true

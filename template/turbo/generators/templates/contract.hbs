@@ -1,0 +1,48 @@
+import * as z from "zod";
+import { base } from "./base.js";
+import { paginatedSchema, paginationQuerySchema } from "./pagination.js";
+
+export const {{ camelCase name }}Schema = z.object({
+  id: z.uuid(),
+  name: z.string().min(1).max(120),
+  ownerId: z.string(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+
+export type {{ pascalCase name }} = z.infer<typeof {{ camelCase name }}Schema>;
+
+export const create{{ pascalCase name }}Schema = z.object({
+  name: {{ camelCase name }}Schema.shape.name,
+});
+
+export const update{{ pascalCase name }}Schema = z.object({
+  name: {{ camelCase name }}Schema.shape.name.optional(),
+});
+
+export const {{ camelCase plural }}Contract = {
+  list: base
+    .route({ method: "GET", path: "/{{ plural }}", summary: "List {{ plural }}", tags: ["{{ plural }}"] })
+    .input(paginationQuerySchema.extend({ search: z.string().max(120).optional() }))
+    .output(paginatedSchema({{ camelCase name }}Schema)),
+
+  find: base
+    .route({ method: "GET", path: "/{{ plural }}/{id}", summary: "Get one {{ name }}", tags: ["{{ plural }}"] })
+    .input(z.object({ id: z.uuid() }))
+    .output({{ camelCase name }}Schema),
+
+  create: base
+    .route({ method: "POST", path: "/{{ plural }}", summary: "Create a {{ name }}", tags: ["{{ plural }}"] })
+    .input(create{{ pascalCase name }}Schema)
+    .output({{ camelCase name }}Schema),
+
+  update: base
+    .route({ method: "PATCH", path: "/{{ plural }}/{id}", summary: "Update a {{ name }}", tags: ["{{ plural }}"] })
+    .input(update{{ pascalCase name }}Schema.extend({ id: z.uuid() }))
+    .output({{ camelCase name }}Schema),
+
+  remove: base
+    .route({ method: "DELETE", path: "/{{ plural }}/{id}", summary: "Delete a {{ name }}", tags: ["{{ plural }}"] })
+    .input(z.object({ id: z.uuid() }))
+    .output(z.object({ id: z.uuid() })),
+};

@@ -1,0 +1,105 @@
+import { Injectable } from "@nestjs/common";
+import { asSubject } from "@repo/auth";
+import type { InferContractRouterInputs } from "@orpc/contract";
+import type { Paginated, {{ pascalCase name }}, {{ camelCase plural }}Contract } from "@repo/contracts";
+import { {{ camelCase name }} } from "@repo/db";
+import { and, count, desc, eq, ilike } from "drizzle-orm";
+import { forbidden, notFound } from "../common/app-error";
+import { currentAbility, currentUser } from "../common/request-context";
+import { DbService } from "../db/db.module";
+
+type Inputs = InferContractRouterInputs<typeof {{ camelCase plural }}Contract>;
+type Row = typeof {{ camelCase name }}.$inferSelect;
+
+@Injectable()
+export class {{ pascalCase plural }}Service {
+  constructor(private readonly dbService: DbService) {}
+
+  private get db() {
+    return this.dbService.db;
+  }
+
+  async list(query: Inputs["list"]): Promise<Paginated<{{ pascalCase name }}>> {
+    const where = and(query.search ? ilike({{ camelCase name }}.name, `%${query.search}%`) : undefined);
+    const [rows, totals] = await Promise.all([
+      this.db
+        .select()
+        .from({{ camelCase name }})
+        .where(where)
+        .orderBy(desc({{ camelCase name }}.createdAt))
+        .limit(query.pageSize)
+        .offset((query.page - 1) * query.pageSize),
+      this.db.select({ value: count() }).from({{ camelCase name }}).where(where),
+    ]);
+    const total = totals[0]?.value ?? 0;
+    return {
+      items: rows.map((row) => this.toDto(row)),
+      total,
+      page: query.page,
+      pageSize: query.pageSize,
+      totalPages: Math.ceil(total / query.pageSize),
+    };
+  }
+
+  async find(id: string): Promise<{{ pascalCase name }}> {
+    const row = await this.findRow(id);
+    if (!currentAbility().can("read", asSubject("{{ pascalCase name }}", { ...row }))) {
+      throw forbidden("read", "{{ pascalCase name }}");
+    }
+    return this.toDto(row);
+  }
+
+  async create(input: Inputs["create"]): Promise<{{ pascalCase name }}> {
+    const [row] = await this.db
+      .insert({{ camelCase name }})
+      .values({ name: input.name, ownerId: currentUser().id })
+      .returning();
+    if (!row) {
+      throw notFound("{{ pascalCase name }}");
+    }
+    return this.toDto(row);
+  }
+
+  async update(input: Inputs["update"]): Promise<{{ pascalCase name }}> {
+    const row = await this.findRow(input.id);
+    if (!currentAbility().can("update", asSubject("{{ pascalCase name }}", { ...row }))) {
+      throw forbidden("update", "{{ pascalCase name }}");
+    }
+    const [updated] = await this.db
+      .update({{ camelCase name }})
+      .set({ ...(input.name === undefined ? {} : { name: input.name }) })
+      .where(eq({{ camelCase name }}.id, input.id))
+      .returning();
+    if (!updated) {
+      throw notFound("{{ pascalCase name }}");
+    }
+    return this.toDto(updated);
+  }
+
+  async remove(id: string): Promise<{ id: string }> {
+    const row = await this.findRow(id);
+    if (!currentAbility().can("delete", asSubject("{{ pascalCase name }}", { ...row }))) {
+      throw forbidden("delete", "{{ pascalCase name }}");
+    }
+    await this.db.delete({{ camelCase name }}).where(eq({{ camelCase name }}.id, id));
+    return { id };
+  }
+
+  private async findRow(id: string): Promise<Row> {
+    const [row] = await this.db.select().from({{ camelCase name }}).where(eq({{ camelCase name }}.id, id));
+    if (!row) {
+      throw notFound("{{ pascalCase name }}");
+    }
+    return row;
+  }
+
+  private toDto(row: Row): {{ pascalCase name }} {
+    return {
+      id: row.id,
+      name: row.name,
+      ownerId: row.ownerId,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    };
+  }
+}
