@@ -33,20 +33,26 @@ beforeAll(async () => {
   ]);
 
   // env.ts reads process.env at import time — set everything first.
+  // The schema has no defaults, so every server var must be present here.
   process.env.NODE_ENV = "test";
+  process.env.API_PORT = "3001";
   process.env.DATABASE_URL = postgres.getConnectionUri();
   process.env.REDIS_URL = redis.getConnectionUrl();
   process.env.BETTER_AUTH_SECRET = "integration-test-secret-0123456789abcdef";
   process.env.WEB_URL = "http://localhost:3000";
   process.env.S3_ENDPOINT = "http://localhost:9000";
   process.env.S3_PUBLIC_ENDPOINT = "http://localhost:9000";
+  process.env.S3_REGION = "us-east-1";
   process.env.S3_ACCESS_KEY = "minioadmin";
   process.env.S3_SECRET_KEY = "minioadmin";
   process.env.S3_BUCKET = "uploads";
   process.env.SMTP_HOST = "localhost";
   process.env.SMTP_PORT = "1025";
+  process.env.SMTP_SECURE = "false";
   process.env.MAIL_FROM = "Test <test@example.com>";
   process.env.LOG_LEVEL = "warn";
+  process.env.LOG_FILE_ENABLED = "false";
+  process.env.LOG_DIR = "./logs";
 
   const { db, pool } = createDb(process.env.DATABASE_URL);
   await migrate(db, { migrationsFolder: MIGRATIONS });

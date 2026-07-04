@@ -21,6 +21,8 @@ export {
   type PaginationQuery,
   paginatedSchema,
   paginationQuerySchema,
+  type SortOrder,
+  sortOrders,
 } from "./pagination.js";
 export {
   type Action,
@@ -36,10 +38,14 @@ export {
 } from "./permissions.js";
 export {
   createProjectSchema,
+  isProjectSortField,
+  isProjectStatus,
   listProjectsQuerySchema,
   type Project,
+  type ProjectSortField,
   type ProjectStatus,
   projectSchema,
+  projectSortFields,
   projectStatsSchema,
   projectStatuses,
   projectsContract,

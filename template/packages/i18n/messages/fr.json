@@ -35,6 +35,8 @@
   "projects": {
     "title": "Projets",
     "searchPlaceholder": "Rechercher des projets…",
+    "statusFilterLabel": "Filtrer par statut",
+    "allStatuses": "Tous les statuts",
     "createTitle": "Créer un projet",
     "editTitle": "Modifier le projet",
     "formDescription": "Nommez votre projet et choisissez un statut.",

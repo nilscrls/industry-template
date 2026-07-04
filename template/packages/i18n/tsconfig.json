@@ -1,0 +1,5 @@
+{
+  "extends": "@repo/typescript-config/react-library.json",
+  "include": ["src", "messages"],
+  "exclude": ["node_modules"]
+}

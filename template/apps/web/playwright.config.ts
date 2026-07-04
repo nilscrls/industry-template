@@ -1,6 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const baseURL = process.env.WEB_URL ?? "http://localhost:3000";
+const baseURL = process.env.WEB_URL;
+if (!baseURL) {
+  throw new Error(
+    "WEB_URL is not set — declare it in .env (run through `pnpm test:e2e` at the repo root)"
+  );
+}
 
 /**
  * Runs against a live stack: `pnpm compose:dev` + `pnpm dev` locally, or the

@@ -12,10 +12,12 @@ WORKDIR /app
 COPY --from=pruner /app/out/json/ .
 RUN pnpm install --frozen-lockfile
 COPY --from=pruner /app/out/full/ .
-ARG NEXT_PUBLIC_API_URL=/api
+# No defaults: both must be passed explicitly (compose forwards them from .env).
+# env validation runs during the build and fails fast when either is missing.
+ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-# Server-only env is provided at runtime by compose.
-ENV SKIP_ENV_VALIDATION=true
+ARG API_URL
+ENV API_URL=$API_URL
 RUN pnpm turbo run build --filter=@repo/web
 
 FROM node:22-alpine AS runner

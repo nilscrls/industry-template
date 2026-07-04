@@ -41,7 +41,9 @@ both trailing slashes — that's what strips the prefix). The api re-adds
 
 `.env` (one file at the repo root, consumed by compose and `dotenv-cli`) —
 generated from `.env.example` at scaffold time with a random
-`BETTER_AUTH_SECRET`.
+`BETTER_AUTH_SECRET`. No variable has an in-code default (except runtime-owned
+`NODE_ENV`): anything missing fails fast at startup/build, so `.env` is the
+complete inventory of the configuration.
 
 | Variable | Local dev | Prod (compose overrides in-network values) |
 |---|---|---|

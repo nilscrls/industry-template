@@ -17,19 +17,26 @@ async function main(): Promise<void> {
   }
 
   const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
-    console.error("DATABASE_URL is not set");
+  const secret = process.env.BETTER_AUTH_SECRET;
+  const webUrl = process.env.WEB_URL;
+  if (!(connectionString && secret && webUrl)) {
+    const missing = Object.entries({
+      DATABASE_URL: connectionString,
+      BETTER_AUTH_SECRET: secret,
+      WEB_URL: webUrl,
+    })
+      .filter(([, value]) => !value)
+      .map(([name]) => name);
+    console.error(`Missing env: ${missing.join(", ")} — declare them in .env`);
     process.exit(1);
   }
 
   const { db, pool } = createDb(connectionString);
   const auth = createAuth({
     db,
-    secret: process.env.BETTER_AUTH_SECRET ?? "dev-only-seed-secret",
-    baseUrl: process.env.WEB_URL
-      ? `${process.env.WEB_URL}/api/auth`
-      : "http://localhost:3000/api/auth",
-    trustedOrigins: [process.env.WEB_URL ?? "http://localhost:3000"],
+    secret,
+    baseUrl: `${webUrl}/api/auth`,
+    trustedOrigins: [webUrl],
     sendEmail: () => Promise.resolve(),
   });
 

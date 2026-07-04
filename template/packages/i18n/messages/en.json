@@ -35,6 +35,8 @@
   "projects": {
     "title": "Projects",
     "searchPlaceholder": "Search projects…",
+    "statusFilterLabel": "Filter by status",
+    "allStatuses": "All statuses",
     "createTitle": "Create project",
     "editTitle": "Edit project",
     "formDescription": "Name your project and pick a status.",

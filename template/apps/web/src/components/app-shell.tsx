@@ -1,5 +1,16 @@
 "use client";
 
+import { LOCALE_COOKIE, SUPPORTED_LOCALES } from "@repo/i18n";
+import { Button } from "@repo/ui/components/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@repo/ui/components/dropdown-menu";
+import { cn } from "@repo/ui/lib/utils";
 import {
   FolderKanbanIcon,
   GlobeIcon,
@@ -14,18 +25,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useTheme } from "next-themes";
 import type { ReactNode } from "react";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { LOCALE_COOKIE, SUPPORTED_LOCALES } from "@/i18n/config";
 import { authClient } from "@/lib/auth-client";
-import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/dashboard", key: "dashboard", icon: LayoutDashboardIcon },

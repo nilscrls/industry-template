@@ -19,21 +19,20 @@ Email + password with verification and reset emails, powered by Better-Auth.
 - Dev users after `pnpm db:seed` (password `Password123!`):
   `admin@example.com`, `manager@example.com`, `member@example.com`.
 
-## Authorization — roles + per-user overrides
+## Authorization — CASL
 
-Three roles (`admin`, `manager`, `member`) with editable rules in the DB and
-per-user allow/deny overrides. Deny wins.
+Serializable CASL rules enforced by the api and mirrored in the web UI. The
+rule model (RBAC roles or ReBAC memberships) is chosen at scaffold time —
+`docs/authorization.md` documents this project's setup end to end.
 
-- Definitions: `packages/contracts/src/permissions.ts`
-  (actions, subjects, `defaultRolePermissions`).
+- Definitions: `packages/contracts/src/permissions.ts` (actions, subjects,
+  rule sources).
 - Enforcement (api): `@RequireAbility({ action, subject })` on controller
   methods; `ability.can(action, asSubject("Project", row))` in services for
-  ownership checks (`${userId}` condition placeholder).
-- Management endpoints: `PATCH /users/:id/role`,
-  `GET|PUT /users/:id/permission-overrides` (admin), `GET /me/permissions`.
+  row-level checks.
 - UI gating (web): `<Can action="update" subject={asSubject("Project", row)}>`
   and `useAbility()` from `apps/web/src/lib/ability.tsx` — built from the
-  same rules the api enforces.
+  same rules the api enforces (`GET /me/permissions`).
 
 ## End-to-end typed API
 
@@ -50,7 +49,7 @@ per-user allow/deny overrides. Deny wins.
 `{ code, params, traceId }` end to end — see `docs/architecture.md` for the
 pipeline. To consume: `useApiErrorMessage()(error)` returns a localized
 string; `useAppMutation` already toasts it. Translations live under
-`errors.*` in `apps/web/messages/en.json` / `fr.json`.
+`errors.*` in `packages/i18n/messages/en.json` / `fr.json`.
 
 ## File upload / download (Minio, presigned)
 
@@ -107,10 +106,10 @@ role/override changes). Redis also backs sessions, queues and rate limits.
 | Optimistic mutations | `useAppMutation({ optimistic: { queryKey, update } })` — snapshot, patch, rollback on error, invalidate on settle (project delete is the example) |
 | Action feedback | same hook: localized error toasts always; `successMessage` key → success toast |
 | Forms | RHF + `zodResolver` with schemas from `@repo/contracts` — `components/projects/project-form-dialog.tsx` is the reference (note: form schemas must not rely on `.default()`, supply defaults via `defaultValues`) |
-| Tables | TanStack Table, server-driven pagination + search (`app/(app)/projects/page.tsx`) |
+| Tables | TanStack Table, server-driven pagination + filters + sorting, URL state via nuqs (`app/(app)/projects/page.tsx`, parsers in `search-params.ts`) |
 | Charts | recharts themed with `--chart-*` tokens (`components/dashboard/charts.tsx`): 30-day area chart + status bar chart, tooltips, fixed status→color mapping |
 | Dark mode | next-themes class strategy; toggle in the app shell; tokens defined for both schemes in `app/globals.css` |
-| i18n | next-intl, cookie-based locale (en/fr), switcher in the shell; messages in `apps/web/messages/` |
+| i18n | next-intl, cookie-based locale (en/fr), switcher in the shell; messages in `packages/i18n/messages/` |
 | Error pages | `app/error.tsx` (with digest + retry), `not-found.tsx`, `global-error.tsx` (provider-free last resort) |
 | Mobile-first | nav collapses into a menu below `sm`, cards/tables reflow, `Pixel 7` Playwright project keeps it honest |
 

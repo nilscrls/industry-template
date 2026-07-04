@@ -17,3 +17,4 @@ template/**/test-results/
 template/**/.env
 template/**/.env.*
 !template/**/.env.example
+template/**/*.tsbuildinfo

@@ -28,6 +28,7 @@ Maildev UI: <http://localhost:1080> · Minio console: <http://localhost:9001>.
 | Doc | Covers |
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | monorepo layout, request lifecycle, contract-first types, auth/authz design, error pipeline, the CJS decision |
+| [docs/authorization.md](docs/authorization.md) | this project's permission model (chosen at scaffold time), management endpoints, how to change rules |
 | [docs/stack.md](docs/stack.md) | every technology, its role, and why it was chosen |
 | [docs/features.md](docs/features.md) | feature-by-feature: where the code lives, how to use it |
 | [docs/guides.md](docs/guides.md) | recipes: add a feature/endpoint/permission/error code/locale/env var/email, conventions |
@@ -45,12 +46,12 @@ Maildev UI: <http://localhost:1080> · Minio console: <http://localhost:9001>.
 - **Auth.** Better-Auth lives on the api (`/api/auth/*`), sessions in Postgres with a Redis
   secondary storage and a 5-minute signed cookie cache. Emails (verification, reset) render
   with react-email and send through a BullMQ queue with retries.
-- **Authorization.** Roles seed from `defaultRolePermissions`; per-user overrides layer on
-  top (deny wins). The api builds a CASL ability per request (rules cached in Redis); the
-  web builds the *same* ability from `/api/me/permissions` to show/hide UI. The api is the
-  authority — UI gating is cosmetic.
+- **Authorization.** Serializable CASL rules (model chosen at scaffold time — see
+  `docs/authorization.md`). The api builds a CASL ability per request (rules cached in
+  Redis); the web builds the *same* ability from `/api/me/permissions` to show/hide UI.
+  The api is the authority — UI gating is cosmetic.
 - **Errors.** Everything serializes to `{ code, params, traceId }`. `code` maps to a
-  translation in `apps/web/messages/*`; `traceId` matches the api log line.
+  translation in `packages/i18n/messages/*`; `traceId` matches the api log line.
 - **Files.** The api presigns Minio PUT/GET URLs; bytes never stream through Nest.
 - **Logging.** Pretty in dev, JSON on stdout in prod, optional daily-rotated files via
   `LOG_FILE_ENABLED=true` (pino-roll). Every line carries the request's `traceId`.

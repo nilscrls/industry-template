@@ -40,11 +40,12 @@ reasons, not against habits.
 | Tech | Role | Why |
 |---|---|---|
 | Next.js 16 (App Router, standalone output) | UI framework | `/api` rewrite makes the whole app same-origin |
-| shadcn/ui + Tailwind 4 | components + styling | components are owned source in `src/components/ui`, not a dependency; `components.json` configured for the shadcn CLI |
+| shadcn/ui + Tailwind 4 | components + styling | components are owned source in `packages/ui` (Radix or Base UI, chosen at scaffold time), not a dependency; `components.json` configured for the shadcn CLI |
 | TanStack Query 5 | server state | cache, optimistic updates, invalidation; fed by oRPC query utils |
-| TanStack Table 8 | tables | headless, server-driven pagination |
+| TanStack Table 8 | tables | headless; server-driven pagination, filtering and sorting |
+| nuqs 2 | URL state | typed search-param parsers derived from contract literals; the projects table state (page/search/status/sort) lives in the URL |
 | react-hook-form + `@hookform/resolvers` | forms | shadcn `Form` primitives are RHF-based; schemas come from `@repo/contracts` |
-| next-intl 4 | i18n (en/fr) | cookie-based locale — app-style UI, no locale in URLs |
+| next-intl 4 | i18n (en/fr) | cookie-based locale — app-style UI, no locale in URLs; config + typed catalogs in `packages/i18n` |
 | next-themes | dark/light mode | class strategy matching the shadcn token setup |
 | sonner | action feedback | success/error toasts from `useAppMutation` |
 | recharts 3 | dashboard charts | shadcn's chart convention; themed via `--chart-*` tokens |

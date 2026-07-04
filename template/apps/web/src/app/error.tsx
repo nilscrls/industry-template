@@ -1,8 +1,8 @@
 "use client";
 
+import { Button } from "@repo/ui/components/button";
 import { useTranslations } from "next-intl";
 import { useEffect } from "react";
-import { Button } from "@/components/ui/button";
 
 export default function ErrorPage({
   error,
