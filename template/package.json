@@ -16,7 +16,7 @@
     "test:e2e": "dotenv -e .env -- turbo run test:e2e",
     "db:generate": "pnpm --filter @repo/db generate",
     "db:migrate": "dotenv -e .env -- pnpm --filter @repo/db migrate",
-    "db:seed": "dotenv -e .env -- pnpm --filter @repo/db seed",
+    "db:seed": "dotenv -e .env -- pnpm --filter @repo/db seed && dotenv -e .env -- pnpm --filter @repo/auth seed:dev",
     "auth:schema": "dotenv -e .env -- pnpm --filter @repo/auth generate-schema",
     "compose:dev": "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile dev up -d",
     "compose:dev:down": "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile dev down",
