@@ -23,6 +23,17 @@ pnpm dev                    # web on :3000, api on :3001
 Seeded logins (`Password123!`): `admin@example.com`, `manager@example.com`, `member@example.com`.
 Maildev UI: <http://localhost:1080> · Minio console: <http://localhost:9001>.
 
+## Documentation
+
+| Doc | Covers |
+|---|---|
+| [docs/architecture.md](docs/architecture.md) | monorepo layout, request lifecycle, contract-first types, auth/authz design, error pipeline, the CJS decision |
+| [docs/stack.md](docs/stack.md) | every technology, its role, and why it was chosen |
+| [docs/features.md](docs/features.md) | feature-by-feature: where the code lives, how to use it |
+| [docs/guides.md](docs/guides.md) | recipes: add a feature/endpoint/permission/error code/locale/env var/email, conventions |
+| [docs/testing.md](docs/testing.md) | test pyramid, TDD loop, integration-test pattern, sharp edges |
+| [docs/deployment.md](docs/deployment.md) | compose profiles, reverse proxy, env matrix, scaling, day-2 ops |
+
 ## How the pieces fit
 
 - **One contract.** `packages/contracts` holds zod schemas, the oRPC contract, the error

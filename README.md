@@ -18,12 +18,21 @@ npx create-industry-app my-app -- --yes --no-install
 
 Flags: `--yes` accept defaults, `--no-git`, `--no-install`.
 
+## Documentation
+
+| Doc | Covers |
+|---|---|
+| [docs/cli.md](docs/cli.md) | CLI flags, requirements, what scaffolding does, troubleshooting |
+| [docs/maintaining-the-template.md](docs/maintaining-the-template.md) | developing the template, verification checklist, non-regression constraints, publishing |
+| [template/docs/](template/docs/) | shipped with every generated app: architecture, stack, features, guides, testing, deployment |
+
 ## Repository layout
 
 ```
 src/        CLI source (@clack/prompts)
 tests/      CLI tests (vitest)
 template/   the reference app — a real, runnable turborepo, tested in CI
+docs/       generator documentation
 ```
 
 The template is not string-templated: it is a working monorepo (`template/` has its own lockfile and CI job). The CLI copies it, restores `_gitignore` → `.gitignore` (npm strips dotfiles from packages), stamps the project name, and materializes `.env` with generated secrets.
