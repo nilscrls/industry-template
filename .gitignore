@@ -1,0 +1,19 @@
+node_modules/
+dist/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+
+# template runtime artifacts (the template ships sources only)
+template/**/node_modules/
+template/**/dist/
+template/**/.next/
+template/**/.turbo/
+template/**/coverage/
+template/**/playwright-report/
+template/**/test-results/
+template/**/.env
+template/**/.env.*
+!template/**/.env.example

@@ -1,0 +1,29 @@
+# Prod overlay — no host ports; web and api join an external reverse-proxy
+# network (create it once on the host: `docker network create proxy`).
+services:
+  api:
+    networks:
+      - default
+      - proxy
+    # Example Traefik labels — adapt to your proxy:
+    # labels:
+    #   - traefik.enable=true
+    #   - traefik.docker.network=proxy
+    #   - traefik.http.routers.app-api.rule=Host(`app.example.com`) && PathPrefix(`/api`)
+    #   - traefik.http.middlewares.app-api-strip.stripprefix.prefixes=/api
+    #   - traefik.http.routers.app-api.middlewares=app-api-strip
+    #   - traefik.http.services.app-api.loadbalancer.server.port=3001
+
+  web:
+    networks:
+      - default
+      - proxy
+    # labels:
+    #   - traefik.enable=true
+    #   - traefik.docker.network=proxy
+    #   - traefik.http.routers.app-web.rule=Host(`app.example.com`)
+    #   - traefik.http.services.app-web.loadbalancer.server.port=3000
+
+networks:
+  proxy:
+    external: true

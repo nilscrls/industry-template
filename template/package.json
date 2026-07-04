@@ -1,0 +1,41 @@
+{
+  "name": "industry-app",
+  "private": true,
+  "engines": {
+    "node": ">=22.12"
+  },
+  "packageManager": "pnpm@10.12.1",
+  "scripts": {
+    "dev": "turbo run build --filter=./packages/* && dotenv -e .env -- turbo run dev",
+    "build": "dotenv -e .env -- turbo run build",
+    "lint": "turbo run lint",
+    "lint:fix": "biome check --write .",
+    "check-types": "turbo run check-types",
+    "test": "turbo run test",
+    "test:integration": "dotenv -e .env -- turbo run test:integration",
+    "test:e2e": "dotenv -e .env -- turbo run test:e2e",
+    "db:generate": "pnpm --filter @repo/db generate",
+    "db:migrate": "dotenv -e .env -- pnpm --filter @repo/db migrate",
+    "db:seed": "dotenv -e .env -- pnpm --filter @repo/db seed",
+    "auth:schema": "dotenv -e .env -- pnpm --filter @repo/auth generate-schema",
+    "compose:dev": "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile dev up -d",
+    "compose:dev:down": "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile dev down",
+    "compose:all": "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile all up -d --build",
+    "compose:prod": "docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile all up -d --build",
+    "gen": "turbo gen",
+    "commit": "czg",
+    "prepare": "lefthook install"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.1.1",
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
+    "@turbo/gen": "^2.5.4",
+    "czg": "^1.11.1",
+    "dotenv-cli": "^8.0.0",
+    "lefthook": "^1.11.14",
+    "turbo": "^2.5.4",
+    "typescript": "^5.9.2",
+    "ultracite": "^5.1.2"
+  }
+}

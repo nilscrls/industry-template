@@ -1,0 +1,27 @@
+# Dev overlay — exposes service ports on the docker host.
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  minio:
+    ports:
+      - "9000:9000" # S3 API
+      - "9001:9001" # console
+
+  maildev:
+    ports:
+      - "1080:1080" # web UI
+      - "1025:1025" # SMTP
+
+  api:
+    ports:
+      - "3001:3001"
+
+  web:
+    ports:
+      - "3000:3000"

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.1.1/schema.json",
+  "extends": ["ultracite"],
+  "files": {
+    // The template is its own workspace with its own biome.jsonc; it is
+    // linted from inside template/ (see CI), not from this root config.
+    "includes": ["src/**", "tests/**", "*.json", "*.jsonc", "*.ts"]
+  }
+}

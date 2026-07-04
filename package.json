@@ -1,0 +1,45 @@
+{
+  "name": "create-industry-app",
+  "version": "0.1.0",
+  "description": "Scaffold an industrial-grade full-stack TypeScript monorepo: Next.js 16 + NestJS + oRPC + Drizzle + Better-Auth, wired for TDD and Docker",
+  "keywords": ["create-app", "generator", "turborepo", "nextjs", "nestjs", "orpc", "drizzle", "better-auth"],
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "create-industry-app": "dist/index.js"
+  },
+  "files": ["dist", "template"],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "packageManager": "pnpm@10.12.1",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "check-types": "tsc --noEmit",
+    "commit": "czg",
+    "prepare": "lefthook install",
+    "prepublishOnly": "pnpm build"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.11.0",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.1.1",
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
+    "@types/node": "^22.15.0",
+    "czg": "^1.11.1",
+    "lefthook": "^1.11.14",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.2",
+    "ultracite": "^5.1.2",
+    "vitest": "^3.2.4"
+  }
+}
