@@ -5,14 +5,32 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
 
+export const UI_VARIANTS = ["radix", "base"] as const;
+export type UiVariant = (typeof UI_VARIANTS)[number];
+
+export const AUTHZ_VARIANTS = ["rbac", "rebac"] as const;
+export type AuthzVariant = (typeof AUTHZ_VARIANTS)[number];
+
+export const LOCALE_VARIANTS = ["en", "fr"] as const;
+export type LocaleVariant = (typeof LOCALE_VARIANTS)[number];
+
 export interface ScaffoldOptions {
+  /** CASL authorization model. Default: "rbac". */
+  authz?: AuthzVariant;
+  /** Default UI language. Default: "en". */
+  locale?: LocaleVariant;
   projectName: string;
   targetDir: string;
   templateDir: string;
+  /** shadcn/ui primitive library. Default: "radix". */
+  ui?: UiVariant;
+  /** Directory holding variant overlays (repo `variants/`). Required when a non-default variant is chosen. */
+  variantsDir?: string;
 }
 
 /** Artifacts that may exist in a locally-developed template but must never be scaffolded. */
@@ -58,6 +76,66 @@ function copyTemplate(templateDir: string, targetDir: string): void {
   });
 }
 
+/**
+ * Overlay a variant on the scaffolded tree: first remove the paths listed in
+ * the overlay's `_delete.json` (template files the variant replaces
+ * wholesale, e.g. drizzle migrations), then copy every overlay file over the
+ * target, replacing the default implementation.
+ */
+function applyVariantOverlay(
+  variantsDir: string | undefined,
+  overlayName: string,
+  targetDir: string
+): void {
+  if (!variantsDir) {
+    throw new Error(
+      `Variant "${overlayName}" requested but no variants directory provided`
+    );
+  }
+  const overlayDir = path.join(variantsDir, overlayName);
+  if (!existsSync(overlayDir)) {
+    throw new Error(`Variant overlay not found at ${overlayDir}`);
+  }
+
+  const manifestPath = path.join(overlayDir, "_delete.json");
+  if (existsSync(manifestPath)) {
+    const deletions: string[] = JSON.parse(readFileSync(manifestPath, "utf8"));
+    for (const relative of deletions) {
+      rmSync(path.join(targetDir, relative), { recursive: true, force: true });
+    }
+  }
+
+  cpSync(overlayDir, targetDir, {
+    recursive: true,
+    filter: (source) => path.basename(source) !== "_delete.json",
+  });
+}
+
+/** The chosen scaffold-time language becomes the app's fallback locale. */
+function setDefaultLocale(targetDir: string, locale: LocaleVariant): void {
+  if (locale === "en") {
+    return;
+  }
+  const configPath = path.join(
+    targetDir,
+    "packages",
+    "i18n",
+    "src",
+    "config.ts"
+  );
+  const source = readFileSync(configPath, "utf8");
+  const marker = 'DEFAULT_LOCALE: Locale = "en"';
+  if (!source.includes(marker)) {
+    throw new Error(
+      `Could not set default locale: marker not found in ${configPath}`
+    );
+  }
+  writeFileSync(
+    configPath,
+    source.replace(marker, `DEFAULT_LOCALE: Locale = "${locale}"`)
+  );
+}
+
 /** npm strips `.gitignore` from published packages, so the template stores `_gitignore`. */
 function restoreDotfiles(dir: string): void {
   for (const entry of readdirSync(dir, {
@@ -98,7 +176,15 @@ function writeDotEnv(targetDir: string): void {
 }
 
 export function scaffold(options: ScaffoldOptions): void {
-  const { templateDir, targetDir, projectName } = options;
+  const {
+    templateDir,
+    targetDir,
+    projectName,
+    variantsDir,
+    ui = "radix",
+    authz = "rbac",
+    locale = "en",
+  } = options;
   const nameError = validateProjectName(projectName);
   if (nameError) {
     throw new Error(nameError);
@@ -111,6 +197,13 @@ export function scaffold(options: ScaffoldOptions): void {
   }
 
   copyTemplate(templateDir, targetDir);
+  if (ui === "base") {
+    applyVariantOverlay(variantsDir, "ui-base", targetDir);
+  }
+  if (authz === "rebac") {
+    applyVariantOverlay(variantsDir, "authz-rebac", targetDir);
+  }
+  setDefaultLocale(targetDir, locale);
   restoreDotfiles(targetDir);
   setProjectName(targetDir, projectName);
   writeDotEnv(targetDir);

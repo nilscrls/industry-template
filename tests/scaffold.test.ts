@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { isDirEmpty, scaffold, validateProjectName } from "../src/scaffold.js";
 
 const REAL_TEMPLATE = path.resolve(import.meta.dirname, "..", "template");
+const REAL_VARIANTS = path.resolve(import.meta.dirname, "..", "variants");
 
 let workDir: string;
 
@@ -127,10 +128,109 @@ describe("scaffold", () => {
       "apps/api/package.json",
       "apps/web/package.json",
       "packages/contracts/package.json",
+      "packages/i18n/package.json",
+      "packages/i18n/messages/en.json",
+      "packages/i18n/messages/fr.json",
+      "packages/ui/package.json",
+      "packages/ui/src/components/button.tsx",
     ]) {
       expect(existsSync(path.join(targetDir, file)), `missing ${file}`).toBe(
         true
       );
     }
+
+    // Defaults: Radix primitives, RBAC permissions, English fallback locale.
+    const uiDeps = JSON.parse(
+      readFileSync(path.join(targetDir, "packages/ui/package.json"), "utf8")
+    ).dependencies;
+    expect(uiDeps["@radix-ui/react-dialog"]).toBeDefined();
+    expect(
+      readFileSync(
+        path.join(targetDir, "packages/contracts/src/permissions.ts"),
+        "utf8"
+      )
+    ).toContain("defaultRolePermissions");
+    expect(
+      readFileSync(path.join(targetDir, "packages/i18n/src/config.ts"), "utf8")
+    ).toContain('DEFAULT_LOCALE: Locale = "en"');
+  });
+
+  it("applies the Base UI overlay when ui=base", () => {
+    const targetDir = path.join(workDir, "real-base");
+    scaffold({
+      templateDir: REAL_TEMPLATE,
+      variantsDir: REAL_VARIANTS,
+      targetDir,
+      projectName: "real-app",
+      ui: "base",
+    });
+
+    const uiDeps = JSON.parse(
+      readFileSync(path.join(targetDir, "packages/ui/package.json"), "utf8")
+    ).dependencies;
+    expect(uiDeps["@base-ui/react"]).toBeDefined();
+    expect(uiDeps["@radix-ui/react-dialog"]).toBeUndefined();
+    expect(
+      readFileSync(
+        path.join(targetDir, "packages/ui/src/components/dialog.tsx"),
+        "utf8"
+      )
+    ).toContain("@base-ui/react");
+  });
+
+  it("applies the ReBAC overlay when authz=rebac", () => {
+    const targetDir = path.join(workDir, "real-rebac");
+    scaffold({
+      templateDir: REAL_TEMPLATE,
+      variantsDir: REAL_VARIANTS,
+      targetDir,
+      projectName: "real-app",
+      authz: "rebac",
+    });
+
+    const permissions = readFileSync(
+      path.join(targetDir, "packages/contracts/src/permissions.ts"),
+      "utf8"
+    );
+    expect(permissions).toContain("projectRelations");
+    expect(permissions).not.toContain("defaultRolePermissions");
+    expect(
+      readFileSync(
+        path.join(targetDir, "packages/db/src/schema/permissions.ts"),
+        "utf8"
+      )
+    ).toContain("projectMember");
+    // The RBAC migrations are replaced wholesale by the manifest.
+    const migrations = readFileSync(
+      path.join(targetDir, "packages/db/drizzle/meta/_journal.json"),
+      "utf8"
+    );
+    expect(migrations).not.toContain("yielding_cloak");
+  });
+
+  it("sets the default locale when locale=fr", () => {
+    const targetDir = path.join(workDir, "real-fr");
+    scaffold({
+      templateDir: REAL_TEMPLATE,
+      variantsDir: REAL_VARIANTS,
+      targetDir,
+      projectName: "real-app",
+      locale: "fr",
+    });
+
+    expect(
+      readFileSync(path.join(targetDir, "packages/i18n/src/config.ts"), "utf8")
+    ).toContain('DEFAULT_LOCALE: Locale = "fr"');
+  });
+
+  it("rejects a non-default variant without a variants directory", () => {
+    expect(() =>
+      scaffold({
+        templateDir: makeFixtureTemplate(),
+        targetDir: path.join(workDir, "no-variants"),
+        projectName: "acme-erp",
+        ui: "base",
+      })
+    ).toThrow(/variants directory/);
   });
 });
