@@ -9,7 +9,6 @@
     "declaration": false,
     "declarationMap": false,
     "removeComments": true,
-    "rootDir": "${configDir}/src",
     "outDir": "${configDir}/dist"
   }
 }

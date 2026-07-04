@@ -1,4 +1,9 @@
-import { Global, Inject, Module, type OnApplicationShutdown } from "@nestjs/common";
+import {
+  Global,
+  Inject,
+  Module,
+  type OnApplicationShutdown,
+} from "@nestjs/common";
 import { Redis } from "ioredis";
 import { env } from "../config/env";
 import { CacheService } from "./cache.service";
@@ -10,7 +15,8 @@ export const REDIS = "REDIS_CLIENT";
   providers: [
     {
       provide: REDIS,
-      useFactory: () => new Redis(env.REDIS_URL, { maxRetriesPerRequest: null }),
+      useFactory: () =>
+        new Redis(env.REDIS_URL, { maxRetriesPerRequest: null }),
     },
     CacheService,
   ],

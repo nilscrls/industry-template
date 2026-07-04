@@ -1,11 +1,16 @@
-import { Inject, Injectable, type CanActivate, type ExecutionContext } from "@nestjs/common";
-import { Reflector } from "@nestjs/core";
+import {
+  type CanActivate,
+  type ExecutionContext,
+  Inject,
+  Injectable,
+} from "@nestjs/common";
+import type { Reflector } from "@nestjs/core";
 import type { Auth } from "@repo/auth";
 import { fromNodeHeaders } from "better-auth/node";
 import type { Request } from "express";
 import { appError } from "../common/app-error";
 import { requestContext } from "../common/request-context";
-import { AbilityFactory } from "./ability.factory";
+import type { AbilityFactory } from "./ability.factory";
 import { AUTH } from "./auth.module";
 import { IS_PUBLIC_KEY } from "./decorators";
 
@@ -27,7 +32,9 @@ export class AuthGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<Request>();
-    const session = await this.auth.api.getSession({ headers: fromNodeHeaders(request.headers) });
+    const session = await this.auth.api.getSession({
+      headers: fromNodeHeaders(request.headers),
+    });
     if (!session) {
       throw appError("AUTH_UNAUTHORIZED", {});
     }
@@ -36,7 +43,10 @@ export class AuthGuard implements CanActivate {
     if (store) {
       store.session = session;
       store.user = session.user;
-      store.ability = await this.abilityFactory.abilityFor(session.user);
+      store.ability = await this.abilityFactory.abilityFor({
+        id: session.user.id,
+        role: session.user.role ?? "member",
+      });
     }
     return true;
   }

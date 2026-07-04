@@ -3,7 +3,11 @@ import { errorData, isApiErrorData } from "./errors.js";
 
 describe("errorData", () => {
   it("builds a validated payload with typed params", () => {
-    const data = errorData("RESOURCE_NOT_FOUND", { resource: "Project" }, "trace-1");
+    const data = errorData(
+      "RESOURCE_NOT_FOUND",
+      { resource: "Project" },
+      "trace-1"
+    );
     expect(data).toEqual({
       code: "RESOURCE_NOT_FOUND",
       params: { resource: "Project" },

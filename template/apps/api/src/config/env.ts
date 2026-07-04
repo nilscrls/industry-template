@@ -1,9 +1,11 @@
 import { createEnv } from "@t3-oss/env-core";
-import * as z from "zod";
+import { z } from "zod";
 
 export const env = createEnv({
   server: {
-    NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+    NODE_ENV: z
+      .enum(["development", "test", "production"])
+      .default("development"),
     API_PORT: z.coerce.number().int().default(3001),
     /** Public origin of the web app — trusted origin + base for auth URLs. */
     WEB_URL: z.url(),
@@ -29,7 +31,9 @@ export const env = createEnv({
     SMTP_PASSWORD: z.string().optional(),
     MAIL_FROM: z.string().min(1),
 
-    LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
+    LOG_LEVEL: z
+      .enum(["trace", "debug", "info", "warn", "error", "fatal"])
+      .default("info"),
     LOG_FILE_ENABLED: z
       .string()
       .default("false")

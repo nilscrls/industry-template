@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { z } from "zod";
 
 /**
  * Single source of truth for API error codes and their i18n parameters.
@@ -18,9 +18,14 @@ export const errorCatalog = {
 } as const;
 
 export type ErrorCode = keyof typeof errorCatalog;
-export type ErrorParams<TCode extends ErrorCode> = z.infer<(typeof errorCatalog)[TCode]>;
+export type ErrorParams<TCode extends ErrorCode> = z.infer<
+  (typeof errorCatalog)[TCode]
+>;
 
-export const errorCodes = Object.keys(errorCatalog) as [ErrorCode, ...ErrorCode[]];
+export const errorCodes = Object.keys(errorCatalog) as [
+  ErrorCode,
+  ...ErrorCode[],
+];
 
 /** Wire shape every API error serializes to — consumed by the web error hook. */
 export const apiErrorDataSchema = z.object({
@@ -37,7 +42,9 @@ export function errorData<TCode extends ErrorCode>(
   params: ErrorParams<TCode>,
   traceId?: string
 ): ApiErrorData {
-  return apiErrorDataSchema.parse({ code, params, traceId });
+  // Enforce the per-code params schema at runtime, not just in types.
+  const validated = errorCatalog[code].parse(params);
+  return apiErrorDataSchema.parse({ code, params: validated, traceId });
 }
 
 export function isApiErrorData(value: unknown): value is ApiErrorData {

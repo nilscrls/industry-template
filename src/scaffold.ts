@@ -1,12 +1,19 @@
 import { randomBytes } from "node:crypto";
-import { cpSync, existsSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 
-export type ScaffoldOptions = {
-  templateDir: string;
-  targetDir: string;
+export interface ScaffoldOptions {
   projectName: string;
-};
+  targetDir: string;
+  templateDir: string;
+}
 
 /** Artifacts that may exist in a locally-developed template but must never be scaffolded. */
 const COPY_EXCLUDES = new Set([
@@ -22,6 +29,8 @@ const COPY_EXCLUDES = new Set([
 
 const SECRET_KEYS = ["BETTER_AUTH_SECRET"];
 
+const PROJECT_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
+
 export function validateProjectName(name: string): string | undefined {
   if (name.length === 0) {
     return "Project name is required";
@@ -29,10 +38,10 @@ export function validateProjectName(name: string): string | undefined {
   if (name.length > 214) {
     return "Project name must be at most 214 characters";
   }
-  if (!/^[a-z0-9][a-z0-9._-]*$/.test(name)) {
+  if (!PROJECT_NAME_PATTERN.test(name)) {
     return "Use lowercase letters, digits, '.', '_' and '-' (must start with a letter or digit)";
   }
-  return undefined;
+  return;
 }
 
 export function isDirEmpty(dir: string): boolean {
@@ -51,10 +60,16 @@ function copyTemplate(templateDir: string, targetDir: string): void {
 
 /** npm strips `.gitignore` from published packages, so the template stores `_gitignore`. */
 function restoreDotfiles(dir: string): void {
-  for (const entry of readdirSync(dir, { withFileTypes: true, recursive: true })) {
+  for (const entry of readdirSync(dir, {
+    withFileTypes: true,
+    recursive: true,
+  })) {
     if (entry.isFile() && entry.name === "_gitignore") {
       const parent = entry.parentPath;
-      renameSync(path.join(parent, "_gitignore"), path.join(parent, ".gitignore"));
+      renameSync(
+        path.join(parent, "_gitignore"),
+        path.join(parent, ".gitignore")
+      );
     }
   }
 }
@@ -71,7 +86,9 @@ function writeDotEnv(targetDir: string): void {
   const examplePath = path.join(targetDir, ".env.example");
   const lines = readFileSync(examplePath, "utf8").split("\n");
   const resolved = lines.map((line) => {
-    const key = SECRET_KEYS.find((candidate) => line.startsWith(`${candidate}=`));
+    const key = SECRET_KEYS.find((candidate) =>
+      line.startsWith(`${candidate}=`)
+    );
     if (key) {
       return `${key}=${randomBytes(32).toString("hex")}`;
     }

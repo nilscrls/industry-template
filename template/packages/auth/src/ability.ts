@@ -1,16 +1,20 @@
 import {
   AbilityBuilder,
+  subject as caslSubject,
   createMongoAbility,
   type MongoAbility,
   type MongoQuery,
-  subject as caslSubject,
 } from "@casl/ability";
 import type { Action, AppSubject, PermissionRule } from "@repo/contracts";
 
 /** One ability type for both api (enforcement) and web (UI gating). */
-export type AppAbility = MongoAbility<[Action, AppSubject | Record<PropertyKey, unknown>]>;
+export type AppAbility = MongoAbility<
+  [Action, AppSubject | Record<PropertyKey, unknown>]
+>;
 
-export type AbilityContext = { userId: string };
+export interface AbilityContext {
+  userId: string;
+}
 
 export function interpolateConditions(
   conditions: Record<string, unknown>,
@@ -33,10 +37,16 @@ export function resolveRules(
   overrides: PermissionRule[]
 ): PermissionRule[] {
   const combined = [...roleRules, ...overrides];
-  return [...combined.filter((rule) => !rule.inverted), ...combined.filter((rule) => rule.inverted)];
+  return [
+    ...combined.filter((rule) => !rule.inverted),
+    ...combined.filter((rule) => rule.inverted),
+  ];
 }
 
-export function buildAbility(rules: PermissionRule[], context: AbilityContext): AppAbility {
+export function buildAbility(
+  rules: PermissionRule[],
+  context: AbilityContext
+): AppAbility {
   const builder = new AbilityBuilder<AppAbility>(createMongoAbility);
   for (const rule of rules) {
     const conditions = rule.conditions
@@ -52,6 +62,9 @@ export function buildAbility(rules: PermissionRule[], context: AbilityContext): 
 }
 
 /** Tag a plain object (e.g. a drizzle row) so CASL can match conditions on it. */
-export function asSubject<T extends Record<PropertyKey, unknown>>(type: AppSubject, object: T): T {
+export function asSubject<T extends Record<PropertyKey, unknown>>(
+  type: AppSubject,
+  object: T
+): T {
   return caslSubject(type, object);
 }

@@ -1,4 +1,12 @@
-import { bigint, index, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import {
+  bigint,
+  index,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  varchar,
+} from "drizzle-orm/pg-core";
 import { user } from "./auth.js";
 
 export const fileObject = pgTable(

@@ -1,5 +1,9 @@
-import { Injectable, type CanActivate, type ExecutionContext } from "@nestjs/common";
-import { Reflector } from "@nestjs/core";
+import {
+  type CanActivate,
+  type ExecutionContext,
+  Injectable,
+} from "@nestjs/common";
+import type { Reflector } from "@nestjs/core";
 import { forbidden } from "../common/app-error";
 import { requestContext } from "../common/request-context";
 import { ABILITY_KEY, type AbilityRequirement } from "./decorators";
@@ -10,10 +14,9 @@ export class PoliciesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const requirements = this.reflector.getAllAndOverride<AbilityRequirement[] | undefined>(
-      ABILITY_KEY,
-      [context.getHandler(), context.getClass()]
-    );
+    const requirements = this.reflector.getAllAndOverride<
+      AbilityRequirement[] | undefined
+    >(ABILITY_KEY, [context.getHandler(), context.getClass()]);
     if (!requirements || requirements.length === 0) {
       return true;
     }

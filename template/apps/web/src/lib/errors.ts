@@ -1,4 +1,4 @@
-import { isApiErrorData, type ApiErrorData } from "@repo/contracts";
+import { type ApiErrorData, isApiErrorData } from "@repo/contracts";
 
 /**
  * Normalize anything a query/mutation can throw into the API error contract.

@@ -12,7 +12,9 @@ function resolveBaseUrl(): string {
     return env.API_URL;
   }
   const publicUrl = env.NEXT_PUBLIC_API_URL;
-  return publicUrl.startsWith("http") ? publicUrl : new URL(publicUrl, window.location.origin).toString();
+  return publicUrl.startsWith("http")
+    ? publicUrl
+    : new URL(publicUrl, window.location.origin).toString();
 }
 
 const link = new OpenAPILink(contract, {
@@ -21,7 +23,8 @@ const link = new OpenAPILink(contract, {
 });
 
 /** Fully typed client derived from the shared contract — no codegen. */
-export const client: JsonifiedClient<ContractRouterClient<typeof contract>> = createORPCClient(link);
+export const client: JsonifiedClient<ContractRouterClient<typeof contract>> =
+  createORPCClient(link);
 
 /** TanStack Query helpers: orpc.projects.list.queryOptions({ input }) etc. */
 export const orpc = createTanstackQueryUtils(client);

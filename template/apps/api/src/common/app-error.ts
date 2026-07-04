@@ -1,5 +1,5 @@
 import { ORPCError } from "@orpc/nest";
-import { errorData, type ErrorCode, type ErrorParams } from "@repo/contracts";
+import { type ErrorCode, type ErrorParams, errorData } from "@repo/contracts";
 
 const CODE_TO_HTTP: Record<ErrorCode, string> = {
   AUTH_UNAUTHORIZED: "UNAUTHORIZED",
@@ -23,13 +23,18 @@ export function appError<TCode extends ErrorCode>(
   params: ErrorParams<TCode>,
   traceId?: string
 ): ORPCError<string, unknown> {
-  return new ORPCError(CODE_TO_HTTP[code], { data: errorData(code, params, traceId) });
+  return new ORPCError(CODE_TO_HTTP[code], {
+    data: errorData(code, params, traceId),
+  });
 }
 
 export function notFound(resource: string): ORPCError<string, unknown> {
   return appError("RESOURCE_NOT_FOUND", { resource });
 }
 
-export function forbidden(action: string, subject: string): ORPCError<string, unknown> {
+export function forbidden(
+  action: string,
+  subject: string
+): ORPCError<string, unknown> {
   return appError("AUTH_FORBIDDEN", { action, subject });
 }

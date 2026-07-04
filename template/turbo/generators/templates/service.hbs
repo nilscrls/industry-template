@@ -1,14 +1,13 @@
 import { Injectable } from "@nestjs/common";
 import { asSubject } from "@repo/auth";
-import type { InferContractRouterInputs } from "@orpc/contract";
-import type { Paginated, {{ pascalCase name }}, {{ camelCase plural }}Contract } from "@repo/contracts";
+import type { Paginated, PaginationQuery, {{ pascalCase name }} } from "@repo/contracts";
 import { {{ camelCase name }} } from "@repo/db";
 import { and, count, desc, eq, ilike } from "drizzle-orm";
 import { forbidden, notFound } from "../common/app-error";
 import { currentAbility, currentUser } from "../common/request-context";
 import { DbService } from "../db/db.module";
 
-type Inputs = InferContractRouterInputs<typeof {{ camelCase plural }}Contract>;
+type ListQuery = PaginationQuery & { search?: string | undefined };
 type Row = typeof {{ camelCase name }}.$inferSelect;
 
 @Injectable()
@@ -19,7 +18,7 @@ export class {{ pascalCase plural }}Service {
     return this.dbService.db;
   }
 
-  async list(query: Inputs["list"]): Promise<Paginated<{{ pascalCase name }}>> {
+  async list(query: ListQuery): Promise<Paginated<{{ pascalCase name }}>> {
     const where = and(query.search ? ilike({{ camelCase name }}.name, `%${query.search}%`) : undefined);
     const [rows, totals] = await Promise.all([
       this.db
@@ -49,7 +48,7 @@ export class {{ pascalCase plural }}Service {
     return this.toDto(row);
   }
 
-  async create(input: Inputs["create"]): Promise<{{ pascalCase name }}> {
+  async create(input: { name: string }): Promise<{{ pascalCase name }}> {
     const [row] = await this.db
       .insert({{ camelCase name }})
       .values({ name: input.name, ownerId: currentUser().id })
@@ -60,7 +59,7 @@ export class {{ pascalCase plural }}Service {
     return this.toDto(row);
   }
 
-  async update(input: Inputs["update"]): Promise<{{ pascalCase name }}> {
+  async update(input: { id: string; name?: string | undefined }): Promise<{{ pascalCase name }}> {
     const row = await this.findRow(input.id);
     if (!currentAbility().can("update", asSubject("{{ pascalCase name }}", { ...row }))) {
       throw forbidden("update", "{{ pascalCase name }}");

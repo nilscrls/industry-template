@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { z } from "zod";
 
 export const paginationQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -18,10 +18,10 @@ export function paginatedSchema<TItem extends z.ZodType>(item: TItem) {
   });
 }
 
-export type Paginated<TItem> = {
+export interface Paginated<TItem> {
   items: TItem[];
-  total: number;
   page: number;
   pageSize: number;
+  total: number;
   totalPages: number;
-};
+}

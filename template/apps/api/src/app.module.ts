@@ -1,9 +1,9 @@
+import { ThrottlerStorageRedisService } from "@nest-lab/throttler-storage-redis";
 import { BullModule } from "@nestjs/bullmq";
 import { Module } from "@nestjs/common";
 import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
-import { ThrottlerStorageRedisService } from "@nest-lab/throttler-storage-redis";
-import { Redis } from "ioredis";
+import type { Redis } from "ioredis";
 import { LoggerModule } from "nestjs-pino";
 import { AuthGuard } from "./auth/auth.guard";
 import { AuthModule } from "./auth/auth.module";
@@ -20,6 +20,21 @@ import { ProjectsModule } from "./projects/projects.module";
 import { REDIS, RedisModule } from "./redis/redis.module";
 import { UsersModule } from "./users/users.module";
 
+/** Plain options keep BullMQ decoupled from our ioredis instance's version. */
+function redisConnectionOptions(url: string) {
+  const parsed = new URL(url);
+  return {
+    host: parsed.hostname,
+    port: Number(parsed.port || 6379),
+    ...(parsed.username ? { username: parsed.username } : {}),
+    ...(parsed.password ? { password: parsed.password } : {}),
+    ...(parsed.pathname.length > 1
+      ? { db: Number(parsed.pathname.slice(1)) }
+      : {}),
+    maxRetriesPerRequest: null,
+  };
+}
+
 @Module({
   imports: [
     LoggerModule.forRoot(loggerOptions),
@@ -33,7 +48,7 @@ import { UsersModule } from "./users/users.module";
       }),
     }),
     BullModule.forRoot({
-      connection: new Redis(env.REDIS_URL, { maxRetriesPerRequest: null }),
+      connection: redisConnectionOptions(env.REDIS_URL),
     }),
     MailModule,
     AuthModule,

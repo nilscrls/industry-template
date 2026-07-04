@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { z } from "zod";
 import { base } from "./base.js";
 import { paginatedSchema, paginationQuerySchema } from "./pagination.js";
 
@@ -37,37 +37,74 @@ export const listProjectsQuerySchema = paginationQuerySchema.extend({
 
 export const projectStatsSchema = z.object({
   total: z.number().int().min(0),
-  byStatus: z.array(z.object({ status: z.enum(projectStatuses), count: z.number().int().min(0) })),
-  createdPerDay: z.array(z.object({ date: z.iso.date(), count: z.number().int().min(0) })),
+  byStatus: z.array(
+    z.object({
+      status: z.enum(projectStatuses),
+      count: z.number().int().min(0),
+    })
+  ),
+  createdPerDay: z.array(
+    z.object({ date: z.iso.date(), count: z.number().int().min(0) })
+  ),
 });
 
 export const projectsContract = {
   list: base
-    .route({ method: "GET", path: "/projects", summary: "List projects", tags: ["projects"] })
+    .route({
+      method: "GET",
+      path: "/projects",
+      summary: "List projects",
+      tags: ["projects"],
+    })
     .input(listProjectsQuerySchema)
     .output(paginatedSchema(projectSchema)),
 
   stats: base
-    .route({ method: "GET", path: "/projects/stats", summary: "Dashboard statistics", tags: ["projects"] })
+    .route({
+      method: "GET",
+      path: "/projects/stats",
+      summary: "Dashboard statistics",
+      tags: ["projects"],
+    })
     .output(projectStatsSchema),
 
   find: base
-    .route({ method: "GET", path: "/projects/{id}", summary: "Get one project", tags: ["projects"] })
+    .route({
+      method: "GET",
+      path: "/projects/{id}",
+      summary: "Get one project",
+      tags: ["projects"],
+    })
     .input(z.object({ id: z.uuid() }))
     .output(projectSchema),
 
   create: base
-    .route({ method: "POST", path: "/projects", summary: "Create a project", tags: ["projects"] })
+    .route({
+      method: "POST",
+      path: "/projects",
+      summary: "Create a project",
+      tags: ["projects"],
+    })
     .input(createProjectSchema)
     .output(projectSchema),
 
   update: base
-    .route({ method: "PATCH", path: "/projects/{id}", summary: "Update a project", tags: ["projects"] })
+    .route({
+      method: "PATCH",
+      path: "/projects/{id}",
+      summary: "Update a project",
+      tags: ["projects"],
+    })
     .input(updateProjectSchema.extend({ id: z.uuid() }))
     .output(projectSchema),
 
   remove: base
-    .route({ method: "DELETE", path: "/projects/{id}", summary: "Delete a project", tags: ["projects"] })
+    .route({
+      method: "DELETE",
+      path: "/projects/{id}",
+      summary: "Delete a project",
+      tags: ["projects"],
+    })
     .input(z.object({ id: z.uuid() }))
     .output(z.object({ id: z.uuid() })),
 };

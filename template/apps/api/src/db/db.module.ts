@@ -1,12 +1,16 @@
-import { Global, Injectable, Module, type OnApplicationShutdown } from "@nestjs/common";
+import {
+  Global,
+  Injectable,
+  Module,
+  type OnApplicationShutdown,
+} from "@nestjs/common";
 import { createDb, type Database } from "@repo/db";
-import type { Pool } from "pg";
 import { env } from "../config/env";
 
 @Injectable()
 export class DbService implements OnApplicationShutdown {
   readonly db: Database;
-  private readonly pool: Pool;
+  private readonly pool: ReturnType<typeof createDb>["pool"];
 
   constructor() {
     const { db, pool } = createDb(env.DATABASE_URL);

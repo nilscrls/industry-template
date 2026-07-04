@@ -1,5 +1,13 @@
 import { projectStatuses } from "@repo/contracts";
-import { index, pgEnum, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import {
+  index,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  varchar,
+} from "drizzle-orm/pg-core";
 import { user } from "./auth.js";
 
 export const projectStatusEnum = pgEnum("project_status", projectStatuses);
@@ -20,5 +28,9 @@ export const project = pgTable(
       .defaultNow()
       .$onUpdate(() => new Date()),
   },
-  (table) => [index().on(table.ownerId), index().on(table.status), index().on(table.createdAt)]
+  (table) => [
+    index().on(table.ownerId),
+    index().on(table.status),
+    index().on(table.createdAt),
+  ]
 );

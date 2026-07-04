@@ -4,11 +4,20 @@ import type { PinoLogger } from "nestjs-pino";
 import { describe, expect, it, vi } from "vitest";
 import { AllExceptionsFilter } from "./exception.filter";
 
-type SentResponse = { status: number; body: { code: string; data: { code: string; traceId?: string } } };
+interface SentResponse {
+  body: { code: string; data: { code: string; traceId?: string } };
+  status: number;
+}
 
-function run(exception: unknown): { sent: SentResponse; errorLog: ReturnType<typeof vi.fn> } {
+function run(exception: unknown): {
+  sent: SentResponse;
+  errorLog: ReturnType<typeof vi.fn>;
+} {
   const errorLog = vi.fn();
-  const logger = { setContext: vi.fn(), error: errorLog } as unknown as PinoLogger;
+  const logger = {
+    setContext: vi.fn(),
+    error: errorLog,
+  } as unknown as PinoLogger;
   const filter = new AllExceptionsFilter(logger);
 
   let sent: SentResponse | undefined;
@@ -38,7 +47,9 @@ function run(exception: unknown): { sent: SentResponse; errorLog: ReturnType<typ
 describe("AllExceptionsFilter", () => {
   it("passes app errors through and injects the traceId", () => {
     const { sent } = run(
-      new ORPCError("NOT_FOUND", { data: { code: "RESOURCE_NOT_FOUND", params: { resource: "Project" } } })
+      new ORPCError("NOT_FOUND", {
+        data: { code: "RESOURCE_NOT_FOUND", params: { resource: "Project" } },
+      })
     );
     expect(sent.status).toBe(404);
     expect(sent.body.data.code).toBe("RESOURCE_NOT_FOUND");

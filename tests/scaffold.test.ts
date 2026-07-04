@@ -1,10 +1,17 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { isDirEmpty, scaffold, validateProjectName } from "../src/scaffold.js";
 
-const REAL_TEMPLATE = path.resolve(__dirname, "..", "template");
+const REAL_TEMPLATE = path.resolve(import.meta.dirname, "..", "template");
 
 let workDir: string;
 
@@ -16,12 +23,17 @@ function makeFixtureTemplate(): string {
     JSON.stringify({ name: "industry-app", private: true }, null, 2)
   );
   writeFileSync(path.join(templateDir, "_gitignore"), "node_modules/\n");
-  writeFileSync(path.join(templateDir, "apps", "web", "_gitignore"), ".next/\n");
+  writeFileSync(
+    path.join(templateDir, "apps", "web", "_gitignore"),
+    ".next/\n"
+  );
   writeFileSync(
     path.join(templateDir, ".env.example"),
     "DATABASE_URL=postgres://localhost:5432/app\nBETTER_AUTH_SECRET=\n"
   );
-  mkdirSync(path.join(templateDir, "node_modules", "junk"), { recursive: true });
+  mkdirSync(path.join(templateDir, "node_modules", "junk"), {
+    recursive: true,
+  });
   writeFileSync(path.join(templateDir, "node_modules", "junk", "index.js"), "");
   return templateDir;
 }
@@ -59,14 +71,22 @@ describe("isDirEmpty", () => {
 describe("scaffold", () => {
   it("copies the template, restores dotfiles, sets the name and generates secrets", () => {
     const targetDir = path.join(workDir, "out");
-    scaffold({ templateDir: makeFixtureTemplate(), targetDir, projectName: "acme-erp" });
+    scaffold({
+      templateDir: makeFixtureTemplate(),
+      targetDir,
+      projectName: "acme-erp",
+    });
 
-    const packageJson = JSON.parse(readFileSync(path.join(targetDir, "package.json"), "utf8"));
+    const packageJson = JSON.parse(
+      readFileSync(path.join(targetDir, "package.json"), "utf8")
+    );
     expect(packageJson.name).toBe("acme-erp");
 
     expect(existsSync(path.join(targetDir, ".gitignore"))).toBe(true);
     expect(existsSync(path.join(targetDir, "_gitignore"))).toBe(false);
-    expect(existsSync(path.join(targetDir, "apps", "web", ".gitignore"))).toBe(true);
+    expect(existsSync(path.join(targetDir, "apps", "web", ".gitignore"))).toBe(
+      true
+    );
     expect(existsSync(path.join(targetDir, "node_modules"))).toBe(false);
 
     const env = readFileSync(path.join(targetDir, ".env"), "utf8");
@@ -79,13 +99,21 @@ describe("scaffold", () => {
     mkdirSync(targetDir, { recursive: true });
     writeFileSync(path.join(targetDir, "keep.txt"), "");
     expect(() =>
-      scaffold({ templateDir: makeFixtureTemplate(), targetDir, projectName: "acme-erp" })
+      scaffold({
+        templateDir: makeFixtureTemplate(),
+        targetDir,
+        projectName: "acme-erp",
+      })
     ).toThrow(/not empty/);
   });
 
   it("scaffolds the real template with its workspace intact", () => {
     const targetDir = path.join(workDir, "real");
-    scaffold({ templateDir: REAL_TEMPLATE, targetDir, projectName: "real-app" });
+    scaffold({
+      templateDir: REAL_TEMPLATE,
+      targetDir,
+      projectName: "real-app",
+    });
 
     for (const file of [
       "pnpm-workspace.yaml",
@@ -100,7 +128,9 @@ describe("scaffold", () => {
       "apps/web/package.json",
       "packages/contracts/package.json",
     ]) {
-      expect(existsSync(path.join(targetDir, file)), `missing ${file}`).toBe(true);
+      expect(existsSync(path.join(targetDir, file)), `missing ${file}`).toBe(
+        true
+      );
     }
   });
 });

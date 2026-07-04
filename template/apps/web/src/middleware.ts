@@ -1,7 +1,10 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 
 const PUBLIC_PATHS = ["/login", "/register"];
-const SESSION_COOKIES = ["better-auth.session_token", "__Secure-better-auth.session_token"];
+const SESSION_COOKIES = [
+  "better-auth.session_token",
+  "__Secure-better-auth.session_token",
+];
 
 /**
  * Fast redirect UX only — cookie presence is a hint, not proof. Real
@@ -9,7 +12,9 @@ const SESSION_COOKIES = ["better-auth.session_token", "__Secure-better-auth.sess
  */
 export function middleware(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
-  const hasSessionCookie = SESSION_COOKIES.some((name) => request.cookies.has(name));
+  const hasSessionCookie = SESSION_COOKIES.some((name) =>
+    request.cookies.has(name)
+  );
   const isPublic = PUBLIC_PATHS.some((path) => pathname.startsWith(path));
 
   if (!(hasSessionCookie || isPublic)) {

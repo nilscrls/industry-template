@@ -8,13 +8,14 @@ import { requestContext } from "./request-context";
  * every downstream layer — logger, guards, services, filter — reads from.
  */
 export function requestContextMiddleware(
-  req: Request & { id?: string },
+  req: Request,
   res: Response,
   next: NextFunction
 ): void {
   const headerValue = req.headers["x-request-id"];
-  const requestId = (Array.isArray(headerValue) ? headerValue[0] : headerValue) ?? randomUUID();
-  req.id = requestId;
+  const requestId =
+    (Array.isArray(headerValue) ? headerValue[0] : headerValue) ?? randomUUID();
+  (req as Request & { id?: string }).id = requestId;
   res.setHeader("x-request-id", requestId);
   requestContext.run({ requestId }, next);
 }

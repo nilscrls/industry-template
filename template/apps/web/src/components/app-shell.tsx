@@ -1,9 +1,17 @@
 "use client";
 
-import { GlobeIcon, LayoutDashboardIcon, FolderKanbanIcon, LogOutIcon, MenuIcon, MoonIcon, SunIcon } from "lucide-react";
-import { useLocale, useTranslations } from "next-intl";
+import {
+  FolderKanbanIcon,
+  GlobeIcon,
+  LayoutDashboardIcon,
+  LogOutIcon,
+  MenuIcon,
+  MoonIcon,
+  SunIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useLocale, useTranslations } from "next-intl";
 import { useTheme } from "next-themes";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -15,7 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { LOCALE_COOKIE, SUPPORTED_LOCALES } from "@/i18n/request";
+import { LOCALE_COOKIE, SUPPORTED_LOCALES } from "@/i18n/config";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
@@ -135,7 +143,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuLabel className="truncate">{session?.user.email}</DropdownMenuLabel>
+                <DropdownMenuLabel className="truncate">
+                  {session?.user.email}
+                </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={signOut} variant="destructive">
                   <LogOutIcon />
@@ -146,7 +156,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-6xl flex-1 p-4 sm:p-6">{children}</main>
+      <main className="mx-auto w-full max-w-6xl flex-1 p-4 sm:p-6">
+        {children}
+      </main>
     </div>
   );
 }

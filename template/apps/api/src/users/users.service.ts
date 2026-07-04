@@ -1,21 +1,21 @@
 import { Injectable } from "@nestjs/common";
-import type { InferContractRouterInputs } from "@orpc/contract";
 import {
-  permissionRuleSchema,
-  roleSchema,
   type Paginated,
+  type PaginationQuery,
   type PermissionRule,
+  permissionRuleSchema,
+  type Role,
+  roleSchema,
   type User,
-  type usersContract,
 } from "@repo/contracts";
 import { user, userPermissionOverride } from "@repo/db";
 import { count, desc, eq, ilike, or } from "drizzle-orm";
+import type { AbilityFactory } from "../auth/ability.factory";
 import { notFound } from "../common/app-error";
 import { currentUser } from "../common/request-context";
-import { AbilityFactory } from "../auth/ability.factory";
-import { DbService } from "../db/db.module";
+import type { DbService } from "../db/db.module";
 
-type Inputs = InferContractRouterInputs<typeof usersContract>;
+type ListQuery = PaginationQuery & { search?: string | undefined };
 type UserRow = typeof user.$inferSelect;
 
 @Injectable()
@@ -29,9 +29,12 @@ export class UsersService {
     return this.dbService.db;
   }
 
-  async list(query: Inputs["list"]): Promise<Paginated<User>> {
+  async list(query: ListQuery): Promise<Paginated<User>> {
     const where = query.search
-      ? or(ilike(user.email, `%${query.search}%`), ilike(user.name, `%${query.search}%`))
+      ? or(
+          ilike(user.email, `%${query.search}%`),
+          ilike(user.name, `%${query.search}%`)
+        )
       : undefined;
 
     const [rows, totals] = await Promise.all([
@@ -55,7 +58,7 @@ export class UsersService {
     };
   }
 
-  async setRole(input: Inputs["setRole"]): Promise<User> {
+  async setRole(input: { id: string; role: Role }): Promise<User> {
     await this.findRow(input.id);
     // Note: Better-Auth's signed cookie cache may serve the old role for up
     // to its maxAge (5 min). Sessions in redis pick it up on next refresh.
@@ -71,7 +74,9 @@ export class UsersService {
     return this.toDto(updated);
   }
 
-  async getPermissionOverrides(id: string): Promise<{ overrides: PermissionRule[] }> {
+  async getPermissionOverrides(
+    id: string
+  ): Promise<{ overrides: PermissionRule[] }> {
     await this.findRow(id);
     const rows = await this.db
       .select()
@@ -89,10 +94,15 @@ export class UsersService {
     };
   }
 
-  async setPermissionOverrides(input: Inputs["setPermissionOverrides"]): Promise<{ overrides: PermissionRule[] }> {
+  async setPermissionOverrides(input: {
+    id: string;
+    overrides: PermissionRule[];
+  }): Promise<{ overrides: PermissionRule[] }> {
     await this.findRow(input.id);
     await this.db.transaction(async (tx) => {
-      await tx.delete(userPermissionOverride).where(eq(userPermissionOverride.userId, input.id));
+      await tx
+        .delete(userPermissionOverride)
+        .where(eq(userPermissionOverride.userId, input.id));
       if (input.overrides.length > 0) {
         await tx.insert(userPermissionOverride).values(
           input.overrides.map((rule) => ({
@@ -111,7 +121,11 @@ export class UsersService {
 
   myPermissions(): Promise<PermissionRule[]> {
     const me = currentUser();
-    return this.abilityFactory.resolvedRulesFor(me);
+    // Better-Auth's admin plugin types role as optional on the session user.
+    return this.abilityFactory.resolvedRulesFor({
+      id: me.id,
+      role: me.role ?? "member",
+    });
   }
 
   private async findRow(id: string): Promise<UserRow> {

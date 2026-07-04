@@ -1,9 +1,23 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.1.1/schema.json",
-  "extends": ["ultracite"],
+  "$schema": "https://biomejs.dev/schemas/2.5.2/schema.json",
+  "extends": ["ultracite/biome/core", "ultracite/biome/vitest"],
   "files": {
     // The template is its own workspace with its own biome.jsonc; it is
     // linted from inside template/ (see CI), not from this root config.
     "includes": ["src/**", "tests/**", "*.json", "*.jsonc", "*.ts"]
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["tests/**"],
+      "linter": {
+        // Inline regexes are fine in tests.
+        "rules": { "performance": { "useTopLevelRegex": "off" } }
+      }
+    },
+    {
+      // `import * as p from "@clack/prompts"` is the canonical clack usage.
+      "includes": ["src/index.ts"],
+      "linter": { "rules": { "performance": { "noNamespaceImport": "off" } } }
+    }
+  ]
 }

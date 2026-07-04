@@ -1,9 +1,9 @@
 "use client";
 
-import { buildAbility, type AppAbility } from "@repo/auth/ability";
+import { type AppAbility, buildAbility } from "@repo/auth/ability";
 import type { Action, AppSubject } from "@repo/contracts";
 import { useQuery } from "@tanstack/react-query";
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { orpc } from "./api";
 import { authClient } from "./auth-client";
 
@@ -28,19 +28,23 @@ export function AbilityProvider({ children }: { children: ReactNode }) {
     return buildAbility(data.rules, { userId: session.user.id });
   }, [session, data]);
 
-  return <AbilityContext.Provider value={ability}>{children}</AbilityContext.Provider>;
+  return (
+    <AbilityContext.Provider value={ability}>
+      {children}
+    </AbilityContext.Provider>
+  );
 }
 
 export function useAbility(): AppAbility | null {
   return useContext(AbilityContext);
 }
 
-type CanProps = {
+interface CanProps {
   action: Action;
-  subject: AppSubject | Record<PropertyKey, unknown>;
   children: ReactNode;
   fallback?: ReactNode;
-};
+  subject: AppSubject | Record<PropertyKey, unknown>;
+}
 
 /** Renders children only when the current user can `action` the `subject`. */
 export function Can({ action, subject, children, fallback = null }: CanProps) {

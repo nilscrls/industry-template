@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { z } from "zod";
 import { base } from "./base.js";
 import { paginatedSchema, paginationQuerySchema } from "./pagination.js";
 
@@ -17,8 +17,15 @@ export type FileObject = z.infer<typeof fileObjectSchema>;
 
 export const filesContract = {
   list: base
-    .route({ method: "GET", path: "/files", summary: "List files", tags: ["files"] })
-    .input(paginationQuerySchema.extend({ search: z.string().max(255).optional() }))
+    .route({
+      method: "GET",
+      path: "/files",
+      summary: "List files",
+      tags: ["files"],
+    })
+    .input(
+      paginationQuerySchema.extend({ search: z.string().max(255).optional() })
+    )
     .output(paginatedSchema(fileObjectSchema)),
 
   /**
@@ -26,7 +33,12 @@ export const filesContract = {
    * the API stays the authority (authz + metadata) without streaming bytes.
    */
   presignUpload: base
-    .route({ method: "POST", path: "/files/presign-upload", summary: "Presign an upload", tags: ["files"] })
+    .route({
+      method: "POST",
+      path: "/files/presign-upload",
+      summary: "Presign an upload",
+      tags: ["files"],
+    })
     .input(
       z.object({
         fileName: fileObjectSchema.shape.fileName,
@@ -55,10 +67,20 @@ export const filesContract = {
       tags: ["files"],
     })
     .input(z.object({ id: z.uuid() }))
-    .output(z.object({ downloadUrl: z.url(), expiresInSeconds: z.number().int().positive() })),
+    .output(
+      z.object({
+        downloadUrl: z.url(),
+        expiresInSeconds: z.number().int().positive(),
+      })
+    ),
 
   remove: base
-    .route({ method: "DELETE", path: "/files/{id}", summary: "Delete a file", tags: ["files"] })
+    .route({
+      method: "DELETE",
+      path: "/files/{id}",
+      summary: "Delete a file",
+      tags: ["files"],
+    })
     .input(z.object({ id: z.uuid() }))
     .output(z.object({ id: z.uuid() })),
 };

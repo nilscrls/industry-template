@@ -2,8 +2,17 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { ByStatusChart, CreatedPerDayChart } from "@/components/dashboard/charts";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  ByStatusChart,
+  CreatedPerDayChart,
+} from "@/components/dashboard/charts";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { orpc } from "@/lib/api";
 import { useApiErrorMessage } from "@/lib/use-app-mutation";
@@ -28,7 +37,9 @@ export default function DashboardPage() {
   const t = useTranslations("dashboard");
   const tStatus = useTranslations("projects.status");
   const errorMessage = useApiErrorMessage();
-  const { data, isPending, error } = useQuery(orpc.projects.stats.queryOptions());
+  const { data, isPending, error } = useQuery(
+    orpc.projects.stats.queryOptions()
+  );
 
   if (isPending) {
     return <DashboardSkeleton />;
@@ -45,14 +56,18 @@ export default function DashboardPage() {
         <Card>
           <CardHeader>
             <CardDescription>{t("totalProjects")}</CardDescription>
-            <CardTitle className="font-semibold text-3xl tabular-nums">{data.total}</CardTitle>
+            <CardTitle className="font-semibold text-3xl tabular-nums">
+              {data.total}
+            </CardTitle>
           </CardHeader>
         </Card>
         {data.byStatus.map((entry) => (
           <Card key={entry.status}>
             <CardHeader>
               <CardDescription>{tStatus(entry.status)}</CardDescription>
-              <CardTitle className="font-semibold text-3xl tabular-nums">{entry.count}</CardTitle>
+              <CardTitle className="font-semibold text-3xl tabular-nums">
+                {entry.count}
+              </CardTitle>
             </CardHeader>
           </Card>
         ))}

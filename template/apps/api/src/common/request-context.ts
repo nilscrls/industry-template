@@ -2,12 +2,12 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { AppAbility, AuthUser, SessionData } from "@repo/auth";
 import { appError } from "./app-error";
 
-export type RequestContext = {
+export interface RequestContext {
+  ability?: AppAbility;
   requestId: string;
   session?: SessionData;
   user?: AuthUser;
-  ability?: AppAbility;
-};
+}
 
 export const requestContext = new AsyncLocalStorage<RequestContext>();
 

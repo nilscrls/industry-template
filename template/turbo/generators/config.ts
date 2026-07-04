@@ -14,7 +14,8 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
         name: "name",
         message: "Entity name (singular, kebab-case — e.g. `invoice`):",
         validate: (value: string) =>
-          /^[a-z][a-z0-9-]*$/.test(value) || "lowercase kebab-case, starting with a letter",
+          /^[a-z][a-z0-9-]*$/.test(value) ||
+          "lowercase kebab-case, starting with a letter",
       },
       {
         type: "input",
@@ -22,7 +23,8 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
         message: "Plural (used for routes and files):",
         default: (answers: { name: string }) => `${answers.name}s`,
         validate: (value: string) =>
-          /^[a-z][a-z0-9-]*$/.test(value) || "lowercase kebab-case, starting with a letter",
+          /^[a-z][a-z0-9-]*$/.test(value) ||
+          "lowercase kebab-case, starting with a letter",
       },
     ],
     actions: [
@@ -36,13 +38,15 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
         type: "modify",
         path: "{{ turbo.paths.root }}/packages/contracts/src/contract.ts",
         pattern: /(import { projectsContract } from ".\/projects.js";)/,
-        template: 'import { {{ camelCase plural }}Contract } from "./{{ plural }}.js";\n$1',
+        template:
+          'import { {{ camelCase plural }}Contract } from "./{{ plural }}.js";\n$1',
       },
       {
         type: "modify",
         path: "{{ turbo.paths.root }}/packages/contracts/src/contract.ts",
         pattern: /(export const contract = populateContractRouterPaths\(\{)/,
-        template: "$1\n  {{ camelCase plural }}: {{ camelCase plural }}Contract,",
+        template:
+          "$1\n  {{ camelCase plural }}: {{ camelCase plural }}Contract,",
       },
       {
         type: "modify",
@@ -93,13 +97,15 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
       {
         type: "modify",
         path: "{{ turbo.paths.root }}/apps/api/src/app.module.ts",
-        pattern: /(import { ProjectsModule } from ".\/projects\/projects.module";)/,
-        template: 'import { {{ pascalCase plural }}Module } from "./{{ plural }}/{{ plural }}.module";\n$1',
+        pattern:
+          /(import { ProjectsModule } from ".\/projects\/projects.module";)/,
+        template:
+          'import { {{ pascalCase plural }}Module } from "./{{ plural }}/{{ plural }}.module";\n$1',
       },
       {
         type: "modify",
         path: "{{ turbo.paths.root }}/apps/api/src/app.module.ts",
-        pattern: /(    ProjectsModule,)/,
+        pattern: /( {4}ProjectsModule,)/,
         template: "$1\n    {{ pascalCase plural }}Module,",
       },
       // ── web ──────────────────────────────────────────────────────────

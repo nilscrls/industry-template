@@ -1,12 +1,16 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { createProjectSchema, projectStatuses, type Project } from "@repo/contracts";
+import {
+  createProjectSchema,
+  type Project,
+  projectStatuses,
+} from "@repo/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
-import type * as z from "zod";
+import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -16,28 +20,50 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { client, orpc } from "@/lib/api";
 import { useAppMutation } from "@/lib/use-app-mutation";
 
-type FormValues = z.infer<typeof createProjectSchema>;
+// No .default() here: the form always supplies status, keeping zod's input
+// and output types identical (what RHF's resolver generics require).
+const formSchema = createProjectSchema.extend({
+  status: z.enum(projectStatuses),
+});
+type FormValues = z.infer<typeof formSchema>;
 
-type ProjectFormDialogProps = {
-  open: boolean;
+interface ProjectFormDialogProps {
   onOpenChange: (open: boolean) => void;
+  open: boolean;
   /** null → create, a project → edit */
   project: Project | null;
-};
+}
 
-export function ProjectFormDialog({ open, onOpenChange, project }: ProjectFormDialogProps) {
+export function ProjectFormDialog({
+  open,
+  onOpenChange,
+  project,
+}: ProjectFormDialogProps) {
   const t = useTranslations("projects");
   const tStatus = useTranslations("projects.status");
   const queryClient = useQueryClient();
 
   const form = useForm<FormValues>({
-    resolver: zodResolver(createProjectSchema),
+    resolver: zodResolver(formSchema),
     defaultValues: { name: "", description: "", status: "draft" },
   });
 
@@ -51,14 +77,18 @@ export function ProjectFormDialog({ open, onOpenChange, project }: ProjectFormDi
     }
   }, [open, project, form]);
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: orpc.projects.key() });
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: orpc.projects.key() });
 
   const createMutation = useAppMutation({
     mutationFn: (values: FormValues) =>
-      client.projects.create({ ...values, description: values.description || undefined }),
+      client.projects.create({
+        ...values,
+        description: values.description || undefined,
+      }),
     successMessage: "projectCreated",
     onSuccess: () => {
-      void invalidate();
+      invalidate();
       onOpenChange(false);
     },
   });
@@ -77,7 +107,7 @@ export function ProjectFormDialog({ open, onOpenChange, project }: ProjectFormDi
     },
     successMessage: "projectUpdated",
     onSuccess: () => {
-      void invalidate();
+      invalidate();
       onOpenChange(false);
     },
   });
@@ -89,7 +119,9 @@ export function ProjectFormDialog({ open, onOpenChange, project }: ProjectFormDi
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{project ? t("editTitle") : t("createTitle")}</DialogTitle>
+          <DialogTitle>
+            {project ? t("editTitle") : t("createTitle")}
+          </DialogTitle>
           <DialogDescription>{t("formDescription")}</DialogDescription>
         </DialogHeader>
         <Form {...form}>

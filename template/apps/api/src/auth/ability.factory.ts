@@ -1,14 +1,22 @@
 import { Injectable } from "@nestjs/common";
-import { buildAbility, interpolateConditions, resolveRules, type AppAbility } from "@repo/auth";
-import { permissionRuleSchema, type PermissionRule } from "@repo/contracts";
+import {
+  type AppAbility,
+  buildAbility,
+  interpolateConditions,
+  resolveRules,
+} from "@repo/auth";
+import { type PermissionRule, permissionRuleSchema } from "@repo/contracts";
 import { rolePermission, userPermissionOverride } from "@repo/db";
 import { eq } from "drizzle-orm";
-import { DbService } from "../db/db.module";
-import { CacheService } from "../redis/cache.service";
+import type { DbService } from "../db/db.module";
+import type { CacheService } from "../redis/cache.service";
 
 const RULES_TTL_SECONDS = 300;
 
-type PermissionSource = { id: string; role: string };
+interface PermissionSource {
+  id: string;
+  role: string;
+}
 
 @Injectable()
 export class AbilityFactory {
@@ -26,7 +34,12 @@ export class AbilityFactory {
     const rules = await this.rulesFor(user);
     return rules.map((rule) =>
       rule.conditions
-        ? { ...rule, conditions: interpolateConditions(rule.conditions, { userId: user.id }) }
+        ? {
+            ...rule,
+            conditions: interpolateConditions(rule.conditions, {
+              userId: user.id,
+            }),
+          }
         : rule
     );
   }
@@ -41,8 +54,12 @@ export class AbilityFactory {
 
   private async rulesFor(user: PermissionSource): Promise<PermissionRule[]> {
     const [roleRules, overrides] = await Promise.all([
-      this.cache.getOrSet(this.roleKey(user.role), RULES_TTL_SECONDS, () => this.loadRoleRules(user.role)),
-      this.cache.getOrSet(this.userKey(user.id), RULES_TTL_SECONDS, () => this.loadOverrides(user.id)),
+      this.cache.getOrSet(this.roleKey(user.role), RULES_TTL_SECONDS, () =>
+        this.loadRoleRules(user.role)
+      ),
+      this.cache.getOrSet(this.userKey(user.id), RULES_TTL_SECONDS, () =>
+        this.loadOverrides(user.id)
+      ),
     ]);
     return resolveRules(roleRules, overrides);
   }

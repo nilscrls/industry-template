@@ -1,4 +1,9 @@
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Injectable } from "@nestjs/common";
 import { env } from "../config/env";
@@ -13,8 +18,14 @@ export class StorageService {
   private readonly publicClient = this.createClient(env.S3_PUBLIC_ENDPOINT);
 
   presignUpload(key: string, contentType: string): Promise<string> {
-    const command = new PutObjectCommand({ Bucket: env.S3_BUCKET, Key: key, ContentType: contentType });
-    return getSignedUrl(this.publicClient, command, { expiresIn: PRESIGN_TTL_SECONDS });
+    const command = new PutObjectCommand({
+      Bucket: env.S3_BUCKET,
+      Key: key,
+      ContentType: contentType,
+    });
+    return getSignedUrl(this.publicClient, command, {
+      expiresIn: PRESIGN_TTL_SECONDS,
+    });
   }
 
   presignDownload(key: string, fileName: string): Promise<string> {
@@ -23,18 +34,25 @@ export class StorageService {
       Key: key,
       ResponseContentDisposition: `attachment; filename="${encodeURIComponent(fileName)}"`,
     });
-    return getSignedUrl(this.publicClient, command, { expiresIn: PRESIGN_TTL_SECONDS });
+    return getSignedUrl(this.publicClient, command, {
+      expiresIn: PRESIGN_TTL_SECONDS,
+    });
   }
 
   async deleteObject(key: string): Promise<void> {
-    await this.internalClient.send(new DeleteObjectCommand({ Bucket: env.S3_BUCKET, Key: key }));
+    await this.internalClient.send(
+      new DeleteObjectCommand({ Bucket: env.S3_BUCKET, Key: key })
+    );
   }
 
   private createClient(endpoint: string): S3Client {
     return new S3Client({
       endpoint,
       region: env.S3_REGION,
-      credentials: { accessKeyId: env.S3_ACCESS_KEY, secretAccessKey: env.S3_SECRET_KEY },
+      credentials: {
+        accessKeyId: env.S3_ACCESS_KEY,
+        secretAccessKey: env.S3_SECRET_KEY,
+      },
       // Minio serves buckets by path, not subdomain.
       forcePathStyle: true,
     });

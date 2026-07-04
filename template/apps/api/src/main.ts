@@ -6,4 +6,7 @@ async function bootstrap(): Promise<void> {
   await app.listen(env.API_PORT);
 }
 
-void bootstrap();
+bootstrap().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

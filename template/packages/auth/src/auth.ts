@@ -4,33 +4,33 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { admin } from "better-auth/plugins";
 
-export type AuthEmail = {
-  type: "verify-email" | "reset-password";
+export interface AuthEmail {
   to: string;
-  userName: string;
+  type: "verify-email" | "reset-password";
   url: string;
-};
+  userName: string;
+}
 
 export type SendAuthEmail = (email: AuthEmail) => Promise<void>;
 
-export type SecondaryStorage = {
+export interface SecondaryStorage {
+  delete: (key: string) => Promise<void>;
   get: (key: string) => Promise<string | null>;
   set: (key: string, value: string, ttl?: number) => Promise<void>;
-  delete: (key: string) => Promise<void>;
-};
+}
 
-export type CreateAuthOptions = {
-  db: Database;
-  secret: string;
+export interface CreateAuthOptions {
   /** Public URL of the API as the browser reaches it, e.g. https://app.example.com/api */
   baseUrl: string;
-  trustedOrigins: string[];
-  /** The api app wires this to the BullMQ mail queue; seeds pass a no-op. */
-  sendEmail: SendAuthEmail;
+  db: Database;
+  requireEmailVerification?: boolean;
   /** Redis-backed session/rate-limit storage — recommended in production. */
   secondaryStorage?: SecondaryStorage;
-  requireEmailVerification?: boolean;
-};
+  secret: string;
+  /** The api app wires this to the BullMQ mail queue; seeds pass a no-op. */
+  sendEmail: SendAuthEmail;
+  trustedOrigins: string[];
+}
 
 export function createAuth(options: CreateAuthOptions) {
   return betterAuth({
@@ -40,19 +40,31 @@ export function createAuth(options: CreateAuthOptions) {
     // The Next.js rewrite maps <web>/api/auth/* → <api>/auth/*.
     basePath: "/auth",
     trustedOrigins: options.trustedOrigins,
-    ...(options.secondaryStorage ? { secondaryStorage: options.secondaryStorage } : {}),
+    ...(options.secondaryStorage
+      ? { secondaryStorage: options.secondaryStorage }
+      : {}),
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: options.requireEmailVerification ?? false,
       sendResetPassword: async ({ user, url }) => {
-        await options.sendEmail({ type: "reset-password", to: user.email, userName: user.name, url });
+        await options.sendEmail({
+          type: "reset-password",
+          to: user.email,
+          userName: user.name,
+          url,
+        });
       },
     },
     emailVerification: {
       sendOnSignUp: true,
       autoSignInAfterVerification: true,
       sendVerificationEmail: async ({ user, url }) => {
-        await options.sendEmail({ type: "verify-email", to: user.email, userName: user.name, url });
+        await options.sendEmail({
+          type: "verify-email",
+          to: user.email,
+          userName: user.name,
+          url,
+        });
       },
     },
     session: {

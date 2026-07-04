@@ -7,7 +7,9 @@ import { MAIL_QUEUE } from "./mail.module";
 /** Enqueue-only — sending happens in the worker with retries and backoff. */
 @Injectable()
 export class MailService {
-  constructor(@InjectQueue(MAIL_QUEUE) private readonly queue: Queue<AuthEmail>) {}
+  constructor(
+    @InjectQueue(MAIL_QUEUE) private readonly queue: Queue<AuthEmail>
+  ) {}
 
   async enqueueAuthEmail(email: AuthEmail): Promise<void> {
     await this.queue.add("auth-email", email, {

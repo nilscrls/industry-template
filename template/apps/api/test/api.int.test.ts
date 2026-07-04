@@ -1,9 +1,14 @@
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { RedisContainer, type StartedRedisContainer } from "@testcontainers/redis";
 import { defaultRolePermissions } from "@repo/contracts";
 import { createDb, rolePermission, user } from "@repo/db";
+import {
+  PostgreSqlContainer,
+  type StartedPostgreSqlContainer,
+} from "@testcontainers/postgresql";
+import {
+  RedisContainer,
+  type StartedRedisContainer,
+} from "@testcontainers/redis";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import request from "supertest";
@@ -18,10 +23,8 @@ let redis: StartedRedisContainer;
 let app: Awaited<ReturnType<typeof import("../src/app.setup.js")["createApp"]>>;
 let server: Parameters<typeof request>[0];
 
-const MIGRATIONS = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../../packages/db/drizzle"
-);
+// vitest runs with cwd = apps/api
+const MIGRATIONS = path.resolve(process.cwd(), "../../packages/db/drizzle");
 
 beforeAll(async () => {
   [postgres, redis] = await Promise.all([
@@ -75,7 +78,9 @@ async function signUp(name: string, email: string) {
   const response = await agent
     .post("/auth/sign-up/email")
     .send({ name, email, password: "Password123!" });
-  expect(response.status).toBe(200);
+  if (response.status !== 200) {
+    throw new Error(`sign-up failed (${response.status}): ${response.text}`);
+  }
   return agent;
 }
 
@@ -97,28 +102,38 @@ describe("api integration", () => {
     const alice = await signUp("Alice", "alice@example.com");
     const bob = await signUp("Bob", "bob@example.com");
 
-    const created = await alice.post("/projects").send({ name: "Alice's line", status: "active" });
+    const created = await alice
+      .post("/projects")
+      .send({ name: "Alice's line", status: "active" });
     expect(created.status).toBe(200);
     const projectId: string = created.body.id;
     expect(projectId).toBeTruthy();
 
     const listed = await alice.get("/projects").query({ search: "Alice" });
     expect(listed.status).toBe(200);
-    expect(listed.body.items.map((item: { id: string }) => item.id)).toContain(projectId);
+    expect(listed.body.items.map((item: { id: string }) => item.id)).toContain(
+      projectId
+    );
 
     // Members read everything, but only mutate what they own.
     const read = await bob.get(`/projects/${projectId}`);
     expect(read.status).toBe(200);
 
-    const forbidden = await bob.patch(`/projects/${projectId}`).send({ name: "hijack" });
+    const forbidden = await bob
+      .patch(`/projects/${projectId}`)
+      .send({ name: "hijack" });
     expect(forbidden.status).toBe(403);
     expect(forbidden.body.data.code).toBe("AUTH_FORBIDDEN");
 
-    const updated = await alice.patch(`/projects/${projectId}`).send({ status: "archived" });
+    const updated = await alice
+      .patch(`/projects/${projectId}`)
+      .send({ status: "archived" });
     expect(updated.status).toBe(200);
     expect(updated.body.status).toBe("archived");
 
-    const missing = await alice.get("/projects/00000000-0000-4000-8000-000000000000");
+    const missing = await alice.get(
+      "/projects/00000000-0000-4000-8000-000000000000"
+    );
     expect(missing.status).toBe(404);
     expect(missing.body.data.code).toBe("RESOURCE_NOT_FOUND");
 
@@ -132,9 +147,11 @@ describe("api integration", () => {
     const carol = await signUp("Carol", "carol@example.com");
     const dave = await signUp("Dave", "dave@example.com");
 
-    const presigned = await carol
-      .post("/files/presign-upload")
-      .send({ fileName: "report.pdf", contentType: "application/pdf", sizeBytes: 1024 });
+    const presigned = await carol.post("/files/presign-upload").send({
+      fileName: "report.pdf",
+      contentType: "application/pdf",
+      sizeBytes: 1024,
+    });
     expect(presigned.status).toBe(200);
     expect(presigned.body.uploadUrl).toContain("uploads");
     expect(presigned.body.method).toBe("PUT");
@@ -152,7 +169,10 @@ describe("api integration", () => {
 
     // Promote via db, as an operator would; permissions cache is per-user.
     const { db, pool } = createDb(process.env.DATABASE_URL as string);
-    await db.update(user).set({ role: "admin" }).where(eq(user.email, "eve@example.com"));
+    await db
+      .update(user)
+      .set({ role: "admin" })
+      .where(eq(user.email, "eve@example.com"));
     await pool.end();
 
     // The signed cookie cache still carries the old role — a fresh sign-in

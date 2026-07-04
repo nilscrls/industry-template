@@ -1,21 +1,21 @@
 import { Injectable } from "@nestjs/common";
 import { asSubject } from "@repo/auth";
 import {
-  projectStatuses,
   type createProjectSchema,
   type listProjectsQuerySchema,
   type Paginated,
   type Project,
   type projectStatsSchema,
+  projectStatuses,
   type updateProjectSchema,
 } from "@repo/contracts";
 import { project } from "@repo/db";
 import { and, asc, count, desc, eq, gte, ilike, sql } from "drizzle-orm";
-import type * as z from "zod";
+import type { z } from "zod";
 import { forbidden, notFound } from "../common/app-error";
 import { currentAbility, currentUser } from "../common/request-context";
-import { DbService } from "../db/db.module";
-import { CacheService } from "../redis/cache.service";
+import type { DbService } from "../db/db.module";
+import type { CacheService } from "../redis/cache.service";
 
 type ListQuery = z.infer<typeof listProjectsQuerySchema>;
 type CreateInput = z.infer<typeof createProjectSchema>;
@@ -48,7 +48,8 @@ export class ProjectsService {
       createdAt: project.createdAt,
       updatedAt: project.updatedAt,
     }[query.sortBy];
-    const orderBy = query.sortOrder === "asc" ? asc(sortColumn) : desc(sortColumn);
+    const orderBy =
+      query.sortOrder === "asc" ? asc(sortColumn) : desc(sortColumn);
 
     const [rows, totals] = await Promise.all([
       this.db
@@ -102,7 +103,8 @@ export class ProjectsService {
       throw forbidden("update", "Project");
     }
 
-    const patch: Partial<Pick<ProjectRow, "name" | "description" | "status">> = {};
+    const patch: Partial<Pick<ProjectRow, "name" | "description" | "status">> =
+      {};
     if (input.name !== undefined) {
       patch.name = input.name;
     }
@@ -116,7 +118,11 @@ export class ProjectsService {
       return this.toDto(row);
     }
 
-    const [updated] = await this.db.update(project).set(patch).where(eq(project.id, input.id)).returning();
+    const [updated] = await this.db
+      .update(project)
+      .set(patch)
+      .where(eq(project.id, input.id))
+      .returning();
     if (!updated) {
       throw notFound("Project");
     }
@@ -135,7 +141,9 @@ export class ProjectsService {
   }
 
   stats(): Promise<Stats> {
-    return this.cache.getOrSet(STATS_CACHE_KEY, STATS_TTL_SECONDS, () => this.computeStats());
+    return this.cache.getOrSet(STATS_CACHE_KEY, STATS_TTL_SECONDS, () =>
+      this.computeStats()
+    );
   }
 
   private async computeStats(): Promise<Stats> {
@@ -146,7 +154,10 @@ export class ProjectsService {
 
     const [totals, byStatusRows, perDayRows] = await Promise.all([
       this.db.select({ value: count() }).from(project),
-      this.db.select({ status: project.status, count: count() }).from(project).groupBy(project.status),
+      this.db
+        .select({ status: project.status, count: count() })
+        .from(project)
+        .groupBy(project.status),
       this.db
         .select({ date: dayExpr, count: count() })
         .from(project)
@@ -160,18 +171,24 @@ export class ProjectsService {
     }));
 
     const counts = new Map(perDayRows.map((row) => [row.date, row.count]));
-    const createdPerDay = Array.from({ length: STATS_WINDOW_DAYS }, (_, index) => {
-      const day = new Date(since);
-      day.setUTCDate(since.getUTCDate() + index);
-      const date = day.toISOString().slice(0, 10);
-      return { date, count: counts.get(date) ?? 0 };
-    });
+    const createdPerDay = Array.from(
+      { length: STATS_WINDOW_DAYS },
+      (_, index) => {
+        const day = new Date(since);
+        day.setUTCDate(since.getUTCDate() + index);
+        const date = day.toISOString().slice(0, 10);
+        return { date, count: counts.get(date) ?? 0 };
+      }
+    );
 
     return { total: totals[0]?.value ?? 0, byStatus, createdPerDay };
   }
 
   private async findRow(id: string): Promise<ProjectRow> {
-    const [row] = await this.db.select().from(project).where(eq(project.id, id));
+    const [row] = await this.db
+      .select()
+      .from(project)
+      .where(eq(project.id, id));
     if (!row) {
       throw notFound("Project");
     }

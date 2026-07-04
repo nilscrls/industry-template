@@ -1,16 +1,19 @@
 import { randomUUID } from "node:crypto";
 import { Injectable } from "@nestjs/common";
 import { asSubject } from "@repo/auth";
-import type { FileObject, filesContract, Paginated } from "@repo/contracts";
+import type { FileObject, Paginated, PaginationQuery } from "@repo/contracts";
 import { fileObject } from "@repo/db";
 import { and, count, desc, eq, ilike } from "drizzle-orm";
-import type { InferContractRouterInputs } from "@orpc/contract";
 import { forbidden, notFound } from "../common/app-error";
 import { currentAbility, currentUser } from "../common/request-context";
-import { DbService } from "../db/db.module";
-import { PRESIGN_TTL_SECONDS, StorageService } from "../storage/storage.service";
+import type { DbService } from "../db/db.module";
+import {
+  PRESIGN_TTL_SECONDS,
+  type StorageService,
+} from "../storage/storage.service";
 
-type Inputs = InferContractRouterInputs<typeof filesContract>;
+type ListQuery = PaginationQuery & { search?: string | undefined };
+type PresignInput = Pick<FileObject, "fileName" | "contentType" | "sizeBytes">;
 type FileRow = typeof fileObject.$inferSelect;
 
 @Injectable()
@@ -24,11 +27,14 @@ export class FilesService {
     return this.dbService.db;
   }
 
-  async list(query: Inputs["list"]): Promise<Paginated<FileObject>> {
+  async list(query: ListQuery): Promise<Paginated<FileObject>> {
     const user = currentUser();
     // Probe with a foreign owner: true only for unconditional read rules
     // (admin/manager). Owner-conditioned roles get scoped to their own rows.
-    const readsAll = currentAbility().can("read", asSubject("File", { ownerId: `__not__${user.id}` }));
+    const readsAll = currentAbility().can(
+      "read",
+      asSubject("File", { ownerId: `__not__${user.id}` })
+    );
     const where = and(
       readsAll ? undefined : eq(fileObject.ownerId, user.id),
       query.search ? ilike(fileObject.fileName, `%${query.search}%`) : undefined
@@ -55,7 +61,7 @@ export class FilesService {
     };
   }
 
-  async presignUpload(input: Inputs["presignUpload"]) {
+  async presignUpload(input: PresignInput) {
     const user = currentUser();
     const id = randomUUID();
     const safeName = input.fileName.replace(/[^\w.\- ]/g, "_");
@@ -76,7 +82,10 @@ export class FilesService {
       throw notFound("File");
     }
 
-    const uploadUrl = await this.storage.presignUpload(storageKey, input.contentType);
+    const uploadUrl = await this.storage.presignUpload(
+      storageKey,
+      input.contentType
+    );
     return {
       file: this.toDto(row),
       uploadUrl,
@@ -90,7 +99,10 @@ export class FilesService {
     if (!currentAbility().can("read", asSubject("File", { ...row }))) {
       throw forbidden("read", "File");
     }
-    const downloadUrl = await this.storage.presignDownload(row.storageKey, row.fileName);
+    const downloadUrl = await this.storage.presignDownload(
+      row.storageKey,
+      row.fileName
+    );
     return { downloadUrl, expiresInSeconds: PRESIGN_TTL_SECONDS };
   }
 
@@ -105,7 +117,10 @@ export class FilesService {
   }
 
   private async findRow(id: string): Promise<FileRow> {
-    const [row] = await this.db.select().from(fileObject).where(eq(fileObject.id, id));
+    const [row] = await this.db
+      .select()
+      .from(fileObject)
+      .where(eq(fileObject.id, id));
     if (!row) {
       throw notFound("File");
     }

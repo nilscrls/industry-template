@@ -1,6 +1,12 @@
-import * as z from "zod";
+import { z } from "zod";
 
-export const actions = ["manage", "create", "read", "update", "delete"] as const;
+export const actions = [
+  "manage",
+  "create",
+  "read",
+  "update",
+  "delete",
+] as const;
 export const subjects = ["Project", "User", "File", "all"] as const;
 export const roles = ["admin", "manager", "member"] as const;
 
@@ -35,8 +41,16 @@ export const defaultRolePermissions: Record<Role, PermissionRule[]> = {
   member: [
     { action: "read", subject: "Project" },
     { action: "create", subject: "Project" },
-    { action: "update", subject: "Project", conditions: { ownerId: "${userId}" } },
-    { action: "delete", subject: "Project", conditions: { ownerId: "${userId}" } },
+    {
+      action: "update",
+      subject: "Project",
+      conditions: { ownerId: "${userId}" },
+    },
+    {
+      action: "delete",
+      subject: "Project",
+      conditions: { ownerId: "${userId}" },
+    },
     { action: "create", subject: "File" },
     { action: "read", subject: "File", conditions: { ownerId: "${userId}" } },
     { action: "delete", subject: "File", conditions: { ownerId: "${userId}" } },

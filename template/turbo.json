@@ -34,7 +34,13 @@
     "test:integration": {
       "dependsOn": ["^build"],
       "cache": false,
-      "env": ["DATABASE_URL", "REDIS_URL", "S3_*", "SMTP_*", "BETTER_AUTH_SECRET"]
+      "env": [
+        "DATABASE_URL",
+        "REDIS_URL",
+        "S3_*",
+        "SMTP_*",
+        "BETTER_AUTH_SECRET"
+      ]
     },
     "test:e2e": {
       "dependsOn": ["^build"],

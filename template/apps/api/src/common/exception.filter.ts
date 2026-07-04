@@ -1,9 +1,9 @@
 import type { ArgumentsHost, ExceptionFilter } from "@nestjs/common";
 import { Catch, HttpException } from "@nestjs/common";
 import { ORPCError } from "@orpc/nest";
-import { errorData, isApiErrorData, type ApiErrorData } from "@repo/contracts";
+import { type ApiErrorData, errorData, isApiErrorData } from "@repo/contracts";
 import type { Request, Response } from "express";
-import { PinoLogger } from "nestjs-pino";
+import type { PinoLogger } from "nestjs-pino";
 
 const STATUS_TO_ORPC_CODE: Record<number, string> = {
   400: "BAD_REQUEST",
@@ -40,7 +40,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
       this.logger.error({ err: exception, traceId }, message);
     }
 
-    response.status(status).json({ defined: true, code, status, message, data });
+    response
+      .status(status)
+      .json({ defined: true, code, status, message, data });
   }
 
   private normalize(
@@ -51,21 +53,23 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const data = isApiErrorData(exception.data)
         ? { ...exception.data, traceId: exception.data.traceId ?? traceId }
         : errorData("INTERNAL", {}, traceId);
-      return { status: exception.status, code: exception.code, message: exception.message, data };
+      return {
+        status: exception.status,
+        code: exception.code,
+        message: exception.message,
+        data,
+      };
     }
 
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const code = STATUS_TO_ORPC_CODE[status] ?? "INTERNAL_SERVER_ERROR";
-      const data =
-        status === 429
-          ? errorData("RATE_LIMITED", { retryAfterSeconds: 60 }, traceId)
-          : status === 404
-            ? errorData("RESOURCE_NOT_FOUND", { resource: "route" }, traceId)
-            : status < 500
-              ? errorData("VALIDATION_FAILED", {}, traceId)
-              : errorData("INTERNAL", {}, traceId);
-      return { status, code, message: exception.message, data };
+      return {
+        status,
+        code,
+        message: exception.message,
+        data: this.httpStatusToErrorData(status, traceId),
+      };
     }
 
     return {
@@ -74,5 +78,21 @@ export class AllExceptionsFilter implements ExceptionFilter {
       message: "Internal server error",
       data: errorData("INTERNAL", {}, traceId),
     };
+  }
+
+  private httpStatusToErrorData(
+    status: number,
+    traceId: string | undefined
+  ): ApiErrorData {
+    if (status === 429) {
+      return errorData("RATE_LIMITED", { retryAfterSeconds: 60 }, traceId);
+    }
+    if (status === 404) {
+      return errorData("RESOURCE_NOT_FOUND", { resource: "route" }, traceId);
+    }
+    if (status < 500) {
+      return errorData("VALIDATION_FAILED", {}, traceId);
+    }
+    return errorData("INTERNAL", {}, traceId);
   }
 }

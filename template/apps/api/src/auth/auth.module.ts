@@ -1,5 +1,5 @@
 import { Global, Module } from "@nestjs/common";
-import { createAuth, type Auth } from "@repo/auth";
+import { type Auth, createAuth } from "@repo/auth";
 import type { Redis } from "ioredis";
 import { env } from "../config/env";
 import { DbService } from "../db/db.module";
@@ -17,7 +17,11 @@ export const AUTH = "BETTER_AUTH_INSTANCE";
     {
       provide: AUTH,
       inject: [DbService, MailService, REDIS],
-      useFactory: (dbService: DbService, mail: MailService, redis: Redis): Auth =>
+      useFactory: (
+        dbService: DbService,
+        mail: MailService,
+        redis: Redis
+      ): Auth =>
         createAuth({
           db: dbService.db,
           secret: env.BETTER_AUTH_SECRET,
