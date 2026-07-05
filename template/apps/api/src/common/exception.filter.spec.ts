@@ -2,6 +2,7 @@ import { HttpException } from "@nestjs/common";
 import { ORPCError } from "@orpc/nest";
 import { PinoLogger } from "nestjs-pino";
 import { describe, expect, it, vi } from "vitest";
+import type { PostHogService } from "../analytics/posthog.service";
 import { AllExceptionsFilter } from "./exception.filter";
 
 interface SentResponse {
@@ -18,7 +19,10 @@ function run(exception: unknown): {
     setContext: vi.fn(),
     error: errorLog,
   } as unknown as PinoLogger;
-  const filter = new AllExceptionsFilter(logger);
+  const posthog = {
+    captureException: vi.fn(),
+  } as unknown as PostHogService;
+  const filter = new AllExceptionsFilter(logger, posthog);
 
   let sent: SentResponse | undefined;
   const response = {

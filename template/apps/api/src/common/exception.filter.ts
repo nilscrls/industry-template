@@ -2,8 +2,10 @@ import type { ArgumentsHost, ExceptionFilter } from "@nestjs/common";
 import { Catch, HttpException } from "@nestjs/common";
 import { ORPCError } from "@orpc/nest";
 import { type ApiErrorData, errorData, isApiErrorData } from "@repo/contracts";
+import { captureException } from "@sentry/node";
 import type { Request, Response } from "express";
 import { PinoLogger } from "nestjs-pino";
+import { PostHogService } from "../analytics/posthog.service";
 
 const STATUS_TO_ORPC_CODE: Record<number, string> = {
   400: "BAD_REQUEST",
@@ -24,7 +26,10 @@ const STATUS_TO_ORPC_CODE: Record<number, string> = {
  */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
-  constructor(private readonly logger: PinoLogger) {
+  constructor(
+    private readonly logger: PinoLogger,
+    private readonly posthog: PostHogService
+  ) {
     this.logger.setContext(AllExceptionsFilter.name);
   }
 
@@ -38,6 +43,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     if (status >= 500) {
       this.logger.error({ err: exception, traceId }, message);
+      // Both are no-ops when their SDK is disabled (always under test).
+      captureException(exception);
+      this.posthog.captureException(exception);
     }
 
     response

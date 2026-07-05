@@ -5,7 +5,11 @@ import type { FileObject, Paginated, PaginationQuery } from "@repo/contracts";
 import { fileObject } from "@repo/db";
 import { and, count, desc, eq, ilike } from "drizzle-orm";
 import { forbidden, notFound } from "../common/app-error";
-import { currentAbility, currentUser } from "../common/request-context";
+import {
+  activeOrganizationId,
+  currentAbility,
+  currentUser,
+} from "../common/request-context";
 import { DbService } from "../db/db.module";
 import {
   PRESIGN_TTL_SECONDS,
@@ -29,6 +33,16 @@ export class FilesService {
 
   async list(query: ListQuery): Promise<Paginated<FileObject>> {
     const user = currentUser();
+    const orgId = activeOrganizationId();
+    if (!orgId) {
+      return {
+        items: [],
+        total: 0,
+        page: query.page,
+        pageSize: query.pageSize,
+        totalPages: 0,
+      };
+    }
     // Probe with a foreign owner: true only for unconditional read rules
     // (admin/manager). Owner-conditioned roles get scoped to their own rows.
     const readsAll = currentAbility().can(
@@ -36,6 +50,7 @@ export class FilesService {
       asSubject("File", { ownerId: `__not__${user.id}` })
     );
     const where = and(
+      eq(fileObject.organizationId, orgId),
       readsAll ? undefined : eq(fileObject.ownerId, user.id),
       query.search ? ilike(fileObject.fileName, `%${query.search}%`) : undefined
     );
@@ -63,9 +78,14 @@ export class FilesService {
 
   async presignUpload(input: PresignInput) {
     const user = currentUser();
+    const orgId = activeOrganizationId();
+    if (!orgId) {
+      // Uploading requires a tenant to upload into.
+      throw forbidden("create", "File");
+    }
     const id = randomUUID();
     const safeName = input.fileName.replace(/[^\w.\- ]/g, "_");
-    const storageKey = `${user.id}/${id}/${safeName}`;
+    const storageKey = `${orgId}/${user.id}/${id}/${safeName}`;
 
     const [row] = await this.db
       .insert(fileObject)
@@ -75,6 +95,7 @@ export class FilesService {
         contentType: input.contentType,
         sizeBytes: input.sizeBytes,
         storageKey,
+        organizationId: orgId,
         ownerId: user.id,
       })
       .returning();
@@ -116,11 +137,16 @@ export class FilesService {
     return { id };
   }
 
+  /** Rows outside the active organization do not exist for this request. */
   private async findRow(id: string): Promise<FileRow> {
+    const orgId = activeOrganizationId();
+    if (!orgId) {
+      throw notFound("File");
+    }
     const [row] = await this.db
       .select()
       .from(fileObject)
-      .where(eq(fileObject.id, id));
+      .where(and(eq(fileObject.id, id), eq(fileObject.organizationId, orgId)));
     if (!row) {
       throw notFound("File");
     }
@@ -133,6 +159,7 @@ export class FilesService {
       fileName: row.fileName,
       contentType: row.contentType,
       sizeBytes: row.sizeBytes,
+      organizationId: row.organizationId,
       ownerId: row.ownerId,
       createdAt: row.createdAt.toISOString(),
     };

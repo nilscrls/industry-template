@@ -1,3 +1,9 @@
+export {
+  type AuditLogEntry,
+  auditContract,
+  auditLogEntrySchema,
+  listAuditLogsQuerySchema,
+} from "./audit.js";
 export { base } from "./base.js";
 export { type AppContract, contract } from "./contract.js";
 export {
@@ -16,6 +22,16 @@ export {
   filesContract,
   MAX_UPLOAD_SIZE_MB,
 } from "./files.js";
+export {
+  type FeatureFlag,
+  featureFlagSchema,
+  flagsContract,
+} from "./flags.js";
+export {
+  type OrganizationSummary,
+  organizationSummarySchema,
+  organizationsContract,
+} from "./organizations.js";
 export {
   type Paginated,
   type PaginationQuery,

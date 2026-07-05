@@ -6,7 +6,116 @@
     "changeLocale": "Change language",
     "signOut": "Sign out",
     "locales": { "en": "English", "fr": "Français" },
-    "nav": { "dashboard": "Dashboard", "projects": "Projects" }
+    "nav": {
+      "dashboard": "Dashboard",
+      "projects": "Projects",
+      "settings": "Settings",
+      "admin": "Admin"
+    }
+  },
+  "admin": {
+    "title": "Admin",
+    "forbidden": "You need the admin role to see this area.",
+    "nav": {
+      "organizations": "Organizations",
+      "audit": "Audit log",
+      "flags": "Feature flags"
+    },
+    "organizations": {
+      "title": "Organizations",
+      "searchPlaceholder": "Search organizations…",
+      "fields": {
+        "name": "Name",
+        "slug": "Slug",
+        "members": "Members",
+        "createdAt": "Created"
+      },
+      "empty": "No organizations yet.",
+      "previous": "Previous",
+      "next": "Next",
+      "pageInfo": "Page {page} of {totalPages}"
+    },
+    "flags": {
+      "title": "Feature flags",
+      "description": "Flags are defined and rolled out in PostHog; overrides force a value for this organization only and win over PostHog.",
+      "newOverridePlaceholder": "flag-key",
+      "addOverride": "Force on",
+      "forceOn": "On",
+      "forceOff": "Off",
+      "clearOverride": "Clear",
+      "on": "On",
+      "off": "Off",
+      "sources": { "override": "Override", "posthog": "PostHog" },
+      "fields": {
+        "key": "Key",
+        "state": "State",
+        "source": "Source",
+        "override": "Override"
+      },
+      "empty": "No flags known yet — define them in PostHog or add an override."
+    },
+    "audit": {
+      "title": "Audit log",
+      "actionFilterPlaceholder": "Filter by action, e.g. project.update",
+      "fields": {
+        "when": "When",
+        "actor": "Actor",
+        "action": "Action",
+        "entity": "Entity",
+        "requestId": "Request"
+      },
+      "deletedActor": "(deleted user)",
+      "empty": "No audit entries in this organization.",
+      "previous": "Previous",
+      "next": "Next",
+      "pageInfo": "Page {page} of {totalPages}"
+    }
+  },
+  "twoFactor": {
+    "title": "Two-factor authentication",
+    "description": "Enter the 6-digit code from your authenticator app.",
+    "backupDescription": "Enter one of your single-use backup codes.",
+    "codeLabel": "Authentication code",
+    "backupCodeLabel": "Backup code",
+    "verifyAction": "Verify",
+    "useBackupCode": "Use a backup code",
+    "useTotp": "Use your authenticator app",
+    "invalidCode": "That code is not valid"
+  },
+  "settings": {
+    "title": "Settings",
+    "twoFactor": {
+      "title": "Two-factor authentication",
+      "enabledDescription": "Your account requires a second factor at sign-in.",
+      "disabledDescription": "Add a second factor to protect your account.",
+      "passwordLabel": "Confirm your password",
+      "enableAction": "Enable 2FA",
+      "disableAction": "Disable 2FA",
+      "disableTitle": "Disable two-factor authentication",
+      "disableDescription": "Your account will no longer require a second factor.",
+      "enrollTitle": "Set up your authenticator",
+      "enrollDescription": "Scan the QR code, store the backup codes somewhere safe, then confirm with a code.",
+      "backupCodesTitle": "Backup codes",
+      "backupCodesDescription": "Each code works once if you lose access to your authenticator.",
+      "confirmCodeLabel": "Code from your app",
+      "confirmAction": "Confirm",
+      "enabled": "Two-factor authentication enabled",
+      "disabled": "Two-factor authentication disabled",
+      "wrongPassword": "Password is incorrect",
+      "invalidCode": "That code is not valid"
+    }
+  },
+  "organizations": {
+    "switchLabel": "Organizations",
+    "noOrganization": "No organization",
+    "createAction": "Create organization",
+    "createTitle": "Create organization",
+    "createDescription": "Projects and files are scoped to an organization.",
+    "nameLabel": "Name",
+    "createSubmit": "Create",
+    "created": "Organization created",
+    "createFailed": "Could not create the organization",
+    "switchFailed": "Could not switch organization"
   },
   "auth": {
     "loginTitle": "Welcome back",
@@ -21,6 +130,9 @@
     "noAccount": "No account yet?",
     "hasAccount": "Already have an account?",
     "invalidCredentials": "Invalid email or password",
+    "orContinueWith": "or",
+    "microsoftAction": "Sign in with Microsoft",
+    "microsoftFailed": "Microsoft sign-in failed",
     "registerFailed": "Registration failed",
     "registerSuccess": "Welcome! Check your inbox to verify your email."
   },
@@ -63,6 +175,7 @@
     }
   },
   "feedback": {
+    "flagOverrideSaved": "Feature flag override saved",
     "projectCreated": "Project created",
     "projectUpdated": "Project updated",
     "projectDeleted": "Project deleted"

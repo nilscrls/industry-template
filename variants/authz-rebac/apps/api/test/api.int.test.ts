@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { createDb, user } from "@repo/db";
+import { createDb, member, user } from "@repo/db";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
@@ -39,6 +40,9 @@ beforeAll(async () => {
   process.env.DATABASE_URL = postgres.getConnectionUri();
   process.env.REDIS_URL = redis.getConnectionUrl();
   process.env.BETTER_AUTH_SECRET = "integration-test-secret-0123456789abcdef";
+  process.env.MICROSOFT_CLIENT_ID = "test-client-id";
+  process.env.MICROSOFT_CLIENT_SECRET = "test-client-secret";
+  process.env.MICROSOFT_TENANT_ID = "common";
   process.env.WEB_URL = "http://localhost:3000";
   process.env.S3_ENDPOINT = "http://localhost:9000";
   process.env.S3_PUBLIC_ENDPOINT = "http://localhost:9000";
@@ -50,6 +54,14 @@ beforeAll(async () => {
   process.env.SMTP_PORT = "1025";
   process.env.SMTP_SECURE = "false";
   process.env.MAIL_FROM = "Test <test@example.com>";
+  process.env.OTEL_ENABLED = "false";
+  process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318";
+  process.env.OTEL_SERVICE_NAME = "api";
+  process.env.SENTRY_ENABLED = "false";
+  process.env.SENTRY_DSN = "test-dsn";
+  process.env.POSTHOG_ENABLED = "false";
+  process.env.POSTHOG_API_KEY = "test-key";
+  process.env.POSTHOG_HOST = "https://eu.i.posthog.com";
   process.env.LOG_LEVEL = "warn";
   process.env.LOG_FILE_ENABLED = "false";
   process.env.LOG_DIR = "./logs";
@@ -84,6 +96,76 @@ async function currentUserId(agent: request.Agent): Promise<string> {
   return session.body.user.id;
 }
 
+/** Create an organization and make it the agent's active tenant. */
+async function createOrganization(
+  agent: request.Agent,
+  name: string,
+  slug: string
+): Promise<string> {
+  const created = await agent
+    .post("/auth/organization/create")
+    .send({ name, slug });
+  if (created.status !== 200) {
+    throw new Error(
+      `organization create failed (${created.status}): ${created.text}`
+    );
+  }
+  const organizationId: string =
+    created.body.id ?? created.body.organization?.id;
+  const activated = await agent
+    .post("/auth/organization/set-active")
+    .send({ organizationId });
+  if (activated.status !== 200) {
+    throw new Error(
+      `set-active failed (${activated.status}): ${activated.text}`
+    );
+  }
+  return organizationId;
+}
+
+/** Operator-style membership grant straight into the database. */
+async function addMemberByEmail(
+  organizationId: string,
+  email: string
+): Promise<void> {
+  const { db, pool } = createDb(process.env.DATABASE_URL as string);
+  const [target] = await db
+    .select({ id: user.id })
+    .from(user)
+    .where(eq(user.email, email));
+  if (!target) {
+    await pool.end();
+    throw new Error(`no user with email ${email}`);
+  }
+  await db.insert(member).values({
+    id: randomUUID(),
+    organizationId,
+    userId: target.id,
+    role: "member",
+  });
+  await pool.end();
+}
+
+/** Join the organization and make it the agent's active tenant. */
+async function joinOrganization(
+  agent: request.Agent,
+  organizationId: string,
+  email: string
+): Promise<void> {
+  await addMemberByEmail(organizationId, email);
+  const activated = await agent
+    .post("/auth/organization/set-active")
+    .send({ organizationId });
+  if (activated.status !== 200) {
+    throw new Error(
+      `set-active failed (${activated.status}): ${activated.text}`
+    );
+  }
+}
+
+// Shared across the ordered tests below: the first organization created.
+let acmeOrgId: string;
+
 describe("api integration", () => {
   it("reports readiness once db and redis are reachable", async () => {
     const response = await request(server).get("/health/ready");
@@ -98,9 +180,31 @@ describe("api integration", () => {
     expect(response.body.data.traceId).toBeTruthy();
   });
 
+  it("gives users without an organization empty lists, not errors", async () => {
+    const noorg = await signUp("Norg", "noorg@example.com");
+
+    const listed = await noorg.get("/projects");
+    expect(listed.status).toBe(200);
+    expect(listed.body.items).toHaveLength(0);
+
+    const stats = await noorg.get("/projects/stats");
+    expect(stats.status).toBe(200);
+    expect(stats.body.total).toBe(0);
+
+    const denied = await noorg
+      .post("/projects")
+      .send({ name: "orphan", status: "draft" });
+    expect(denied.status).toBe(403);
+    expect(denied.body.data.code).toBe("AUTH_FORBIDDEN");
+  });
+
   it("scopes projects to memberships and walks the relation ladder", async () => {
     const alice = await signUp("Alice", "alice@example.com");
+    acmeOrgId = await createOrganization(alice, "Acme", "acme");
     const bob = await signUp("Bob", "bob@example.com");
+    // Same tenant for both: this suite exercises the relation ladder, so the
+    // org boundary must not be what hides the project from Bob.
+    await joinOrganization(bob, acmeOrgId, "bob@example.com");
     const bobId = await currentUserId(bob);
 
     // Creating grants the owner relation.
@@ -188,8 +292,23 @@ describe("api integration", () => {
     expect(stats.body.createdPerDay).toHaveLength(30);
   });
 
+  it("never leaks projects across organizations", async () => {
+    const mallory = await signUp("Mallory", "mallory@example.com");
+    await createOrganization(mallory, "Mallory Corp", "mallory-corp");
+
+    // Alice's acme project (created above) is invisible from another tenant,
+    // even though relation rows are the grant inside a tenant.
+    const listed = await mallory.get("/projects");
+    expect(listed.status).toBe(200);
+    expect(listed.body.items).toHaveLength(0);
+
+    const stats = await mallory.get("/projects/stats");
+    expect(stats.body.total).toBe(0);
+  });
+
   it("scopes file listings to the owner for members", async () => {
     const carol = await signUp("Carol", "carol@example.com");
+    await createOrganization(carol, "Carol Co", "carol-co");
     const dave = await signUp("Dave", "dave@example.com");
 
     const presigned = await carol.post("/files/presign-upload").send({
@@ -232,7 +351,9 @@ describe("api integration", () => {
     expect(access.status).toBe(200);
     expect(access.body.total).toBeGreaterThanOrEqual(5);
 
-    // Admins see every project without holding any relation.
+    // Admins bypass relations, not the tenant boundary: they still act
+    // within their active organization.
+    await joinOrganization(eveAdmin, acmeOrgId, "eve@example.com");
     const projects = await eveAdmin.get("/projects");
     expect(projects.status).toBe(200);
     expect(projects.body.total).toBeGreaterThan(0);
@@ -240,5 +361,30 @@ describe("api integration", () => {
     const me = await eveAdmin.get("/me/permissions");
     expect(me.status).toBe(200);
     expect(me.body.rules).toEqual([{ action: "manage", subject: "all" }]);
+
+    // Mutations left an audit trail: admin-only, tenant-scoped, correlated.
+    const deniedRead = await eve.get("/audit-logs");
+    expect(deniedRead.status).toBe(403);
+    const deniedOrgs = await eve.get("/organizations");
+    expect(deniedOrgs.status).toBe(403);
+
+    const organizations = await eveAdmin.get("/organizations");
+    expect(organizations.status).toBe(200);
+    expect(organizations.body.total).toBeGreaterThan(0);
+
+    const logs = await eveAdmin.get("/audit-logs");
+    expect(logs.status).toBe(200);
+    expect(logs.body.total).toBeGreaterThan(0);
+    const actions = logs.body.items.map(
+      (item: { action: string }) => item.action
+    );
+    expect(actions).toContain("project.create");
+    expect(actions).toContain("project.member.set");
+    const created = logs.body.items.find(
+      (item: { action: string }) => item.action === "project.create"
+    );
+    expect(created.organizationId).toBe(acmeOrgId);
+    expect(created.actorEmail).toBe("alice@example.com");
+    expect(created.requestId).toBeTruthy();
   });
 });

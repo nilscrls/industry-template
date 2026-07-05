@@ -72,6 +72,17 @@ services:
       timeout: 3s
       retries: 5
 
+  # Optional local OTLP sink: add `--profile otel` and set
+  # OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 (in docker: http://otel-collector:4318).
+  # Point the exporter at your real collector in production instead.
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    profiles: [otel]
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otel-collector.yaml:ro
+
   migrate:
     build:
       context: .
@@ -125,6 +136,11 @@ services:
         # Baked into the standalone rewrite at build time; in prod the reverse
         # proxy routes /api before it reaches this container anyway.
         API_URL: http://api:3001
+        NEXT_PUBLIC_SENTRY_ENABLED: ${NEXT_PUBLIC_SENTRY_ENABLED:?declare NEXT_PUBLIC_SENTRY_ENABLED in .env}
+        NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:?declare NEXT_PUBLIC_SENTRY_DSN in .env}
+        NEXT_PUBLIC_POSTHOG_ENABLED: ${NEXT_PUBLIC_POSTHOG_ENABLED:?declare NEXT_PUBLIC_POSTHOG_ENABLED in .env}
+        NEXT_PUBLIC_POSTHOG_KEY: ${NEXT_PUBLIC_POSTHOG_KEY:?declare NEXT_PUBLIC_POSTHOG_KEY in .env}
+        NEXT_PUBLIC_POSTHOG_HOST: ${NEXT_PUBLIC_POSTHOG_HOST:?declare NEXT_PUBLIC_POSTHOG_HOST in .env}
     profiles: [all]
     restart: unless-stopped
     env_file: .env

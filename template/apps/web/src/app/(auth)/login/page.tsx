@@ -41,14 +41,28 @@ export default function LoginPage() {
   });
 
   const onSubmit = form.handleSubmit(async (values) => {
-    const { error } = await authClient.signIn.email(values);
+    const { data, error } = await authClient.signIn.email(values);
     if (error) {
       toast.error(t("invalidCredentials"));
+      return;
+    }
+    if (data && "twoFactorRedirect" in data && data.twoFactorRedirect) {
+      // twoFactorClient's onTwoFactorRedirect is navigating to /two-factor.
       return;
     }
     router.push(searchParams.get("next") ?? "/dashboard");
     router.refresh();
   });
+
+  async function signInWithMicrosoft() {
+    const { error } = await authClient.signIn.social({
+      provider: "microsoft",
+      callbackURL: searchParams.get("next") ?? "/dashboard",
+    });
+    if (error) {
+      toast.error(t("microsoftFailed"));
+    }
+  }
 
   return (
     <main className="flex min-h-dvh items-center justify-center p-4">
@@ -104,6 +118,21 @@ export default function LoginPage() {
               </Button>
             </form>
           </Form>
+          <div className="mt-4 grid gap-2">
+            <div className="relative text-center">
+              <span className="relative z-10 bg-card px-2 text-muted-foreground text-xs uppercase">
+                {t("orContinueWith")}
+              </span>
+              <span className="absolute inset-x-0 top-1/2 border-t" />
+            </div>
+            <Button
+              onClick={signInWithMicrosoft}
+              type="button"
+              variant="outline"
+            >
+              {t("microsoftAction")}
+            </Button>
+          </div>
           <p className="mt-4 text-center text-muted-foreground text-sm">
             {t("noAccount")}{" "}
             <Link className="underline underline-offset-4" href="/register">

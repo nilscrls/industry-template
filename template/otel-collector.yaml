@@ -1,0 +1,20 @@
+# Minimal local collector for the `otel` compose profile: accepts OTLP and
+# prints spans to its own stdout (`docker compose logs otel-collector`).
+# Replace the debug exporter with your backend's exporter in production.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+exporters:
+  debug:
+    verbosity: normal
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [debug]

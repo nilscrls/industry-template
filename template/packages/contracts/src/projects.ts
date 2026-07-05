@@ -21,6 +21,7 @@ export const projectSchema = z.object({
   name: z.string().min(1).max(120),
   description: z.string().max(2000).nullable(),
   status: z.enum(projectStatuses),
+  organizationId: z.string(),
   ownerId: z.string(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),

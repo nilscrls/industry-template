@@ -9,6 +9,7 @@ export const fileObjectSchema = z.object({
   fileName: z.string().min(1).max(255),
   contentType: z.string().min(1).max(255),
   sizeBytes: z.number().int().positive(),
+  organizationId: z.string(),
   ownerId: z.string(),
   createdAt: z.iso.datetime(),
 });

@@ -1,8 +1,17 @@
-import { createDb, project, projectMember, user } from "@repo/db";
-import { count, eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import {
+  createDb,
+  member,
+  organization,
+  project,
+  projectMember,
+  user,
+} from "@repo/db";
+import { and, count, eq } from "drizzle-orm";
 import { createAuth } from "./auth.js";
 
 const PASSWORD = "Password123!";
+const ORG = { name: "Acme Inc", slug: "acme" } as const;
 const FIXTURES = [
   { email: "admin@example.com", name: "Ada Admin", role: "admin" },
   { email: "manager@example.com", name: "Manny Manager", role: "member" },
@@ -52,8 +61,44 @@ async function ensureUsers(db: Db, auth: Auth): Promise<void> {
   }
 }
 
+/** One shared demo organization: all fixtures and demo data in one tenant. */
+async function ensureOrganization(db: Db): Promise<string> {
+  let [org] = await db
+    .select({ id: organization.id })
+    .from(organization)
+    .where(eq(organization.slug, ORG.slug));
+  if (!org) {
+    [org] = await db
+      .insert(organization)
+      .values({ id: randomUUID(), name: ORG.name, slug: ORG.slug })
+      .returning({ id: organization.id });
+  }
+  if (!org) {
+    throw new Error("Failed to seed the demo organization");
+  }
+  const allUsers = await db
+    .select({ id: user.id, email: user.email })
+    .from(user);
+  for (const row of allUsers) {
+    const existing = await db
+      .select({ id: member.id })
+      .from(member)
+      .where(and(eq(member.userId, row.id), eq(member.organizationId, org.id)));
+    if (existing.length === 0) {
+      await db.insert(member).values({
+        id: randomUUID(),
+        organizationId: org.id,
+        userId: row.id,
+        role: row.email === "admin@example.com" ? "owner" : "member",
+      });
+    }
+  }
+  return org.id;
+}
+
 async function seedProject(
   db: Db,
+  orgId: string,
   owner: { id: string },
   other: { id: string } | undefined,
   status: "draft" | "active" | "archived",
@@ -68,6 +113,7 @@ async function seedProject(
       name: `Demo ${status} project ${ownerIndex + 1}.${statusIndex + 1}`,
       description: "Seeded demo data — safe to delete.",
       status,
+      organizationId: orgId,
       ownerId: owner.id,
       createdAt,
       updatedAt: createdAt,
@@ -100,7 +146,7 @@ async function seedProject(
   }
 }
 
-async function seedProjects(db: Db): Promise<void> {
+async function seedProjects(db: Db, orgId: string): Promise<void> {
   const [projectCount] = await db.select({ value: count() }).from(project);
   if (!projectCount || projectCount.value > 0) {
     return;
@@ -113,7 +159,15 @@ async function seedProjects(db: Db): Promise<void> {
   for (const [ownerIndex, owner] of owners.entries()) {
     const other = owners.find((row) => row.id !== owner.id);
     for (const [statusIndex, status] of statuses.entries()) {
-      await seedProject(db, owner, other, status, ownerIndex, statusIndex);
+      await seedProject(
+        db,
+        orgId,
+        owner,
+        other,
+        status,
+        ownerIndex,
+        statusIndex
+      );
     }
   }
 }
@@ -137,7 +191,8 @@ async function main(): Promise<void> {
 
   try {
     await ensureUsers(db, auth);
-    await seedProjects(db);
+    const orgId = await ensureOrganization(db);
+    await seedProjects(db, orgId);
 
     console.log("Dev fixtures ready (ReBAC: grants via project_member):");
     for (const fixture of FIXTURES) {

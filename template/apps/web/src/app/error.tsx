@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@repo/ui/components/button";
+import { captureException } from "@sentry/nextjs";
 import { useTranslations } from "next-intl";
 import { useEffect } from "react";
 
@@ -15,6 +16,8 @@ export default function ErrorPage({
 
   useEffect(() => {
     console.error(error);
+    // No-op unless Sentry was initialized (see instrumentation-client.ts).
+    captureException(error);
   }, [error]);
 
   return (

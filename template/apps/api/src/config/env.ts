@@ -17,6 +17,11 @@ export const env = createEnv({
     REDIS_URL: z.string().min(1),
     BETTER_AUTH_SECRET: z.string().min(32),
 
+    /** Microsoft Entra ID SSO (OIDC). */
+    MICROSOFT_CLIENT_ID: z.string().min(1),
+    MICROSOFT_CLIENT_SECRET: z.string().min(1),
+    MICROSOFT_TENANT_ID: z.string().min(1),
+
     S3_ENDPOINT: z.url(),
     S3_PUBLIC_ENDPOINT: z.url(),
     S3_REGION: z.string().min(1),
@@ -32,6 +37,26 @@ export const env = createEnv({
     SMTP_USER: z.string().optional(),
     SMTP_PASSWORD: z.string().optional(),
     MAIL_FROM: z.string().min(1),
+
+    /** Sentry exception capture. */
+    SENTRY_ENABLED: z
+      .enum(["true", "false"])
+      .transform((value) => value === "true"),
+    SENTRY_DSN: z.string().min(1),
+
+    /** PostHog: product analytics, exception capture and feature flags. */
+    POSTHOG_ENABLED: z
+      .enum(["true", "false"])
+      .transform((value) => value === "true"),
+    POSTHOG_API_KEY: z.string().min(1),
+    POSTHOG_HOST: z.url(),
+
+    /** OpenTelemetry (OTLP over HTTP; no vendor hardcoded). */
+    OTEL_ENABLED: z
+      .enum(["true", "false"])
+      .transform((value) => value === "true"),
+    OTEL_EXPORTER_OTLP_ENDPOINT: z.url(),
+    OTEL_SERVICE_NAME: z.string().min(1),
 
     LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]),
     LOG_FILE_ENABLED: z

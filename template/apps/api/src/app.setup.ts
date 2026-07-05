@@ -6,6 +6,7 @@ import helmet from "helmet";
 import { Logger } from "nestjs-pino";
 import { AppModule } from "./app.module";
 import { AUTH } from "./auth/auth.module";
+import { originCheckMiddleware } from "./common/origin-check.middleware";
 import { requestContextMiddleware } from "./common/request-context.middleware";
 import { env } from "./config/env";
 
@@ -28,7 +29,27 @@ export async function createApp(): Promise<NestExpressApplication> {
   // First in the stack: request id + AsyncLocalStorage scope.
   express.use(requestContextMiddleware);
 
-  app.use(helmet());
+  // The API serves JSON only (docs are a bare openapi.json), so the CSP can
+  // be maximally strict: nothing loads, nothing frames us.
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'none'"],
+          frameAncestors: ["'none'"],
+          baseUri: ["'none'"],
+          formAction: ["'none'"],
+        },
+      },
+      // Meaningful behind TLS only; harmless over plain http in dev.
+      strictTransportSecurity: { maxAge: 31_536_000, includeSubDomains: true },
+      crossOriginResourcePolicy: { policy: "same-site" },
+      referrerPolicy: { policy: "no-referrer" },
+    })
+  );
+  // CSRF: SameSite=Lax cookies + Better-Auth trustedOrigins already cover
+  // most vectors; this rejects any cross-origin write that slips through.
+  app.use(originCheckMiddleware);
   // Same-origin via the Next.js rewrite makes CORS mostly moot; this covers
   // direct-to-API setups (mobile clients, split domains).
   app.enableCors({ origin: env.WEB_URL, credentials: true });
