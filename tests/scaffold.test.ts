@@ -251,6 +251,24 @@ describe("scaffold", () => {
     }
     // The overlay ships `_claude` (npm-safe); the scaffold must rename it.
     expect(existsSync(path.join(targetDir, "_claude"))).toBe(false);
+    for (const skill of [
+      "scaffold-feature",
+      "react-best-practices",
+      "next-dev-loop",
+      "webapp-testing",
+    ]) {
+      expect(
+        existsSync(
+          path.join(targetDir, ".claude", "skills", skill, "SKILL.md")
+        ),
+        `missing .claude/skills/${skill}/SKILL.md`
+      ).toBe(true);
+    }
+    expect(
+      existsSync(
+        path.join(targetDir, ".claude", "skills", "vendored.lock.json")
+      )
+    ).toBe(true);
   });
 
   it("emits no AI config when ai=none", () => {

@@ -1,0 +1,29 @@
+{
+  "syncedAt": "2026-07-05T17:46:20.483Z",
+  "skills": [
+    {
+      "name": "react-best-practices",
+      "repo": "vercel-labs/agent-skills",
+      "ref": "main",
+      "commit": "f8a72b9603728bb92a217a879b7e62e43ad76c81",
+      "sourceDir": "skills/react-best-practices",
+      "license": "MIT — declared in the skill's SKILL.md frontmatter"
+    },
+    {
+      "name": "next-dev-loop",
+      "repo": "vercel/next.js",
+      "ref": "canary",
+      "commit": "00598045032a0e5b313de7b6ef0af60ed9390c2a",
+      "sourceDir": "skills/next-dev-loop",
+      "license": "MIT — vercel/next.js repository license (copied as LICENSE.md)"
+    },
+    {
+      "name": "webapp-testing",
+      "repo": "anthropics/skills",
+      "ref": "main",
+      "commit": "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+      "sourceDir": "skills/webapp-testing",
+      "license": "Apache-2.0 — per-folder LICENSE.txt (shipped with the skill)"
+    }
+  ]
+}

@@ -31,7 +31,10 @@ Layout:
 Deeper documentation ships in `docs/` — `architecture.md`, `stack.md`,
 `features.md`, `authorization.md`, `testing.md`, `guides.md`,
 `deployment.md`. Read the relevant one before structural changes.
-Path-scoped conventions live in `.claude/rules/`.
+Path-scoped conventions live in `.claude/rules/`; `.claude/skills/` ships
+`scaffold-feature` (the `pnpm gen` workflow) plus vendored Vercel/Anthropic
+skills (React performance, Next.js dev-loop verification, webapp testing —
+provenance in `skills/vendored.lock.json`).
 
 ## Commands
 

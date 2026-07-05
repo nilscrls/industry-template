@@ -36,7 +36,14 @@ docs/         this documentation
   `__AUTHZ_VARIANT__` / `__LOCALE_VARIANT__` tokens are stamped at scaffold
   time), a one-line `CLAUDE.md` importing it, and path-scoped
   `.claude/rules/*.md` — stored as `_claude/` in the overlay (same
-  npm-publish concern as `_gitignore`; the scaffold renames it). **When a convention or hard-won constraint changes
+  npm-publish concern as `_gitignore`; the scaffold renames it). The
+  `_claude/skills/` directory holds the in-house `scaffold-feature` skill
+  plus third-party skills vendored by `pnpm sync-skills`
+  (`scripts/sync-skills.ts`, needs an authenticated `gh`): pinned upstream
+  commits are recorded in `skills/vendored.lock.json`. Rerun it
+  periodically (or before a release) to refresh; only vendor content with
+  an explicit MIT/Apache-2.0 grant and keep each skill's license text
+  alongside its files. **When a convention or hard-won constraint changes
   in the template, update the corresponding rule file / AGENTS.md section
   too** — the `Verify AI config` CI step only checks presence and stamping,
   not accuracy.
