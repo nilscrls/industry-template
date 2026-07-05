@@ -1,4 +1,5 @@
 import path from "node:path";
+import { trace } from "@opentelemetry/api";
 import type { Params } from "nestjs-pino";
 import { env } from "../config/env";
 
@@ -48,7 +49,13 @@ export const loggerOptions: Params = {
     level: env.LOG_LEVEL,
     // The request-context middleware assigns req.id before pino runs.
     genReqId: (req) => (req as { id?: string }).id ?? "unknown",
-    customProps: (req) => ({ traceId: (req as { id?: string }).id }),
+    // ONE correlation field: the OTel trace id when tracing is active,
+    // falling back to the request id — never two identifiers side by side.
+    customProps: (req) => ({
+      traceId:
+        trace.getActiveSpan()?.spanContext().traceId ??
+        (req as { id?: string }).id,
+    }),
     redact: {
       paths: [
         "req.headers.authorization",

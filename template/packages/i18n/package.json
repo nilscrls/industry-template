@@ -1,0 +1,22 @@
+{
+  "name": "@repo/i18n",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./messages/*.json": "./messages/*.json"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "check-types": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "next-intl": "^4.3.4"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "next-intl": "^4.3.4",
+    "typescript": "^5.9.2"
+  }
+}

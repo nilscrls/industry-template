@@ -1,5 +1,6 @@
 "use client";
 
+import type { Messages } from "@repo/i18n";
 import {
   type QueryKey,
   type UseMutationOptions,
@@ -9,6 +10,9 @@ import {
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { extractApiError } from "./errors";
+
+/** Keys of the `feedback` catalog namespace — checked against en.json. */
+type FeedbackKey = Extract<keyof Messages["feedback"], string>;
 
 interface Snapshots {
   snapshots?: [QueryKey, unknown][];
@@ -27,7 +31,7 @@ type AppMutationOptions<TData, TVariables> = UseMutationOptions<
   Snapshots
 > & {
   /** i18n key under `feedback.` shown as a success toast. */
-  successMessage?: string;
+  successMessage?: FeedbackKey;
   /** For mutations that almost never fail: patch the cache before the server answers. */
   optimistic?: OptimisticConfig<TVariables>;
 };

@@ -2,19 +2,40 @@
 
 The template is not string-templated: `template/` is a **real, runnable
 turborepo** with its own lockfile, linted/built/tested in CI. The CLI copies
-it and applies only mechanical transforms (name, dotfiles, secrets). That is
-the core maintenance property — if the template builds green, every scaffold
-builds green.
+it and applies mechanical transforms (name, dotfiles, secrets, default
+locale) plus, when a non-default option is chosen, **variant overlays** —
+directories under `variants/` whose files are copied over the scaffold
+(after deleting the paths in the overlay's `_delete.json`). That is the core
+maintenance property — if the template builds green AND each variant
+scaffold builds green (the `variants` CI job), every scaffold builds green.
 
 ## Repo layout
 
 ```
 src/          CLI source (@clack/prompts) — scaffold logic is pure & tested
-tests/        CLI tests, incl. a scaffold smoke test against the REAL template
+tests/        CLI tests, incl. scaffold smoke tests against the REAL template
 template/     the reference app (its docs/ ships to every generated project)
+variants/     per-option overlays: ui-base (Base UI), authz-rebac (ReBAC)
 docs/         this documentation
-.github/      CI: `cli` job + `template` job (quality + Testcontainers)
+.github/      CI: `cli` + `template` + `variants` jobs (quality + Testcontainers)
 ```
+
+## Variant overlays
+
+- `variants/ui-base/` — Base UI (`@base-ui/react`) ports of the 7
+  Radix-based `@repo/ui` components, the ui `package.json`/`components.json`,
+  and the three app files that used `asChild` (render-prop conversions).
+- `variants/authz-rebac/` — membership-based CASL: permission contracts,
+  `project_member` schema + regenerated drizzle migrations (`_delete.json`
+  removes the RBAC ones), ability factory, projects/users services and
+  controllers, seeds, `docs/authorization.md`, and its own integration suite.
+
+**When you touch a template file that has an overlay counterpart, update the
+overlay too** — the `variants` CI job scaffolds each variant (and the
+base+rebac combination) and runs lint/build/check-types/test against it, so
+drift fails CI. To regenerate the ReBAC migrations after a schema change:
+scaffold with `--authz=rebac`, delete `packages/db/drizzle`, run
+`pnpm db:generate`, copy the folder back into the overlay.
 
 ## Development workflow
 
@@ -46,6 +67,10 @@ oRPC, TanStack Query, drizzle, better-auth**:
 5. Compose sanity: `docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile dev config --quiet`
    and the prod overlay equivalent.
 6. Scaffold smoke: run the CLI into a scratch dir, `pnpm install`, `pnpm dev`.
+7. Variants: scaffold `--ui=base`, `--authz=rebac` and the combination into
+   scratch dirs; each must pass `pnpm build && pnpm check-types && pnpm lint
+   && pnpm test` (and `pnpm test:integration` for rebac). CI does this on
+   every push, mirror it locally before releasing.
 
 ## Constraints that must not regress
 
@@ -76,15 +101,19 @@ npm publish            # files: dist + template; prepublishOnly rebuilds
 ```
 
 Sanity-check the tarball once per release: `npm pack --dry-run` — confirm
-`template/**` is present, `_gitignore` files included, no `node_modules`,
-and the template `pnpm-lock.yaml` ships (reproducible installs). Version
+`template/**` AND `variants/**` are present, `_gitignore` files included, no
+`node_modules`, and the template `pnpm-lock.yaml` ships (reproducible
+installs). Version
 with your release flow (`release/*` branch → tag on `main`); the package
 version is independent of the template's app versions (all `0.0.0`,
 private).
 
 ## Keeping the template current
 
-Renovate updates both workspaces. The template intentionally has **no
-scaffold-time options** — one paved road, options multiply the test matrix.
-If a variant is truly needed (e.g. another database), prefer a documented
-migration guide in `template/docs/` over a CLI flag.
+Renovate updates both workspaces. Scaffold-time options are deliberately
+few — **UI primitives (radix/base), authorization model (rbac/rebac) and
+default locale (en/fr)** — because every option multiplies the test matrix
+(the `variants` CI job pays that cost). Before adding a new option, prefer a
+documented migration guide in `template/docs/`; add an overlay only when the
+choice is structural (different dependencies or data model), and wire it
+into the CI matrix + `tests/scaffold.test.ts` in the same PR.

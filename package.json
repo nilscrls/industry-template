@@ -19,7 +19,8 @@
   },
   "files": [
     "dist",
-    "template"
+    "template",
+    "variants"
   ],
   "engines": {
     "node": ">=22.12"

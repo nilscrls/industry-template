@@ -4,6 +4,8 @@
   "files": {
     // The template is its own workspace with its own biome.jsonc; it is
     // linted from inside template/ (see CI), not from this root config.
+    // Variant overlays are template-context files too: they are verified in
+    // scaffolded position by the `variants` CI job, not from here.
     "includes": ["src/**", "tests/**", "*.json", "*.jsonc", "*.ts"]
   },
   "overrides": [

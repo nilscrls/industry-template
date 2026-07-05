@@ -4,13 +4,45 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { isDirEmpty, scaffold, validateProjectName } from "./scaffold.js";
+import {
+  AUTHZ_VARIANTS,
+  type AuthzVariant,
+  isDirEmpty,
+  LOCALE_VARIANTS,
+  type LocaleVariant,
+  scaffold,
+  UI_VARIANTS,
+  type UiVariant,
+  validateProjectName,
+} from "./scaffold.js";
 
 interface CliFlags {
+  authz: AuthzVariant | undefined;
   directory: string | undefined;
   git: boolean;
   install: boolean;
+  locale: LocaleVariant | undefined;
+  ui: UiVariant | undefined;
   yes: boolean;
+}
+
+function enumFlag<TValue extends string>(
+  argv: string[],
+  name: string,
+  allowed: readonly TValue[]
+): TValue | undefined {
+  const prefix = `--${name}=`;
+  const raw = argv.find((arg) => arg.startsWith(prefix))?.slice(prefix.length);
+  if (raw === undefined) {
+    return;
+  }
+  if (!allowed.includes(raw as TValue)) {
+    console.error(
+      `Invalid --${name}=${raw} (expected one of: ${allowed.join(", ")})`
+    );
+    process.exit(1);
+  }
+  return raw as TValue;
 }
 
 function parseArgs(argv: string[]): CliFlags {
@@ -20,16 +52,23 @@ function parseArgs(argv: string[]): CliFlags {
     yes: argv.includes("--yes") || argv.includes("-y"),
     git: !argv.includes("--no-git"),
     install: !argv.includes("--no-install"),
+    ui: enumFlag(argv, "ui", UI_VARIANTS),
+    authz: enumFlag(argv, "authz", AUTHZ_VARIANTS),
+    locale: enumFlag(argv, "locale", LOCALE_VARIANTS),
   };
 }
 
-function resolveTemplateDir(): string {
+function packageRoot(): string {
   // dist/index.js and src/index.ts are both one level below the package root.
-  const packageRoot = path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    ".."
-  );
-  return path.join(packageRoot, "template");
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+}
+
+function resolveTemplateDir(): string {
+  return path.join(packageRoot(), "template");
+}
+
+function resolveVariantsDir(): string {
+  return path.join(packageRoot(), "variants");
 }
 
 function run(command: string, args: string[], cwd: string): boolean {
@@ -61,6 +100,82 @@ async function promptProjectName(flags: CliFlags): Promise<string> {
   return answer;
 }
 
+interface VariantChoices {
+  authz: AuthzVariant;
+  locale: LocaleVariant;
+  ui: UiVariant;
+}
+
+async function promptVariant<TValue extends string>(
+  flagValue: TValue | undefined,
+  skipPrompts: boolean,
+  fallback: TValue,
+  ask: () => Promise<TValue | symbol>
+): Promise<TValue> {
+  if (flagValue) {
+    return flagValue;
+  }
+  if (skipPrompts) {
+    return fallback;
+  }
+  const answer = await ask();
+  if (p.isCancel(answer) || typeof answer === "symbol") {
+    p.cancel("Cancelled.");
+    process.exit(1);
+  }
+  return answer;
+}
+
+async function promptVariants(flags: CliFlags): Promise<VariantChoices> {
+  const ui = await promptVariant(flags.ui, flags.yes, "radix", () =>
+    p.select({
+      message: "UI primitives (shadcn/ui)",
+      options: [
+        {
+          value: "radix" as const,
+          label: "Radix UI",
+          hint: "the classic shadcn/ui stack",
+        },
+        {
+          value: "base" as const,
+          label: "Base UI",
+          hint: "shadcn/ui's newer default",
+        },
+      ],
+      initialValue: "radix" as const,
+    })
+  );
+  const authz = await promptVariant(flags.authz, flags.yes, "rbac", () =>
+    p.select({
+      message: "Authorization model (CASL)",
+      options: [
+        {
+          value: "rbac" as const,
+          label: "RBAC",
+          hint: "global roles + per-user overrides",
+        },
+        {
+          value: "rebac" as const,
+          label: "ReBAC",
+          hint: "per-resource memberships (owner/editor/viewer)",
+        },
+      ],
+      initialValue: "rbac" as const,
+    })
+  );
+  const locale = await promptVariant(flags.locale, flags.yes, "en", () =>
+    p.select({
+      message: "Default language",
+      options: [
+        { value: "en" as const, label: "English" },
+        { value: "fr" as const, label: "Français" },
+      ],
+      initialValue: "en" as const,
+    })
+  );
+  return { ui, authz, locale };
+}
+
 async function promptSetupSteps(
   flags: CliFlags
 ): Promise<{ git: boolean; install: boolean }> {
@@ -89,11 +204,21 @@ async function promptSetupSteps(
   return { git: options.includes("git"), install: options.includes("install") };
 }
 
-function runScaffold(targetDir: string, projectName: string): void {
+function runScaffold(
+  targetDir: string,
+  projectName: string,
+  variants: VariantChoices
+): void {
   const spinner = p.spinner();
   spinner.start("Scaffolding project");
   try {
-    scaffold({ templateDir: resolveTemplateDir(), targetDir, projectName });
+    scaffold({
+      templateDir: resolveTemplateDir(),
+      variantsDir: resolveVariantsDir(),
+      targetDir,
+      projectName,
+      ...variants,
+    });
     spinner.stop("Project scaffolded");
   } catch (error) {
     spinner.stop("Scaffolding failed");
@@ -102,9 +227,19 @@ function runScaffold(targetDir: string, projectName: string): void {
   }
 }
 
-function initGit(targetDir: string): void {
-  const initialized =
-    run("git", ["init", "-b", "main"], targetDir) &&
+// Split around `pnpm install`: the repo must exist first (the template's
+// prepare script installs git hooks), the commit must come last (so the
+// lockfile the install may update is part of the initial commit).
+function initGitRepo(targetDir: string): boolean {
+  const initialized = run("git", ["init", "-b", "main"], targetDir);
+  if (!initialized) {
+    p.log.warn("git init failed — initialize manually.");
+  }
+  return initialized;
+}
+
+function commitScaffold(targetDir: string): void {
+  const committed =
     run("git", ["add", "-A"], targetDir) &&
     run(
       "git",
@@ -112,8 +247,8 @@ function initGit(targetDir: string): void {
       targetDir
     ) &&
     run("git", ["branch", "develop"], targetDir);
-  if (!initialized) {
-    p.log.warn("git initialization failed — initialize manually.");
+  if (!committed) {
+    p.log.warn("git commit failed — commit manually.");
   }
 }
 
@@ -146,8 +281,11 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const variants = await promptVariants(flags);
   const { git, install } = await promptSetupSteps(flags);
-  runScaffold(targetDir, projectName);
+  runScaffold(targetDir, projectName, variants);
+
+  const gitReady = git && existsSync(targetDir) && initGitRepo(targetDir);
 
   let installed = false;
   if (install) {
@@ -158,8 +296,8 @@ async function main(): Promise<void> {
     }
   }
 
-  if (git && existsSync(targetDir)) {
-    initGit(targetDir);
+  if (gitReady) {
+    commitScaffold(targetDir);
   }
 
   printNextSteps(targetDir, installed);

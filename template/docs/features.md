@@ -19,21 +19,73 @@ Email + password with verification and reset emails, powered by Better-Auth.
 - Dev users after `pnpm db:seed` (password `Password123!`):
   `admin@example.com`, `manager@example.com`, `member@example.com`.
 
-## Authorization — roles + per-user overrides
+## Authorization — CASL
 
-Three roles (`admin`, `manager`, `member`) with editable rules in the DB and
-per-user allow/deny overrides. Deny wins.
+Serializable CASL rules enforced by the api and mirrored in the web UI. The
+rule model (RBAC roles or ReBAC memberships) is chosen at scaffold time —
+`docs/authorization.md` documents this project's setup end to end.
 
-- Definitions: `packages/contracts/src/permissions.ts`
-  (actions, subjects, `defaultRolePermissions`).
+- Definitions: `packages/contracts/src/permissions.ts` (actions, subjects,
+  rule sources).
 - Enforcement (api): `@RequireAbility({ action, subject })` on controller
   methods; `ability.can(action, asSubject("Project", row))` in services for
-  ownership checks (`${userId}` condition placeholder).
-- Management endpoints: `PATCH /users/:id/role`,
-  `GET|PUT /users/:id/permission-overrides` (admin), `GET /me/permissions`.
+  row-level checks.
 - UI gating (web): `<Can action="update" subject={asSubject("Project", row)}>`
   and `useAbility()` from `apps/web/src/lib/ability.tsx` — built from the
-  same rules the api enforces.
+  same rules the api enforces (`GET /me/permissions`).
+
+## Multi-tenancy (organizations)
+
+Better-Auth's `organization` plugin is the tenancy foundation: every
+tenant-owned row (`project`, `file_object`, `audit_log`) carries an
+`organization_id`, and every query is scoped to the session's active
+organization.
+
+- Tables: `packages/db/src/schema/organizations.ts`; the session stores
+  `activeOrganizationId` (new sessions default to the user's first
+  membership via a database hook in `packages/auth/src/auth.ts`).
+- API scoping: `activeOrganizationId()` from
+  `apps/api/src/common/request-context.ts` — users without an organization
+  get **empty lists, never 403**; rows outside the active org are 404s.
+- Org management (create, invite, switch) goes through Better-Auth's own
+  `/api/auth/organization/*` endpoints; the web shell has an org switcher
+  (`apps/web/src/components/org-switcher.tsx`).
+
+## Two-factor authentication (TOTP)
+
+Opt-in per user via Better-Auth's `twoFactor` plugin: enrollment (QR +
+single-use backup codes) lives on `/settings`; sign-in redirects to
+`/two-factor` when the account requires a second factor. Nothing else is
+gated on it.
+
+## SSO — Microsoft Entra ID
+
+`socialProviders.microsoft` in `packages/auth/src/auth.ts`, configured by
+`MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` / `MICROSOFT_TENANT_ID`
+(redirect URL: `<WEB_URL>/api/auth/callback/microsoft`). Adding another
+OIDC provider later is a config addition, not a rewrite. The login page
+shows "Sign in with Microsoft" next to email + password.
+
+## Audit log
+
+Append-only `audit_log` table (actor, organization, action, entity,
+payload, `requestId` for log/trace correlation). ONE choke point writes it:
+`AuditService.audited(...)` — an oRPC middleware attached to every mutating
+procedure (`implement(...).use(audit.audited({ action, entityType }))`).
+Admins browse it per tenant at `/admin/audit` (`GET /api/audit-logs`).
+
+## Feature flags (PostHog + org overrides)
+
+PostHog owns flag definitions and rollouts; the API layers per-organization
+Redis overrides on top (`apps/api/src/flags/flags.service.ts`). Gate
+features with `FlagsService.isEnabled("key")`; admins force flags per org
+at `/admin/flags` (override wins over PostHog; writes are audited).
+
+## Admin panel
+
+`/admin` (route group `(admin)` in `apps/web`), gated by the existing
+`admin` role — the API re-checks every endpoint via `@RequireAbility`.
+Surfaces: organizations overview, audit log viewer, feature-flag overrides.
 
 ## End-to-end typed API
 
@@ -50,7 +102,7 @@ per-user allow/deny overrides. Deny wins.
 `{ code, params, traceId }` end to end — see `docs/architecture.md` for the
 pipeline. To consume: `useApiErrorMessage()(error)` returns a localized
 string; `useAppMutation` already toasts it. Translations live under
-`errors.*` in `apps/web/messages/en.json` / `fr.json`.
+`errors.*` in `packages/i18n/messages/en.json` / `fr.json`.
 
 ## File upload / download (Minio, presigned)
 
@@ -90,6 +142,19 @@ role/override changes). Redis also backs sessions, queues and rate limits.
   files to `LOG_DIR` (14 kept) via pino-roll — stdout stays on either way.
 - Every log line and every error payload carries the request's `traceId`,
   also echoed as the `x-request-id` response header (inbound header honored).
+- OpenTelemetry (`OTEL_ENABLED=true`): auto-instruments HTTP, Express,
+  Nest, pg (Drizzle), ioredis and BullMQ, exporting OTLP to
+  `OTEL_EXPORTER_OTLP_ENDPOINT` — no vendor hardcoded
+  (`apps/api/src/tracing.ts`). When tracing is on, pino's `traceId` IS the
+  OTel trace id, so logs and spans correlate on one field.
+  `docker compose --profile otel up` runs a local collector that prints
+  spans (`otel-collector.yaml`).
+- Sentry (`SENTRY_ENABLED`) and PostHog (`POSTHOG_ENABLED`) capture 5xx
+  exceptions from the ONE error choke point
+  (`apps/api/src/common/exception.filter.ts`); the web app mirrors this via
+  `NEXT_PUBLIC_SENTRY_*` / `NEXT_PUBLIC_POSTHOG_*`
+  (`apps/web/src/instrumentation-client.ts`). None of these SDKs activate
+  under `NODE_ENV=test`.
 
 ## Hardening & operations
 
@@ -97,7 +162,13 @@ role/override changes). Redis also backs sessions, queues and rate limits.
   healthchecks and `depends_on` gate on them.
 - Rate limiting: 300 req/min/IP default, Redis-backed
   (tune in `app.module.ts`, per-route with `@Throttle`).
-- helmet, graceful shutdown hooks (pool/redis close), non-root Docker users.
+- Strict security headers on both apps: the API ships a deny-all CSP, HSTS
+  and `frame-ancestors 'none'` via helmet (`app.setup.ts`); the web app sets
+  its baseline in `next.config.ts`.
+- CSRF, layered without a token scheme: SameSite=Lax session cookies +
+  Better-Auth `trustedOrigins` + an Origin check on every state-changing
+  request (`apps/api/src/common/origin-check.middleware.ts`).
+- Graceful shutdown hooks (pool/redis close), non-root Docker users.
 
 ## Frontend UX
 
@@ -107,10 +178,10 @@ role/override changes). Redis also backs sessions, queues and rate limits.
 | Optimistic mutations | `useAppMutation({ optimistic: { queryKey, update } })` — snapshot, patch, rollback on error, invalidate on settle (project delete is the example) |
 | Action feedback | same hook: localized error toasts always; `successMessage` key → success toast |
 | Forms | RHF + `zodResolver` with schemas from `@repo/contracts` — `components/projects/project-form-dialog.tsx` is the reference (note: form schemas must not rely on `.default()`, supply defaults via `defaultValues`) |
-| Tables | TanStack Table, server-driven pagination + search (`app/(app)/projects/page.tsx`) |
+| Tables | TanStack Table, server-driven pagination + filters + sorting, URL state via nuqs (`app/(app)/projects/page.tsx`, parsers in `search-params.ts`) |
 | Charts | recharts themed with `--chart-*` tokens (`components/dashboard/charts.tsx`): 30-day area chart + status bar chart, tooltips, fixed status→color mapping |
 | Dark mode | next-themes class strategy; toggle in the app shell; tokens defined for both schemes in `app/globals.css` |
-| i18n | next-intl, cookie-based locale (en/fr), switcher in the shell; messages in `apps/web/messages/` |
+| i18n | next-intl, cookie-based locale (en/fr), switcher in the shell; messages in `packages/i18n/messages/` |
 | Error pages | `app/error.tsx` (with digest + retry), `not-found.tsx`, `global-error.tsx` (provider-free last resort) |
 | Mobile-first | nav collapses into a menu below `sm`, cards/tables reflow, `Pixel 7` Playwright project keeps it honest |
 

@@ -8,6 +8,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth.js";
+import { organization } from "./organizations.js";
 
 export const fileObject = pgTable(
   "file_object",
@@ -18,10 +19,13 @@ export const fileObject = pgTable(
     sizeBytes: bigint({ mode: "number" }).notNull(),
     /** Object key in the S3 bucket — never exposed to clients directly. */
     storageKey: text().notNull().unique(),
+    organizationId: text()
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     ownerId: text()
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index().on(table.ownerId)]
+  (table) => [index().on(table.organizationId), index().on(table.ownerId)]
 );

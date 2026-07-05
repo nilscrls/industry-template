@@ -1,19 +1,19 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
-import {
-  ByStatusChart,
-  CreatedPerDayChart,
-} from "@/components/dashboard/charts";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+} from "@repo/ui/components/card";
+import { Skeleton } from "@repo/ui/components/skeleton";
+import { useQuery } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
+import {
+  ByStatusChart,
+  CreatedPerDayChart,
+} from "@/components/dashboard/charts";
 import { orpc } from "@/lib/api";
 import { useApiErrorMessage } from "@/lib/use-app-mutation";
 

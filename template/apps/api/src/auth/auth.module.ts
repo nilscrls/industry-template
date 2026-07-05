@@ -27,6 +27,11 @@ export const AUTH = "BETTER_AUTH_INSTANCE";
           secret: env.BETTER_AUTH_SECRET,
           baseUrl: `${env.WEB_URL}/api/auth`,
           trustedOrigins: [env.WEB_URL],
+          microsoft: {
+            clientId: env.MICROSOFT_CLIENT_ID,
+            clientSecret: env.MICROSOFT_CLIENT_SECRET,
+            tenantId: env.MICROSOFT_TENANT_ID,
+          },
           sendEmail: async (email) => {
             await mail.enqueueAuthEmail(email);
           },

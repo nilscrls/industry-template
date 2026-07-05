@@ -1,3 +1,9 @@
+export {
+  type AuditLogEntry,
+  auditContract,
+  auditLogEntrySchema,
+  listAuditLogsQuerySchema,
+} from "./audit.js";
 export { base } from "./base.js";
 export { type AppContract, contract } from "./contract.js";
 export {
@@ -17,10 +23,22 @@ export {
   MAX_UPLOAD_SIZE_MB,
 } from "./files.js";
 export {
+  type FeatureFlag,
+  featureFlagSchema,
+  flagsContract,
+} from "./flags.js";
+export {
+  type OrganizationSummary,
+  organizationSummarySchema,
+  organizationsContract,
+} from "./organizations.js";
+export {
   type Paginated,
   type PaginationQuery,
   paginatedSchema,
   paginationQuerySchema,
+  type SortOrder,
+  sortOrders,
 } from "./pagination.js";
 export {
   type Action,
@@ -36,10 +54,14 @@ export {
 } from "./permissions.js";
 export {
   createProjectSchema,
+  isProjectSortField,
+  isProjectStatus,
   listProjectsQuerySchema,
   type Project,
+  type ProjectSortField,
   type ProjectStatus,
   projectSchema,
+  projectSortFields,
   projectStatsSchema,
   projectStatuses,
   projectsContract,

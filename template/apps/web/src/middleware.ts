@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/register"];
+const PUBLIC_PATHS = ["/login", "/register", "/two-factor"];
 const SESSION_COOKIES = [
   "better-auth.session_token",
   "__Secure-better-auth.session_token",

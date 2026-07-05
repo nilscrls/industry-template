@@ -14,9 +14,8 @@ drizzle table + schema index entry, api module/controller/service +
 `it.todo` integration specs, a web list page. Then:
 
 1. `pnpm db:generate && pnpm db:migrate` — create/apply the migration.
-2. Grant permissions: extend `defaultRolePermissions` in
-   `packages/contracts/src/permissions.ts`, then `pnpm db:seed` (resets the
-   role baseline; per-user overrides are untouched).
+2. Grant permissions for the new subject — see `docs/authorization.md` for
+   this project's model.
 3. Add `messages/*.json` keys and a nav item in
    `apps/web/src/components/app-shell.tsx`.
 4. Turn the generated `it.todo`s into real tests and make them pass.
@@ -35,15 +34,10 @@ drizzle table + schema index entry, api module/controller/service +
 
 ## Add / change permissions
 
-- **New subject**: add it to `subjects` in
-  `packages/contracts/src/permissions.ts` (the feature generator does this).
-- **Role baseline**: edit `defaultRolePermissions`, re-run `pnpm db:seed`.
-  Runtime edits go straight into the `role_permission` table — remember
-  `AbilityFactory.invalidateRole()` or the 5-minute cache delay applies.
-- **Per-user override**: `PUT /users/:id/permission-overrides` with rules
-  like `{ action: "delete", subject: "File" }` (grant) or
-  `{ ..., inverted: true }` (deny — beats any allow).
-- Owner-scoped rules use conditions: `{ ownerId: "${userId}" }`.
+Authorization rules live in `packages/contracts/src/permissions.ts` and are
+enforced by the api's `AbilityFactory`. The exact workflow depends on the
+model chosen at scaffold time — `docs/authorization.md` documents this
+project's setup (rule sources, management endpoints, cache invalidation).
 
 ## Add an error code
 
@@ -51,14 +45,14 @@ drizzle table + schema index entry, api module/controller/service +
    (`packages/contracts/src/errors.ts`).
 2. Map it to an HTTP status in `CODE_TO_HTTP`
    (`apps/api/src/common/app-error.ts`).
-3. Add `errors.<CODE>` translations to `apps/web/messages/en.json` and
+3. Add `errors.<CODE>` translations to `packages/i18n/messages/en.json` and
    `fr.json` (params are ICU placeholders).
 4. Throw it: `throw appError("YOUR_CODE", { ...typedParams })`.
 
 ## Add a locale
 
-1. Add it to `SUPPORTED_LOCALES` in `apps/web/src/i18n/config.ts`.
-2. Create `apps/web/messages/<locale>.json` (copy `en.json`).
+1. Add it to `SUPPORTED_LOCALES` in `packages/i18n/src/config.ts`.
+2. Create `packages/i18n/messages/<locale>.json` (copy `en.json`).
 3. Label it under `shell.locales` in every message file.
 
 ## Add an environment variable

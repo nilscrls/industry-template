@@ -1,20 +1,7 @@
 "use client";
 
-import {
-  FolderKanbanIcon,
-  GlobeIcon,
-  LayoutDashboardIcon,
-  LogOutIcon,
-  MenuIcon,
-  MoonIcon,
-  SunIcon,
-} from "lucide-react";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useLocale, useTranslations } from "next-intl";
-import { useTheme } from "next-themes";
-import type { ReactNode } from "react";
-import { Button } from "@/components/ui/button";
+import { LOCALE_COOKIE, SUPPORTED_LOCALES } from "@repo/i18n";
+import { Button } from "@repo/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,14 +9,31 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { LOCALE_COOKIE, SUPPORTED_LOCALES } from "@/i18n/config";
+} from "@repo/ui/components/dropdown-menu";
+import { cn } from "@repo/ui/lib/utils";
+import {
+  FolderKanbanIcon,
+  GlobeIcon,
+  LayoutDashboardIcon,
+  LogOutIcon,
+  MenuIcon,
+  MoonIcon,
+  SettingsIcon,
+  ShieldIcon,
+  SunIcon,
+} from "lucide-react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useLocale, useTranslations } from "next-intl";
+import { useTheme } from "next-themes";
+import type { ReactNode } from "react";
+import { OrgSwitcher } from "@/components/org-switcher";
 import { authClient } from "@/lib/auth-client";
-import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/dashboard", key: "dashboard", icon: LayoutDashboardIcon },
   { href: "/projects", key: "projects", icon: FolderKanbanIcon },
+  { href: "/settings", key: "settings", icon: SettingsIcon },
 ] as const;
 
 function ThemeToggle() {
@@ -86,6 +90,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { data: session } = authClient.useSession();
+  const navItems = [
+    ...NAV_ITEMS,
+    // Gate by the existing admin role — the API re-checks every endpoint.
+    ...(session?.user.role === "admin"
+      ? [{ href: "/admin", key: "admin", icon: ShieldIcon } as const]
+      : []),
+  ];
 
   async function signOut() {
     await authClient.signOut();
@@ -105,7 +116,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
-              {NAV_ITEMS.map((item) => (
+              {navItems.map((item) => (
                 <DropdownMenuItem asChild key={item.href}>
                   <Link href={item.href}>{t(`nav.${item.key}`)}</Link>
                 </DropdownMenuItem>
@@ -118,7 +129,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
 
           <nav className="ml-6 hidden items-center gap-1 sm:flex">
-            {NAV_ITEMS.map((item) => (
+            {navItems.map((item) => (
               <Button
                 asChild
                 key={item.href}
@@ -134,6 +145,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </nav>
 
           <div className="ml-auto flex items-center gap-1">
+            <OrgSwitcher />
             <LocaleSwitcher />
             <ThemeToggle />
             <DropdownMenu>

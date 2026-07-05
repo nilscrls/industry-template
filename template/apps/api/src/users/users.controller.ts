@@ -1,12 +1,16 @@
 import { Controller } from "@nestjs/common";
 import { Implement, implement } from "@orpc/nest";
 import { contract } from "@repo/contracts";
+import { AuditService } from "../audit/audit.service";
 import { RequireAbility } from "../auth/decorators";
 import { UsersService } from "./users.service";
 
 @Controller()
 export class UsersController {
-  constructor(private readonly users: UsersService) {}
+  constructor(
+    private readonly users: UsersService,
+    private readonly audit: AuditService
+  ) {}
 
   @RequireAbility({ action: "read", subject: "User" })
   @Implement(contract.users.list)
@@ -19,9 +23,9 @@ export class UsersController {
   @RequireAbility({ action: "update", subject: "User" })
   @Implement(contract.users.setRole)
   setRole() {
-    return implement(contract.users.setRole).handler(({ input }) =>
-      this.users.setRole(input)
-    );
+    return implement(contract.users.setRole)
+      .use(this.audit.audited({ action: "user.setRole", entityType: "User" }))
+      .handler(({ input }) => this.users.setRole(input));
   }
 
   @RequireAbility({ action: "read", subject: "User" })
@@ -35,9 +39,14 @@ export class UsersController {
   @RequireAbility({ action: "update", subject: "User" })
   @Implement(contract.users.setPermissionOverrides)
   setPermissionOverrides() {
-    return implement(contract.users.setPermissionOverrides).handler(
-      ({ input }) => this.users.setPermissionOverrides(input)
-    );
+    return implement(contract.users.setPermissionOverrides)
+      .use(
+        this.audit.audited({
+          action: "user.setPermissionOverrides",
+          entityType: "User",
+        })
+      )
+      .handler(({ input }) => this.users.setPermissionOverrides(input));
   }
 
   /** Any authenticated user — powers the web app's ability provider. */

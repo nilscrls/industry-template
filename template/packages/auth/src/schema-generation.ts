@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { admin } from "better-auth/plugins";
+import { admin, organization, twoFactor } from "better-auth/plugins";
 
 /**
  * Used only by `pnpm auth:schema` (@better-auth/cli generate) to regenerate
@@ -10,5 +10,5 @@ import { admin } from "better-auth/plugins";
 export const auth = betterAuth({
   database: drizzleAdapter({} as never, { provider: "pg" }),
   emailAndPassword: { enabled: true },
-  plugins: [admin()],
+  plugins: [admin(), organization(), twoFactor()],
 });

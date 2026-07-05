@@ -1,0 +1,202 @@
+{
+  "shell": {
+    "appName": "Industry App",
+    "openMenu": "Ouvrir le menu",
+    "toggleTheme": "Changer de thème",
+    "changeLocale": "Changer de langue",
+    "signOut": "Se déconnecter",
+    "locales": { "en": "English", "fr": "Français" },
+    "nav": {
+      "dashboard": "Tableau de bord",
+      "projects": "Projets",
+      "settings": "Paramètres",
+      "admin": "Admin"
+    }
+  },
+  "admin": {
+    "title": "Admin",
+    "forbidden": "Le rôle admin est requis pour accéder à cette zone.",
+    "nav": {
+      "organizations": "Organisations",
+      "audit": "Journal d'audit",
+      "flags": "Feature flags"
+    },
+    "organizations": {
+      "title": "Organisations",
+      "searchPlaceholder": "Rechercher des organisations…",
+      "fields": {
+        "name": "Nom",
+        "slug": "Slug",
+        "members": "Membres",
+        "createdAt": "Créée"
+      },
+      "empty": "Aucune organisation pour l'instant.",
+      "previous": "Précédent",
+      "next": "Suivant",
+      "pageInfo": "Page {page} sur {totalPages}"
+    },
+    "flags": {
+      "title": "Feature flags",
+      "description": "Les flags sont définis et déployés dans PostHog ; un override force la valeur pour cette organisation uniquement et prime sur PostHog.",
+      "newOverridePlaceholder": "clé-du-flag",
+      "addOverride": "Forcer on",
+      "forceOn": "On",
+      "forceOff": "Off",
+      "clearOverride": "Effacer",
+      "on": "On",
+      "off": "Off",
+      "sources": { "override": "Override", "posthog": "PostHog" },
+      "fields": {
+        "key": "Clé",
+        "state": "État",
+        "source": "Source",
+        "override": "Override"
+      },
+      "empty": "Aucun flag connu — définissez-les dans PostHog ou ajoutez un override."
+    },
+    "audit": {
+      "title": "Journal d'audit",
+      "actionFilterPlaceholder": "Filtrer par action, ex. project.update",
+      "fields": {
+        "when": "Quand",
+        "actor": "Acteur",
+        "action": "Action",
+        "entity": "Entité",
+        "requestId": "Requête"
+      },
+      "deletedActor": "(utilisateur supprimé)",
+      "empty": "Aucune entrée d'audit dans cette organisation.",
+      "previous": "Précédent",
+      "next": "Suivant",
+      "pageInfo": "Page {page} sur {totalPages}"
+    }
+  },
+  "twoFactor": {
+    "title": "Authentification à deux facteurs",
+    "description": "Saisissez le code à 6 chiffres de votre application d'authentification.",
+    "backupDescription": "Saisissez l'un de vos codes de secours à usage unique.",
+    "codeLabel": "Code d'authentification",
+    "backupCodeLabel": "Code de secours",
+    "verifyAction": "Vérifier",
+    "useBackupCode": "Utiliser un code de secours",
+    "useTotp": "Utiliser votre application d'authentification",
+    "invalidCode": "Ce code n'est pas valide"
+  },
+  "settings": {
+    "title": "Paramètres",
+    "twoFactor": {
+      "title": "Authentification à deux facteurs",
+      "enabledDescription": "Votre compte exige un second facteur à la connexion.",
+      "disabledDescription": "Ajoutez un second facteur pour protéger votre compte.",
+      "passwordLabel": "Confirmez votre mot de passe",
+      "enableAction": "Activer la 2FA",
+      "disableAction": "Désactiver la 2FA",
+      "disableTitle": "Désactiver l'authentification à deux facteurs",
+      "disableDescription": "Votre compte n'exigera plus de second facteur.",
+      "enrollTitle": "Configurer votre application",
+      "enrollDescription": "Scannez le QR code, conservez les codes de secours en lieu sûr, puis confirmez avec un code.",
+      "backupCodesTitle": "Codes de secours",
+      "backupCodesDescription": "Chaque code fonctionne une seule fois si vous perdez votre application.",
+      "confirmCodeLabel": "Code de votre application",
+      "confirmAction": "Confirmer",
+      "enabled": "Authentification à deux facteurs activée",
+      "disabled": "Authentification à deux facteurs désactivée",
+      "wrongPassword": "Mot de passe incorrect",
+      "invalidCode": "Ce code n'est pas valide"
+    }
+  },
+  "organizations": {
+    "switchLabel": "Organisations",
+    "noOrganization": "Aucune organisation",
+    "createAction": "Créer une organisation",
+    "createTitle": "Créer une organisation",
+    "createDescription": "Les projets et fichiers appartiennent à une organisation.",
+    "nameLabel": "Nom",
+    "createSubmit": "Créer",
+    "created": "Organisation créée",
+    "createFailed": "Impossible de créer l'organisation",
+    "switchFailed": "Impossible de changer d'organisation"
+  },
+  "auth": {
+    "loginTitle": "Bon retour",
+    "loginDescription": "Connectez-vous à votre compte",
+    "registerTitle": "Créer un compte",
+    "registerDescription": "Quelques secondes et c'est parti",
+    "name": "Nom",
+    "email": "E-mail",
+    "password": "Mot de passe",
+    "loginAction": "Se connecter",
+    "registerAction": "S'inscrire",
+    "noAccount": "Pas encore de compte ?",
+    "hasAccount": "Déjà un compte ?",
+    "invalidCredentials": "E-mail ou mot de passe invalide",
+    "orContinueWith": "ou",
+    "microsoftAction": "Se connecter avec Microsoft",
+    "microsoftFailed": "La connexion Microsoft a échoué",
+    "registerFailed": "L'inscription a échoué",
+    "registerSuccess": "Bienvenue ! Vérifiez votre boîte mail pour confirmer votre adresse."
+  },
+  "dashboard": {
+    "title": "Tableau de bord",
+    "totalProjects": "Projets au total",
+    "createdPerDay": "Projets créés",
+    "createdPerDayDescription": "30 derniers jours",
+    "byStatus": "Projets par statut",
+    "byStatusDescription": "Répartition actuelle"
+  },
+  "projects": {
+    "title": "Projets",
+    "searchPlaceholder": "Rechercher des projets…",
+    "statusFilterLabel": "Filtrer par statut",
+    "allStatuses": "Tous les statuts",
+    "createTitle": "Créer un projet",
+    "editTitle": "Modifier le projet",
+    "formDescription": "Nommez votre projet et choisissez un statut.",
+    "createAction": "Nouveau projet",
+    "createSubmit": "Créer",
+    "saveAction": "Enregistrer",
+    "editAction": "Modifier",
+    "deleteAction": "Supprimer",
+    "rowActions": "Actions",
+    "empty": "Aucun projet pour le moment.",
+    "previous": "Précédent",
+    "next": "Suivant",
+    "pageInfo": "Page {page} sur {totalPages}",
+    "fields": {
+      "name": "Nom",
+      "description": "Description",
+      "status": "Statut",
+      "createdAt": "Créé le"
+    },
+    "status": {
+      "draft": "Brouillon",
+      "active": "Actif",
+      "archived": "Archivé"
+    }
+  },
+  "feedback": {
+    "flagOverrideSaved": "Override de feature flag enregistré",
+    "projectCreated": "Projet créé",
+    "projectUpdated": "Projet mis à jour",
+    "projectDeleted": "Projet supprimé"
+  },
+  "errors": {
+    "AUTH_UNAUTHORIZED": "Vous devez vous connecter pour continuer.",
+    "AUTH_FORBIDDEN": "Vous n'êtes pas autorisé à effectuer cette action ({action} {subject}).",
+    "RESOURCE_NOT_FOUND": "{resource} introuvable.",
+    "RESOURCE_CONFLICT": "Ce {resource} existe déjà.",
+    "VALIDATION_FAILED": "Certains champs sont invalides. Corrigez puis réessayez.",
+    "FILE_TOO_LARGE": "Fichier trop volumineux (max {maxSizeMb} Mo).",
+    "FILE_TYPE_NOT_ALLOWED": "Type de fichier non autorisé. Autorisés : {allowed}.",
+    "RATE_LIMITED": "Trop de requêtes — réessayez dans {retryAfterSeconds}s.",
+    "INTERNAL": "Une erreur est survenue. Veuillez réessayer."
+  },
+  "errorPages": {
+    "errorTitle": "Une erreur est survenue",
+    "errorDescription": "Une erreur inattendue s'est produite. Notre équipe est notifiée via la trace de requête.",
+    "notFoundTitle": "Page introuvable",
+    "notFoundDescription": "La page que vous cherchez n'existe pas ou a été déplacée.",
+    "retry": "Réessayer",
+    "backHome": "Retour au tableau de bord"
+  }
+}

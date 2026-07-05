@@ -13,7 +13,11 @@ import { project } from "@repo/db";
 import { and, asc, count, desc, eq, gte, ilike, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { forbidden, notFound } from "../common/app-error";
-import { currentAbility, currentUser } from "../common/request-context";
+import {
+  activeOrganizationId,
+  currentAbility,
+  currentUser,
+} from "../common/request-context";
 import { DbService } from "../db/db.module";
 import { CacheService } from "../redis/cache.service";
 
@@ -23,9 +27,12 @@ type UpdateInput = z.infer<typeof updateProjectSchema> & { id: string };
 type Stats = z.infer<typeof projectStatsSchema>;
 type ProjectRow = typeof project.$inferSelect;
 
-const STATS_CACHE_KEY = "projects:stats";
 const STATS_TTL_SECONDS = 60;
 const STATS_WINDOW_DAYS = 30;
+
+function statsCacheKey(organizationId: string): string {
+  return `projects:stats:${organizationId}`;
+}
 
 @Injectable()
 export class ProjectsService {
@@ -39,7 +46,12 @@ export class ProjectsService {
   }
 
   async list(query: ListQuery): Promise<Paginated<Project>> {
+    const orgId = activeOrganizationId();
+    if (!orgId) {
+      return this.emptyPage(query);
+    }
     const where = and(
+      eq(project.organizationId, orgId),
       query.search ? ilike(project.name, `%${query.search}%`) : undefined,
       query.status ? eq(project.status, query.status) : undefined
     );
@@ -81,19 +93,25 @@ export class ProjectsService {
   }
 
   async create(input: CreateInput): Promise<Project> {
+    const orgId = activeOrganizationId();
+    if (!orgId) {
+      // Creating requires a tenant to create into.
+      throw forbidden("create", "Project");
+    }
     const [row] = await this.db
       .insert(project)
       .values({
         name: input.name,
         description: input.description ?? null,
         status: input.status,
+        organizationId: orgId,
         ownerId: currentUser().id,
       })
       .returning();
     if (!row) {
       throw notFound("Project");
     }
-    await this.cache.del(STATS_CACHE_KEY);
+    await this.cache.del(statsCacheKey(orgId));
     return this.toDto(row);
   }
 
@@ -126,7 +144,7 @@ export class ProjectsService {
     if (!updated) {
       throw notFound("Project");
     }
-    await this.cache.del(STATS_CACHE_KEY);
+    await this.cache.del(statsCacheKey(row.organizationId));
     return this.toDto(updated);
   }
 
@@ -136,32 +154,38 @@ export class ProjectsService {
       throw forbidden("delete", "Project");
     }
     await this.db.delete(project).where(eq(project.id, id));
-    await this.cache.del(STATS_CACHE_KEY);
+    await this.cache.del(statsCacheKey(row.organizationId));
     return { id };
   }
 
   stats(): Promise<Stats> {
-    return this.cache.getOrSet(STATS_CACHE_KEY, STATS_TTL_SECONDS, () =>
-      this.computeStats()
+    const orgId = activeOrganizationId();
+    if (!orgId) {
+      return Promise.resolve(this.emptyStats());
+    }
+    return this.cache.getOrSet(statsCacheKey(orgId), STATS_TTL_SECONDS, () =>
+      this.computeStats(orgId)
     );
   }
 
-  private async computeStats(): Promise<Stats> {
+  private async computeStats(orgId: string): Promise<Stats> {
     const since = new Date();
     since.setUTCHours(0, 0, 0, 0);
     since.setUTCDate(since.getUTCDate() - (STATS_WINDOW_DAYS - 1));
     const dayExpr = sql<string>`to_char(date_trunc('day', ${project.createdAt}), 'YYYY-MM-DD')`;
+    const inOrg = eq(project.organizationId, orgId);
 
     const [totals, byStatusRows, perDayRows] = await Promise.all([
-      this.db.select({ value: count() }).from(project),
+      this.db.select({ value: count() }).from(project).where(inOrg),
       this.db
         .select({ status: project.status, count: count() })
         .from(project)
+        .where(inOrg)
         .groupBy(project.status),
       this.db
         .select({ date: dayExpr, count: count() })
         .from(project)
-        .where(gte(project.createdAt, since))
+        .where(and(inOrg, gte(project.createdAt, since)))
         .groupBy(dayExpr),
     ]);
 
@@ -184,15 +208,45 @@ export class ProjectsService {
     return { total: totals[0]?.value ?? 0, byStatus, createdPerDay };
   }
 
+  /** Rows outside the active organization do not exist for this request. */
   private async findRow(id: string): Promise<ProjectRow> {
+    const orgId = activeOrganizationId();
+    if (!orgId) {
+      throw notFound("Project");
+    }
     const [row] = await this.db
       .select()
       .from(project)
-      .where(eq(project.id, id));
+      .where(and(eq(project.id, id), eq(project.organizationId, orgId)));
     if (!row) {
       throw notFound("Project");
     }
     return row;
+  }
+
+  private emptyPage(query: ListQuery): Paginated<Project> {
+    return {
+      items: [],
+      total: 0,
+      page: query.page,
+      pageSize: query.pageSize,
+      totalPages: 0,
+    };
+  }
+
+  private emptyStats(): Stats {
+    const since = new Date();
+    since.setUTCHours(0, 0, 0, 0);
+    since.setUTCDate(since.getUTCDate() - (STATS_WINDOW_DAYS - 1));
+    return {
+      total: 0,
+      byStatus: projectStatuses.map((status) => ({ status, count: 0 })),
+      createdPerDay: Array.from({ length: STATS_WINDOW_DAYS }, (_, index) => {
+        const day = new Date(since);
+        day.setUTCDate(since.getUTCDate() + index);
+        return { date: day.toISOString().slice(0, 10), count: 0 };
+      }),
+    };
   }
 
   private toDto(row: ProjectRow): Project {
@@ -201,6 +255,7 @@ export class ProjectsService {
       name: row.name,
       description: row.description,
       status: row.status,
+      organizationId: row.organizationId,
       ownerId: row.ownerId,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),

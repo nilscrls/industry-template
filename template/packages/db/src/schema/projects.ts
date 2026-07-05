@@ -9,6 +9,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth.js";
+import { organization } from "./organizations.js";
 
 export const projectStatusEnum = pgEnum("project_status", projectStatuses);
 
@@ -19,6 +20,9 @@ export const project = pgTable(
     name: varchar({ length: 120 }).notNull(),
     description: text(),
     status: projectStatusEnum().notNull().default("draft"),
+    organizationId: text()
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     ownerId: text()
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -29,6 +33,7 @@ export const project = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+    index().on(table.organizationId),
     index().on(table.ownerId),
     index().on(table.status),
     index().on(table.createdAt),

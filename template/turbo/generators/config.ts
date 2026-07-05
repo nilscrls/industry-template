@@ -118,8 +118,8 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
         return [
           "Next steps:",
           "  1. pnpm db:generate && pnpm db:migrate   # create the migration",
-          "  2. Adjust default role permissions in packages/contracts/src/permissions.ts",
-          "  3. Add i18n keys under `{{ camelCase plural }}` in apps/web/messages/*.json",
+          "  2. Grant permissions for the new subject (see docs/authorization.md)",
+          "  3. Add i18n keys under `{{ camelCase plural }}` in packages/i18n/messages/*.json",
           "  4. Add a nav item in apps/web/src/components/app-shell.tsx",
           "  5. Make the generated int tests pass (TDD: they start as todos)",
         ].join("\n");

@@ -54,3 +54,51 @@ jobs:
       - run: pnpm test
       - name: Integration tests (Testcontainers)
         run: pnpm test:integration
+
+  # Scaffold each variant with the real CLI and put it through the same
+  # gauntlet — overlays must never drift from the template.
+  variants:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: base-ui
+            flags: --ui=base
+            integration: false
+          - name: rebac
+            flags: --authz=rebac --locale=fr
+            integration: true
+          - name: base-ui-rebac
+            flags: --ui=base --authz=rebac
+            integration: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.12.1
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Scaffold ${{ matrix.name }}
+        run: node_modules/.bin/tsx src/index.ts "$RUNNER_TEMP/variant-app" --yes ${{ matrix.flags }} --no-git --no-install
+      # Not frozen: variant overlays legitimately change package.json (e.g.
+      # ui-base swaps Radix for Base UI), so the scaffold's first install
+      # must be allowed to update the copied lockfile — exactly what a user's
+      # local `pnpm install` does.
+      - run: pnpm install --no-frozen-lockfile
+        working-directory: ${{ runner.temp }}/variant-app
+      - run: pnpm lint
+        working-directory: ${{ runner.temp }}/variant-app
+      - run: pnpm build
+        working-directory: ${{ runner.temp }}/variant-app
+      - run: pnpm check-types
+        working-directory: ${{ runner.temp }}/variant-app
+      - run: pnpm test
+        working-directory: ${{ runner.temp }}/variant-app
+      - name: Integration tests (Testcontainers)
+        if: matrix.integration
+        run: pnpm test:integration
+        working-directory: ${{ runner.temp }}/variant-app

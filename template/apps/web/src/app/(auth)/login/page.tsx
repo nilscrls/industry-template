@@ -1,20 +1,14 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useTranslations } from "next-intl";
-import { useForm } from "react-hook-form";
-import { toast } from "sonner";
-import { z } from "zod";
-import { Button } from "@/components/ui/button";
+import { Button } from "@repo/ui/components/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
+} from "@repo/ui/components/card";
 import {
   Form,
   FormControl,
@@ -22,8 +16,14 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
+} from "@repo/ui/components/form";
+import { Input } from "@repo/ui/components/input";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
+import { useForm } from "react-hook-form";
+import { toast } from "sonner";
+import { z } from "zod";
 import { authClient } from "@/lib/auth-client";
 
 const loginSchema = z.object({
@@ -41,14 +41,28 @@ export default function LoginPage() {
   });
 
   const onSubmit = form.handleSubmit(async (values) => {
-    const { error } = await authClient.signIn.email(values);
+    const { data, error } = await authClient.signIn.email(values);
     if (error) {
       toast.error(t("invalidCredentials"));
+      return;
+    }
+    if (data && "twoFactorRedirect" in data && data.twoFactorRedirect) {
+      // twoFactorClient's onTwoFactorRedirect is navigating to /two-factor.
       return;
     }
     router.push(searchParams.get("next") ?? "/dashboard");
     router.refresh();
   });
+
+  async function signInWithMicrosoft() {
+    const { error } = await authClient.signIn.social({
+      provider: "microsoft",
+      callbackURL: searchParams.get("next") ?? "/dashboard",
+    });
+    if (error) {
+      toast.error(t("microsoftFailed"));
+    }
+  }
 
   return (
     <main className="flex min-h-dvh items-center justify-center p-4">
@@ -104,6 +118,21 @@ export default function LoginPage() {
               </Button>
             </form>
           </Form>
+          <div className="mt-4 grid gap-2">
+            <div className="relative text-center">
+              <span className="relative z-10 bg-card px-2 text-muted-foreground text-xs uppercase">
+                {t("orContinueWith")}
+              </span>
+              <span className="absolute inset-x-0 top-1/2 border-t" />
+            </div>
+            <Button
+              onClick={signInWithMicrosoft}
+              type="button"
+              variant="outline"
+            >
+              {t("microsoftAction")}
+            </Button>
+          </div>
           <p className="mt-4 text-center text-muted-foreground text-sm">
             {t("noAccount")}{" "}
             <Link className="underline underline-offset-4" href="/register">

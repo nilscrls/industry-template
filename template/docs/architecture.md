@@ -12,7 +12,9 @@ packages/
   db/                   drizzle schema, migrations (drizzle/), seeds, client factory
   auth/                 better-auth factory + shared CASL ability builder
   emails/               react-email templates + render helper
-  typescript-config/    tsconfig presets (base / library / nestjs / nextjs)
+  i18n/                 locale config + message catalogs (next-intl typed keys)
+  ui/                   shadcn/ui design system (source-exported, Tailwind v4 tokens)
+  typescript-config/    tsconfig presets (base / library / nestjs / nextjs / react-library)
 turbo/generators/       `pnpm gen feature` vertical-slice scaffolding
 ```
 
@@ -97,22 +99,17 @@ redirects only — real enforcement is always the api's `AuthGuard`.
 
 ## Authorization (CASL)
 
-- Rule storage: `role_permission` (seeded from
-  `defaultRolePermissions` in `packages/contracts/src/permissions.ts`) plus
-  per-user `user_permission_override` rows. Overrides support **allow and
-  deny; deny always wins** (`resolveRules` appends inverted rules last).
-- `AbilityFactory` (`apps/api/src/auth/ability.factory.ts`) builds a CASL
-  ability per request; rule rows are cached in Redis for 5 minutes and
-  invalidated on writes (`invalidateUser` / `invalidateRole`).
-- Conditions support the `"${userId}"` placeholder
-  (`{ ownerId: "${userId}" }`), interpolated at build time — this is how
-  members mutate only what they own.
+- Serializable CASL rules power both api enforcement and web UI gating: the
+  api's `AbilityFactory` builds an ability per request (Redis-cached), and
+  the web rebuilds **the same ability** from `GET /me/permissions`
+  (`apps/web/src/lib/ability.tsx`, `<Can>` / `useAbility()`). UI gating is
+  cosmetic; the api is the authority.
 - Enforcement is two-layered: `@RequireAbility({ action, subject })` for
   coarse route checks (PoliciesGuard), `ability.can(action, asSubject("Project", row))`
   in services for row-level checks.
-- The web builds **the same ability** from `GET /me/permissions`
-  (`apps/web/src/lib/ability.tsx`, `<Can>` / `useAbility()`) to show/hide UI.
-  UI gating is cosmetic; the api is the authority.
+- Where the rules come from depends on the model chosen at scaffold time
+  (RBAC role tables or ReBAC memberships) — see `docs/authorization.md` for
+  the full picture of this project's setup.
 
 ## Error pipeline
 
@@ -127,7 +124,7 @@ Single wire shape everywhere: `{ code, params, traceId }`.
    JSON shape and logs 5xx with the `traceId`.
 4. The web normalizes anything with `extractApiError()` and translates via
    `useApiErrorMessage()` — codes map to `errors.<CODE>` in
-   `apps/web/messages/*.json`, params are the interpolation values.
+   `packages/i18n/messages/*.json`, params are the interpolation values.
 5. `traceId` equals the api log line's id and the `x-request-id` response
    header — one identifier from toast to log.
 

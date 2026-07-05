@@ -5,11 +5,23 @@ import { paginatedSchema, paginationQuerySchema } from "./pagination.js";
 export const projectStatuses = ["draft", "active", "archived"] as const;
 export type ProjectStatus = (typeof projectStatuses)[number];
 
+export function isProjectStatus(value: unknown): value is ProjectStatus {
+  return projectStatuses.includes(value as ProjectStatus);
+}
+
+export const projectSortFields = ["name", "createdAt", "updatedAt"] as const;
+export type ProjectSortField = (typeof projectSortFields)[number];
+
+export function isProjectSortField(value: unknown): value is ProjectSortField {
+  return projectSortFields.includes(value as ProjectSortField);
+}
+
 export const projectSchema = z.object({
   id: z.uuid(),
   name: z.string().min(1).max(120),
   description: z.string().max(2000).nullable(),
   status: z.enum(projectStatuses),
+  organizationId: z.string(),
   ownerId: z.string(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
@@ -32,7 +44,7 @@ export const updateProjectSchema = z.object({
 export const listProjectsQuerySchema = paginationQuerySchema.extend({
   search: z.string().max(120).optional(),
   status: z.enum(projectStatuses).optional(),
-  sortBy: z.enum(["name", "createdAt", "updatedAt"]).default("createdAt"),
+  sortBy: z.enum(projectSortFields).default("createdAt"),
 });
 
 export const projectStatsSchema = z.object({

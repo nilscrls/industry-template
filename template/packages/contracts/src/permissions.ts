@@ -7,7 +7,15 @@ export const actions = [
   "update",
   "delete",
 ] as const;
-export const subjects = ["Project", "User", "File", "all"] as const;
+export const subjects = [
+  "Project",
+  "User",
+  "File",
+  "AuditLog",
+  "Organization",
+  "FeatureFlag",
+  "all",
+] as const;
 export const roles = ["admin", "manager", "member"] as const;
 
 export type Action = (typeof actions)[number];
