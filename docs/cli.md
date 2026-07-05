@@ -9,8 +9,8 @@ npx create-industry-app my-app
 ```
 
 Interactive prompts: project name (also the target directory), UI primitives,
-authorization model, default language, then optional setup steps (git init,
-pnpm install). Non-interactive:
+authorization model, default language, AI assistant config, then optional
+setup steps (git init, pnpm install). Non-interactive:
 
 ```sh
 npx create-industry-app my-app -- --yes            # accept all defaults
@@ -23,6 +23,7 @@ npx create-industry-app my-app -- --yes --ui=base --authz=rebac --locale=fr
 | `--ui=radix\|base` | shadcn/ui primitive library (default `radix`): Radix UI, or Base UI (`@base-ui/react`, `render`-prop composition) |
 | `--authz=rbac\|rebac` | CASL authorization model (default `rbac`): global roles + per-user overrides, or per-project memberships (owner/editor/viewer) |
 | `--locale=en\|fr` | default UI language (default `en`); both catalogs always ship |
+| `--ai=claude\|none` | AI assistant config (default `claude`): `AGENTS.md` (agent instructions, stamped with the chosen variants), `CLAUDE.md` (imports it) and path-scoped `.claude/rules/` |
 | `--yes`, `-y` | skip all prompts, take defaults/flags |
 | `--no-git` | skip `git init` |
 | `--no-install` | skip `pnpm install` |
@@ -42,13 +43,19 @@ npx create-industry-app my-app -- --yes --ui=base --authz=rebac --locale=fr
    `--authz=rebac` swaps the permission contracts, db schema + migrations,
    ability factory, seeds and integration tests for the membership-based
    model.
-3. Sets `DEFAULT_LOCALE` in `packages/i18n/src/config.ts` from `--locale`.
-4. Renames every `_gitignore` → `.gitignore` (npm strips `.gitignore` files
-   from published packages, so the template stores them prefixed).
-5. Stamps the project name into the root `package.json`.
-6. Materializes `.env` from `.env.example`, generating a random 64-hex
+3. Unless `--ai=none`, applies the `ai-claude` overlay — `AGENTS.md`,
+   `CLAUDE.md` (a one-line `@AGENTS.md` import) and `.claude/rules/` — and
+   stamps the chosen ui/authz/locale variants into `AGENTS.md`. The managed
+   content sits between `BEGIN:create-industry-app` markers; edits outside
+   them survive template upgrades.
+4. Sets `DEFAULT_LOCALE` in `packages/i18n/src/config.ts` from `--locale`.
+5. Renames every `_gitignore` → `.gitignore` and `_claude/` → `.claude/`
+   (npm strips or mangles dot-entries in published packages, so the template
+   and overlays store them prefixed).
+6. Stamps the project name into the root `package.json`.
+7. Materializes `.env` from `.env.example`, generating a random 64-hex
    `BETTER_AUTH_SECRET`.
-7. Optionally initializes git (`main` branch) and runs `pnpm install`, then
+8. Optionally initializes git (`main` branch) and runs `pnpm install`, then
    commits the scaffold and creates a `develop` branch — ready for
    git-flow-next. (The repo is created before the install so the template's
    `prepare` script can register git hooks; the commit happens after so the

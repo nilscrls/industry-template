@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import {
+  AI_VARIANTS,
+  type AiVariant,
   AUTHZ_VARIANTS,
   type AuthzVariant,
   isDirEmpty,
@@ -17,6 +19,7 @@ import {
 } from "./scaffold.js";
 
 interface CliFlags {
+  ai: AiVariant | undefined;
   authz: AuthzVariant | undefined;
   directory: string | undefined;
   git: boolean;
@@ -55,6 +58,7 @@ function parseArgs(argv: string[]): CliFlags {
     ui: enumFlag(argv, "ui", UI_VARIANTS),
     authz: enumFlag(argv, "authz", AUTHZ_VARIANTS),
     locale: enumFlag(argv, "locale", LOCALE_VARIANTS),
+    ai: enumFlag(argv, "ai", AI_VARIANTS),
   };
 }
 
@@ -101,6 +105,7 @@ async function promptProjectName(flags: CliFlags): Promise<string> {
 }
 
 interface VariantChoices {
+  ai: AiVariant;
   authz: AuthzVariant;
   locale: LocaleVariant;
   ui: UiVariant;
@@ -173,7 +178,21 @@ async function promptVariants(flags: CliFlags): Promise<VariantChoices> {
       initialValue: "en" as const,
     })
   );
-  return { ui, authz, locale };
+  const ai = await promptVariant(flags.ai, flags.yes, "claude", () =>
+    p.select({
+      message: "AI assistant config",
+      options: [
+        {
+          value: "claude" as const,
+          label: "Claude Code",
+          hint: "AGENTS.md + CLAUDE.md + path-scoped .claude/rules",
+        },
+        { value: "none" as const, label: "None" },
+      ],
+      initialValue: "claude" as const,
+    })
+  );
+  return { ui, authz, locale, ai };
 }
 
 async function promptSetupSteps(

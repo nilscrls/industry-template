@@ -15,7 +15,8 @@ scaffold builds green (the `variants` CI job), every scaffold builds green.
 src/          CLI source (@clack/prompts) — scaffold logic is pure & tested
 tests/        CLI tests, incl. scaffold smoke tests against the REAL template
 template/     the reference app (its docs/ ships to every generated project)
-variants/     per-option overlays: ui-base (Base UI), authz-rebac (ReBAC)
+variants/     per-option overlays: ui-base (Base UI), authz-rebac (ReBAC),
+              ai-claude (AGENTS.md + CLAUDE.md + .claude/rules — applied by default)
 docs/         this documentation
 .github/      CI: `cli` + `template` + `variants` jobs (quality + Testcontainers)
 ```
@@ -29,11 +30,23 @@ docs/         this documentation
   `project_member` schema + regenerated drizzle migrations (`_delete.json`
   removes the RBAC ones), ability factory, projects/users services and
   controllers, seeds, `docs/authorization.md`, and its own integration suite.
+- `variants/ai-claude/` — AI assistant config, applied **by default**
+  (`--ai=none` opts out): `AGENTS.md` (agent instructions inside
+  `BEGIN/END:create-industry-app` markers; `__UI_VARIANT__` /
+  `__AUTHZ_VARIANT__` / `__LOCALE_VARIANT__` tokens are stamped at scaffold
+  time), a one-line `CLAUDE.md` importing it, and path-scoped
+  `.claude/rules/*.md` — stored as `_claude/` in the overlay (same
+  npm-publish concern as `_gitignore`; the scaffold renames it). **When a convention or hard-won constraint changes
+  in the template, update the corresponding rule file / AGENTS.md section
+  too** — the `Verify AI config` CI step only checks presence and stamping,
+  not accuracy.
 
 **When you touch a template file that has an overlay counterpart, update the
 overlay too** — the `variants` CI job scaffolds each variant (and the
 base+rebac combination) and runs lint/build/check-types/test against it, so
-drift fails CI. To regenerate the ReBAC migrations after a schema change:
+drift fails CI. CI is release-gated (push to `release/**`, `v*` tags, or
+manual `workflow_dispatch`) — day-to-day pushes rely on lefthook + the local
+checklist below, so run it before merging significant changes. To regenerate the ReBAC migrations after a schema change:
 scaffold with `--authz=rebac`, delete `packages/db/drizzle`, run
 `pnpm db:generate`, copy the folder back into the overlay.
 
@@ -70,7 +83,8 @@ oRPC, TanStack Query, drizzle, better-auth**:
 7. Variants: scaffold `--ui=base`, `--authz=rebac` and the combination into
    scratch dirs; each must pass `pnpm build && pnpm check-types && pnpm lint
    && pnpm test` (and `pnpm test:integration` for rebac). CI does this on
-   every push, mirror it locally before releasing.
+   every release branch/tag (and on demand via `workflow_dispatch`) — mirror
+   it locally before releasing.
 
 ## Constraints that must not regress
 
@@ -87,6 +101,7 @@ Each of these broke once; the integration suite guards most of them.
 | Server handler inputs typed from schema **outputs**, never `InferContractRouterInputs` | that type is the client input view; `z.coerce` fields become `unknown` |
 | `migrate.ts` uses `__dirname` (with a biome-ignore) | the unsafe autofix rewrites it to `import.meta.dirname`, which breaks CJS |
 | Template dotfiles stored as `_gitignore`; template `biome.jsonc` sets `vcs.useIgnoreFile: false` | npm strips `.gitignore` from packages; biome would otherwise demand the missing ignore file |
+| The ai-claude overlay stores `.claude/` as `_claude/`; the scaffold renames it (`restoreDotfiles`) | same npm-publish hazard as `_gitignore` — dot-entries in `files` dirs are not reliably packed |
 | BullMQ gets plain connection options parsed from `REDIS_URL` | passing an ioredis instance couples to bullmq's own ioredis version (nominal type clash) |
 | `NODE_ENV` is never set in `.env` / `.env.example` | the root build script injects `.env` via dotenv; a forced `NODE_ENV=development` makes `next build` mix React dev/prod builds and `/_global-error` prerendering crashes (`useContext` of null). The runtime owns NODE_ENV: next/compose/tests set it, the api defaults to `development` |
 
@@ -111,8 +126,9 @@ private).
 ## Keeping the template current
 
 Renovate updates both workspaces. Scaffold-time options are deliberately
-few — **UI primitives (radix/base), authorization model (rbac/rebac) and
-default locale (en/fr)** — because every option multiplies the test matrix
+few — **UI primitives (radix/base), authorization model (rbac/rebac),
+default locale (en/fr) and AI config (claude/none, additive markdown only)**
+— because every option multiplies the test matrix
 (the `variants` CI job pays that cost). Before adding a new option, prefer a
 documented migration guide in `template/docs/`; add an overlay only when the
 choice is structural (different dependencies or data model), and wire it
