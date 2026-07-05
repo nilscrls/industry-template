@@ -23,7 +23,7 @@ npx create-industry-app my-app -- --yes --ui=base --authz=rebac --locale=fr
 | `--ui=radix\|base` | shadcn/ui primitive library (default `radix`): Radix UI, or Base UI (`@base-ui/react`, `render`-prop composition) |
 | `--authz=rbac\|rebac` | CASL authorization model (default `rbac`): global roles + per-user overrides, or per-project memberships (owner/editor/viewer) |
 | `--locale=en\|fr` | default UI language (default `en`); both catalogs always ship |
-| `--ai=claude\|none` | AI assistant config (default `claude`): `AGENTS.md` (agent instructions, stamped with the chosen variants), `CLAUDE.md` (imports it), path-scoped `.claude/rules/` and `.claude/skills/` (the `scaffold-feature` generator workflow + vendored Vercel/Anthropic skills, provenance in `vendored.lock.json`) |
+| `--ai=claude\|none` | AI assistant config (default `claude`): `AGENTS.md` (agent instructions, stamped with the chosen variants), `CLAUDE.md` (imports it), path-scoped `.claude/rules/` (incl. authz/ui rules matching the chosen variants), `.claude/skills/` (the `scaffold-feature` generator workflow + vendored Vercel/Anthropic skills, provenance in `vendored.lock.json`) and a `code-reviewer` agent |
 | `--yes`, `-y` | skip all prompts, take defaults/flags |
 | `--no-git` | skip `git init` |
 | `--no-install` | skip `pnpm install` |

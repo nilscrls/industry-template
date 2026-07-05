@@ -36,7 +36,13 @@ docs/         this documentation
   `__AUTHZ_VARIANT__` / `__LOCALE_VARIANT__` tokens are stamped at scaffold
   time), a one-line `CLAUDE.md` importing it, and path-scoped
   `.claude/rules/*.md` — stored as `_claude/` in the overlay (same
-  npm-publish concern as `_gitignore`; the scaffold renames it). The
+  npm-publish concern as `_gitignore`; the scaffold renames it). Rules with
+  a variant suffix (`authz.rbac.md`/`authz.rebac.md`,
+  `ui.radix.md`/`ui.base.md`) are resolved at scaffold time — the chosen
+  one is renamed to `<dimension>.md`, the others deleted
+  (`selectVariantRules`); a new variant of either dimension needs a
+  matching rule file. `_claude/agents/code-reviewer.md` ships a review
+  subagent tuned to the constraints table below. The
   `_claude/skills/` directory holds the in-house `scaffold-feature` skill
   plus third-party skills vendored by `pnpm sync-skills`
   (`scripts/sync-skills.ts`, needs an authenticated `gh`): pinned upstream
