@@ -243,12 +243,37 @@ describe("scaffold", () => {
     expect(agents).toContain("ReBAC");
     expect(agents).toContain("en (English)");
     expect(agents).not.toContain("__UI_VARIANT__");
-    for (const rule of ["api.md", "web.md", "db.md", "testing.md"]) {
-      expect(
-        existsSync(path.join(targetDir, ".claude", "rules", rule)),
-        `missing .claude/rules/${rule}`
-      ).toBe(true);
+    const rulesDir = path.join(targetDir, ".claude", "rules");
+    for (const rule of [
+      "api.md",
+      "web.md",
+      "db.md",
+      "testing.md",
+      "authz.md",
+      "ui.md",
+    ]) {
+      expect(existsSync(path.join(rulesDir, rule)), `missing ${rule}`).toBe(
+        true
+      );
     }
+    // Variant rule selection: rebac authz + default radix ui, no leftovers.
+    expect(readFileSync(path.join(rulesDir, "authz.md"), "utf8")).toContain(
+      "ReBAC"
+    );
+    expect(readFileSync(path.join(rulesDir, "ui.md"), "utf8")).toContain(
+      "Radix"
+    );
+    for (const leftover of [
+      "authz.rbac.md",
+      "authz.rebac.md",
+      "ui.radix.md",
+      "ui.base.md",
+    ]) {
+      expect(existsSync(path.join(rulesDir, leftover))).toBe(false);
+    }
+    expect(
+      existsSync(path.join(targetDir, ".claude", "agents", "code-reviewer.md"))
+    ).toBe(true);
     // The overlay ships `_claude` (npm-safe); the scaffold must rename it.
     expect(existsSync(path.join(targetDir, "_claude"))).toBe(false);
     for (const skill of [

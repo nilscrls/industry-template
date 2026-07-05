@@ -180,6 +180,40 @@ function stampAgentsVariants(
 }
 
 /**
+ * The ai-claude overlay ships one rule file per variant of a dimension
+ * (authz.rbac.md / authz.rebac.md, ui.radix.md / ui.base.md); keep the
+ * chosen one as `<dimension>.md` and drop the rest. Runs before
+ * restoreDotfiles, so the directory is still `_claude`.
+ */
+function selectVariantRules(
+  targetDir: string,
+  choices: { authz: AuthzVariant; ui: UiVariant }
+): void {
+  const rulesDir = path.join(targetDir, "_claude", "rules");
+  const dimensions: [
+    dimension: string,
+    chosen: string,
+    variants: readonly string[],
+  ][] = [
+    ["authz", choices.authz, AUTHZ_VARIANTS],
+    ["ui", choices.ui, UI_VARIANTS],
+  ];
+  for (const [dimension, chosen, variants] of dimensions) {
+    renameSync(
+      path.join(rulesDir, `${dimension}.${chosen}.md`),
+      path.join(rulesDir, `${dimension}.md`)
+    );
+    for (const variant of variants) {
+      if (variant !== chosen) {
+        rmSync(path.join(rulesDir, `${dimension}.${variant}.md`), {
+          force: true,
+        });
+      }
+    }
+  }
+}
+
+/**
  * npm strips or mangles dot-entries in published packages, so the template
  * and overlays store them underscore-prefixed: `_gitignore` files and the
  * `_claude` directory. Files are renamed before directories so recorded
@@ -260,6 +294,7 @@ export function scaffold(options: ScaffoldOptions): void {
   if (ai === "claude") {
     applyVariantOverlay(variantsDir, "ai-claude", targetDir);
     stampAgentsVariants(targetDir, { ui, authz, locale });
+    selectVariantRules(targetDir, { ui, authz });
   }
   setDefaultLocale(targetDir, locale);
   restoreDotfiles(targetDir);
