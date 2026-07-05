@@ -84,7 +84,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Scaffold ${{ matrix.name }}
         run: node_modules/.bin/tsx src/index.ts "$RUNNER_TEMP/variant-app" --yes ${{ matrix.flags }} --no-git --no-install
-      - run: pnpm install
+      # Not frozen: variant overlays legitimately change package.json (e.g.
+      # ui-base swaps Radix for Base UI), so the scaffold's first install
+      # must be allowed to update the copied lockfile — exactly what a user's
+      # local `pnpm install` does.
+      - run: pnpm install --no-frozen-lockfile
         working-directory: ${{ runner.temp }}/variant-app
       - run: pnpm lint
         working-directory: ${{ runner.temp }}/variant-app
