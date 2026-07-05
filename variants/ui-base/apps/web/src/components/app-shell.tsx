@@ -27,8 +27,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useTheme } from "next-themes";
 import type { ReactNode } from "react";
-import { authClient } from "@/lib/auth-client";
 import { OrgSwitcher } from "@/components/org-switcher";
+import { authClient } from "@/lib/auth-client";
 
 const NAV_ITEMS = [
   { href: "/dashboard", key: "dashboard", icon: LayoutDashboardIcon },
