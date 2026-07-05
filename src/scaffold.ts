@@ -19,7 +19,12 @@ export type AuthzVariant = (typeof AUTHZ_VARIANTS)[number];
 export const LOCALE_VARIANTS = ["en", "fr"] as const;
 export type LocaleVariant = (typeof LOCALE_VARIANTS)[number];
 
+export const AI_VARIANTS = ["claude", "none"] as const;
+export type AiVariant = (typeof AI_VARIANTS)[number];
+
 export interface ScaffoldOptions {
+  /** AI assistant config (AGENTS.md, CLAUDE.md, .claude/rules). Default: "claude". */
+  ai?: AiVariant;
   /** CASL authorization model. Default: "rbac". */
   authz?: AuthzVariant;
   /** Default UI language. Default: "en". */
@@ -136,19 +141,67 @@ function setDefaultLocale(targetDir: string, locale: LocaleVariant): void {
   );
 }
 
-/** npm strips `.gitignore` from published packages, so the template stores `_gitignore`. */
+const UI_LABELS: Record<UiVariant, string> = {
+  radix: "Radix UI (the classic shadcn/ui stack)",
+  base: "Base UI (`@base-ui/react`, `render`-prop composition instead of `asChild`)",
+};
+
+const AUTHZ_LABELS: Record<AuthzVariant, string> = {
+  rbac: "RBAC — global roles + per-user overrides",
+  rebac: "ReBAC — per-project memberships (owner/editor/viewer)",
+};
+
+const LOCALE_LABELS: Record<LocaleVariant, string> = {
+  en: "en (English)",
+  fr: "fr (Français)",
+};
+
+/** Stamp the chosen variants into the AGENTS.md emitted by the ai-claude overlay. */
+function stampAgentsVariants(
+  targetDir: string,
+  choices: { authz: AuthzVariant; locale: LocaleVariant; ui: UiVariant }
+): void {
+  const agentsPath = path.join(targetDir, "AGENTS.md");
+  let source = readFileSync(agentsPath, "utf8");
+  const replacements: [marker: string, value: string][] = [
+    ["__UI_VARIANT__", UI_LABELS[choices.ui]],
+    ["__AUTHZ_VARIANT__", AUTHZ_LABELS[choices.authz]],
+    ["__LOCALE_VARIANT__", LOCALE_LABELS[choices.locale]],
+  ];
+  for (const [marker, value] of replacements) {
+    if (!source.includes(marker)) {
+      throw new Error(
+        `Could not stamp AI config: marker ${marker} not found in ${agentsPath}`
+      );
+    }
+    source = source.replace(marker, value);
+  }
+  writeFileSync(agentsPath, source);
+}
+
+/**
+ * npm strips or mangles dot-entries in published packages, so the template
+ * and overlays store them underscore-prefixed: `_gitignore` files and the
+ * `_claude` directory. Files are renamed before directories so recorded
+ * paths stay valid.
+ */
 function restoreDotfiles(dir: string): void {
+  const dirRenames: string[] = [];
   for (const entry of readdirSync(dir, {
     withFileTypes: true,
     recursive: true,
   })) {
+    const entryPath = path.join(entry.parentPath, entry.name);
     if (entry.isFile() && entry.name === "_gitignore") {
-      const parent = entry.parentPath;
-      renameSync(
-        path.join(parent, "_gitignore"),
-        path.join(parent, ".gitignore")
-      );
+      renameSync(entryPath, path.join(entry.parentPath, ".gitignore"));
+    } else if (entry.isDirectory() && entry.name === "_claude") {
+      dirRenames.push(entryPath);
     }
+  }
+  // Deepest first, so a nested _claude is renamed before its ancestor moves.
+  dirRenames.sort((a, b) => b.length - a.length);
+  for (const from of dirRenames) {
+    renameSync(from, path.join(path.dirname(from), ".claude"));
   }
 }
 
@@ -184,6 +237,7 @@ export function scaffold(options: ScaffoldOptions): void {
     ui = "radix",
     authz = "rbac",
     locale = "en",
+    ai = "claude",
   } = options;
   const nameError = validateProjectName(projectName);
   if (nameError) {
@@ -202,6 +256,10 @@ export function scaffold(options: ScaffoldOptions): void {
   }
   if (authz === "rebac") {
     applyVariantOverlay(variantsDir, "authz-rebac", targetDir);
+  }
+  if (ai === "claude") {
+    applyVariantOverlay(variantsDir, "ai-claude", targetDir);
+    stampAgentsVariants(targetDir, { ui, authz, locale });
   }
   setDefaultLocale(targetDir, locale);
   restoreDotfiles(targetDir);

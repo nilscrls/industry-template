@@ -1,9 +1,13 @@
 name: CI
 
+# Release-only: the full gauntlet (template + per-variant scaffolds with
+# Testcontainers) is too heavy for every push/PR, so it gates releases
+# instead — git-flow release branches, version tags, or a manual run.
 on:
   push:
-    branches: [main, develop]
-  pull_request:
+    branches: ["release/**"]
+    tags: ["v*"]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -84,6 +88,13 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Scaffold ${{ matrix.name }}
         run: node_modules/.bin/tsx src/index.ts "$RUNNER_TEMP/variant-app" --yes ${{ matrix.flags }} --no-git --no-install
+      # Every row scaffolds with the default --ai=claude; the CLI test suite
+      # covers --ai=none absence.
+      - name: Verify AI config
+        working-directory: ${{ runner.temp }}/variant-app
+        run: |
+          test -f CLAUDE.md && test -f AGENTS.md && test -d .claude/rules
+          ! grep -q "__UI_VARIANT__" AGENTS.md
       # Not frozen: variant overlays legitimately change package.json (e.g.
       # ui-base swaps Radix for Base UI), so the scaffold's first install
       # must be allowed to update the copied lockfile — exactly what a user's

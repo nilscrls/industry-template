@@ -76,6 +76,7 @@ describe("scaffold", () => {
       templateDir: makeFixtureTemplate(),
       targetDir,
       projectName: "acme-erp",
+      ai: "none",
     });
 
     const packageJson = JSON.parse(
@@ -112,6 +113,7 @@ describe("scaffold", () => {
     const targetDir = path.join(workDir, "real");
     scaffold({
       templateDir: REAL_TEMPLATE,
+      variantsDir: REAL_VARIANTS,
       targetDir,
       projectName: "real-app",
     });
@@ -221,6 +223,49 @@ describe("scaffold", () => {
     expect(
       readFileSync(path.join(targetDir, "packages/i18n/src/config.ts"), "utf8")
     ).toContain('DEFAULT_LOCALE: Locale = "fr"');
+  });
+
+  it("emits AI config by default, stamped with the chosen variants", () => {
+    const targetDir = path.join(workDir, "real-ai");
+    scaffold({
+      templateDir: REAL_TEMPLATE,
+      variantsDir: REAL_VARIANTS,
+      targetDir,
+      projectName: "real-app",
+      authz: "rebac",
+    });
+
+    expect(readFileSync(path.join(targetDir, "CLAUDE.md"), "utf8")).toContain(
+      "@AGENTS.md"
+    );
+    const agents = readFileSync(path.join(targetDir, "AGENTS.md"), "utf8");
+    expect(agents).toContain("Radix UI");
+    expect(agents).toContain("ReBAC");
+    expect(agents).toContain("en (English)");
+    expect(agents).not.toContain("__UI_VARIANT__");
+    for (const rule of ["api.md", "web.md", "db.md", "testing.md"]) {
+      expect(
+        existsSync(path.join(targetDir, ".claude", "rules", rule)),
+        `missing .claude/rules/${rule}`
+      ).toBe(true);
+    }
+    // The overlay ships `_claude` (npm-safe); the scaffold must rename it.
+    expect(existsSync(path.join(targetDir, "_claude"))).toBe(false);
+  });
+
+  it("emits no AI config when ai=none", () => {
+    const targetDir = path.join(workDir, "real-no-ai");
+    scaffold({
+      templateDir: REAL_TEMPLATE,
+      variantsDir: REAL_VARIANTS,
+      targetDir,
+      projectName: "real-app",
+      ai: "none",
+    });
+
+    expect(existsSync(path.join(targetDir, "CLAUDE.md"))).toBe(false);
+    expect(existsSync(path.join(targetDir, "AGENTS.md"))).toBe(false);
+    expect(existsSync(path.join(targetDir, ".claude"))).toBe(false);
   });
 
   it("rejects a non-default variant without a variants directory", () => {
