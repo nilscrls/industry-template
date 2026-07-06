@@ -6,7 +6,7 @@ import NotFoundPage from "./not-found";
 
 describe("NotFoundPage", () => {
   it("renders the localized 404 copy and a link home", () => {
-    render(
+    const { container } = render(
       <NextIntlClientProvider locale="en" messages={messages}>
         <NotFoundPage />
       </NextIntlClientProvider>
@@ -16,9 +16,10 @@ describe("NotFoundPage", () => {
     expect(
       screen.getByRole("heading", { name: messages.errorPages.notFoundTitle })
     ).toBeTruthy();
-    const link = screen.getByRole("link", {
-      name: messages.errorPages.backHome,
-    });
-    expect(link.getAttribute("href")).toBe("/dashboard");
+    // Query the anchor by target rather than ARIA role: the Radix Button keeps
+    // the anchor's implicit "link" role, while the Base UI variant renders it
+    // with role="button" — the href-to-dashboard link exists in both.
+    const link = container.querySelector('a[href="/dashboard"]');
+    expect(link?.textContent).toContain(messages.errorPages.backHome);
   });
 });
