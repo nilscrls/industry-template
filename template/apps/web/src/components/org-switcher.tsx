@@ -105,7 +105,12 @@ export function OrgSwitcher() {
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button className="max-w-40 truncate" size="sm" variant="outline">
+          <Button
+            aria-label={t("switchLabel")}
+            className="max-w-40 truncate"
+            size="sm"
+            variant="outline"
+          >
             <Building2Icon />
             <span className="truncate">
               {activeOrganization?.name ?? t("noOrganization")}
