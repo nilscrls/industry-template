@@ -321,4 +321,101 @@ describe("scaffold", () => {
       })
     ).toThrow(/variants directory/);
   });
+
+  it("throws when a requested overlay is missing from the variants dir", () => {
+    const emptyVariants = path.join(workDir, "empty-variants");
+    mkdirSync(emptyVariants, { recursive: true });
+    expect(() =>
+      scaffold({
+        templateDir: makeFixtureTemplate(),
+        variantsDir: emptyVariants,
+        targetDir: path.join(workDir, "missing-overlay"),
+        projectName: "acme-erp",
+        ui: "base",
+      })
+    ).toThrow(/overlay not found/);
+  });
+
+  it("throws when the locale marker is absent from the i18n config", () => {
+    const templateDir = makeFixtureTemplate();
+    mkdirSync(path.join(templateDir, "packages", "i18n", "src"), {
+      recursive: true,
+    });
+    writeFileSync(
+      path.join(templateDir, "packages", "i18n", "src", "config.ts"),
+      'export const DEFAULT_LOCALE = "de";\n'
+    );
+    expect(() =>
+      scaffold({
+        templateDir,
+        targetDir: path.join(workDir, "bad-locale-marker"),
+        projectName: "acme-erp",
+        ai: "none",
+        locale: "fr",
+      })
+    ).toThrow(/Could not set default locale/);
+  });
+
+  it("composes ui=base + authz=rebac + locale=fr + ai=claude in one scaffold", () => {
+    const targetDir = path.join(workDir, "real-combined");
+    scaffold({
+      templateDir: REAL_TEMPLATE,
+      variantsDir: REAL_VARIANTS,
+      targetDir,
+      projectName: "real-app",
+      ui: "base",
+      authz: "rebac",
+      locale: "fr",
+      ai: "claude",
+    });
+
+    // Base UI overlay won over Radix.
+    const uiDeps = JSON.parse(
+      readFileSync(path.join(targetDir, "packages/ui/package.json"), "utf8")
+    ).dependencies;
+    expect(uiDeps["@base-ui/react"]).toBeDefined();
+    expect(uiDeps["@radix-ui/react-dialog"]).toBeUndefined();
+
+    // ReBAC overlay won, and its _delete.json wiped the RBAC migrations.
+    const permissions = readFileSync(
+      path.join(targetDir, "packages/contracts/src/permissions.ts"),
+      "utf8"
+    );
+    expect(permissions).toContain("projectRelations");
+    expect(permissions).not.toContain("defaultRolePermissions");
+    const journal = readFileSync(
+      path.join(targetDir, "packages/db/drizzle/meta/_journal.json"),
+      "utf8"
+    );
+    expect(journal).not.toContain("yielding_cloak");
+
+    // French fallback locale.
+    expect(
+      readFileSync(path.join(targetDir, "packages/i18n/src/config.ts"), "utf8")
+    ).toContain('DEFAULT_LOCALE: Locale = "fr"');
+
+    // AGENTS.md stamped with all three chosen variants, no leftover markers.
+    const agents = readFileSync(path.join(targetDir, "AGENTS.md"), "utf8");
+    expect(agents).toContain("Base UI");
+    expect(agents).toContain("ReBAC");
+    expect(agents).toContain("fr (Français)");
+    expect(agents).not.toContain("__UI_VARIANT__");
+
+    // Variant rules resolved to the base/rebac pair, no leftovers.
+    const rulesDir = path.join(targetDir, ".claude", "rules");
+    expect(readFileSync(path.join(rulesDir, "ui.md"), "utf8")).toContain(
+      "Base UI primitives"
+    );
+    expect(readFileSync(path.join(rulesDir, "authz.md"), "utf8")).toContain(
+      "ReBAC"
+    );
+    for (const leftover of [
+      "authz.rbac.md",
+      "authz.rebac.md",
+      "ui.radix.md",
+      "ui.base.md",
+    ]) {
+      expect(existsSync(path.join(rulesDir, leftover))).toBe(false);
+    }
+  });
 });
