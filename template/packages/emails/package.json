@@ -13,7 +13,8 @@
     "dev": "tsc --watch --preserveWatchOutput",
     "lint": "biome check .",
     "check-types": "tsc --noEmit",
-    "preview": "email dev --dir src/templates"
+    "preview": "email dev --dir src/templates",
+    "test": "vitest run"
   },
   "dependencies": {
     "@react-email/components": "^0.1.1",
@@ -24,6 +25,7 @@
     "@repo/typescript-config": "workspace:*",
     "@types/react": "^19.1.8",
     "react-email": "^4.0.16",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
   }
 }

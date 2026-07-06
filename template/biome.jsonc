@@ -67,6 +67,7 @@
       // botched template literal.
       "includes": [
         "packages/contracts/src/permissions.ts",
+        "packages/contracts/src/permissions.test.ts",
         "packages/auth/src/ability.ts",
         "packages/auth/src/ability.test.ts"
       ],
