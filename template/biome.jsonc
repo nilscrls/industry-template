@@ -69,7 +69,8 @@
         "packages/contracts/src/permissions.ts",
         "packages/contracts/src/permissions.test.ts",
         "packages/auth/src/ability.ts",
-        "packages/auth/src/ability.test.ts"
+        "packages/auth/src/ability.test.ts",
+        "apps/api/src/auth/ability.factory.spec.ts"
       ],
       "linter": {
         "rules": { "suspicious": { "noTemplateCurlyInString": "off" } }
