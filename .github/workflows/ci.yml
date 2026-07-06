@@ -113,3 +113,46 @@ jobs:
         if: matrix.integration
         run: pnpm test:integration
         working-directory: ${{ runner.temp }}/variant-app
+
+  # Drive the reference template through Playwright against a live stack, so
+  # the shipped e2e specs are validated on release (generated apps run the
+  # same suite via the template's own workflow).
+  e2e:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: template
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.12.1
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - name: Materialize env
+        # Export into the job env so the built apps (which don't load .env
+        # themselves) and Playwright (WEB_URL) both see the values.
+        run: |
+          cp .env.example .env
+          sed -i "s/^BETTER_AUTH_SECRET=$/BETTER_AUTH_SECRET=$(openssl rand -hex 32)/" .env
+          grep -E '^[A-Za-z_][A-Za-z0-9_]*=' .env >> "$GITHUB_ENV"
+      - name: Start infrastructure
+        run: docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile dev up -d --wait
+      - run: pnpm build
+      - run: pnpm db:migrate && pnpm db:seed
+      - name: Start apps
+        run: |
+          (cd apps/api && nohup node dist/main.js > /tmp/api.log 2>&1 &)
+          (cd apps/web && nohup pnpm start > /tmp/web.log 2>&1 &)
+          npx wait-on --timeout 90000 http://localhost:3001/health/ready http://localhost:3000
+      - name: Install Playwright browser
+        run: pnpm --filter @repo/web exec playwright install --with-deps chromium
+      - name: E2E
+        run: pnpm --filter @repo/web exec playwright test --project=chromium
+      - name: Logs on failure
+        if: failure()
+        run: |
+          echo "── api ──"; cat /tmp/api.log || true
+          echo "── web ──"; cat /tmp/web.log || true
