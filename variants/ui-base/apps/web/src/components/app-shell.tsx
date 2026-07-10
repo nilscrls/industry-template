@@ -107,7 +107,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    // flex-1 (not min-h-dvh): the root layout owns the viewport height and
+    // keeps the global footer at the bottom.
+    <div className="flex flex-1 flex-col">
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-2 px-4">
           {/* Mobile-first: nav collapses into a menu below sm */}

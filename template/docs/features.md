@@ -139,6 +139,14 @@ changes). HTTP responses default to `Cache-Control: private, no-store`
 (`app.setup.ts`). Redis also backs sessions, queues and rate limits. See
 `docs/guides.md` for the rules.
 
+## GDPR / privacy
+
+Cookie-consent-gated analytics, public legal pages (en/fr, operator
+placeholders), data export (`GET /me/export`), password-confirmed account
+deletion with sole-owner protection and anonymized audit retention, global
+footer with legal links. Details and the operator checklist:
+`docs/compliance.md`.
+
 ## Changelog & releases
 
 release-please maintains the version and `apps/web/content/changelog.md`

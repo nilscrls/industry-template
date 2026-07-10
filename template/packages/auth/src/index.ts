@@ -12,6 +12,7 @@ export {
   type AuthUser,
   type CreateAuthOptions,
   createAuth,
+  type DeletedUser,
   type SecondaryStorage,
   type SendAuthEmail,
   type SessionData,

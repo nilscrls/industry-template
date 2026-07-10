@@ -26,12 +26,15 @@ import {
   FormMessage,
 } from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { QRCodeSVG } from "qrcode.react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+import { useConsent } from "@/components/consent";
 import { authClient } from "@/lib/auth-client";
 
 const passwordSchema = z.object({ password: z.string().min(8) });
@@ -248,12 +251,145 @@ function TwoFactorCard() {
   );
 }
 
+/** GDPR self-service: data export (art. 20) and cookie preferences. */
+function PrivacyCard() {
+  const t = useTranslations("settings.privacy");
+  const { openPreferences } = useConsent();
+  const [exporting, setExporting] = useState(false);
+
+  async function downloadExport() {
+    setExporting(true);
+    try {
+      const response = await fetch("/api/me/export", {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error(`export failed: ${response.status}`);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "my-data.json";
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error(t("exportFailed"));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("title")}</CardTitle>
+        <CardDescription>{t("description")}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-wrap gap-2">
+        <Button disabled={exporting} onClick={downloadExport} variant="outline">
+          {t("downloadData")}
+        </Button>
+        <Button onClick={openPreferences} variant="outline">
+          {t("cookiePreferences")}
+        </Button>
+        {/* Plain link (no asChild/render): identical under both UI variants. */}
+        <Link
+          className="inline-flex items-center px-3 text-muted-foreground text-sm underline-offset-4 hover:underline"
+          href="/legal/privacy"
+        >
+          {t("privacyPolicy")}
+        </Link>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** GDPR right to erasure (art. 17): password-confirmed, blocks sole owners. */
+function DeleteAccountCard() {
+  const t = useTranslations("settings.deleteAccount");
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const form = useForm<PasswordValues>({
+    resolver: zodResolver(passwordSchema),
+    defaultValues: { password: "" },
+  });
+
+  const deleteAccount = form.handleSubmit(async (values) => {
+    const { error } = await authClient.deleteUser({
+      password: values.password,
+    });
+    if (error) {
+      // Surfaces the sole-owner block message from the API when present.
+      toast.error(error.message || t("failed"));
+      return;
+    }
+    toast.success(t("deleted"));
+    router.push("/login");
+    router.refresh();
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("title")}</CardTitle>
+        <CardDescription>{t("description")}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button onClick={() => setOpen(true)} variant="destructive">
+          {t("action")}
+        </Button>
+        <Dialog onOpenChange={setOpen} open={open}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t("confirmTitle")}</DialogTitle>
+              <DialogDescription>{t("confirmDescription")}</DialogDescription>
+            </DialogHeader>
+            <Form {...form}>
+              <form className="grid gap-4" onSubmit={deleteAccount}>
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t("passwordLabel")}</FormLabel>
+                      <FormControl>
+                        <Input
+                          autoComplete="current-password"
+                          type="password"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <DialogFooter>
+                  <Button
+                    disabled={form.formState.isSubmitting}
+                    type="submit"
+                    variant="destructive"
+                  >
+                    {t("confirmAction")}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function SettingsPage() {
   const t = useTranslations("settings");
   return (
     <div className="grid gap-6">
       <h1 className="font-semibold text-2xl">{t("title")}</h1>
       <TwoFactorCard />
+      <PrivacyCard />
+      <DeleteAccountCard />
     </div>
   );
 }

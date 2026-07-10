@@ -20,6 +20,7 @@ import { FlagsModule } from "./flags/flags.module";
 import { HealthModule } from "./health/health.module";
 import { MailModule } from "./mail/mail.module";
 import { OrganizationsModule } from "./organizations/organizations.module";
+import { PrivacyModule } from "./privacy/privacy.module";
 import { ProjectsModule } from "./projects/projects.module";
 import { REDIS } from "./redis/redis.constants";
 import { RedisModule } from "./redis/redis.module";
@@ -65,6 +66,7 @@ function redisConnectionOptions(url: string) {
     FilesModule,
     UsersModule,
     OrganizationsModule,
+    PrivacyModule,
     FlagsModule,
   ],
   providers: [

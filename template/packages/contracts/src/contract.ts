@@ -3,6 +3,7 @@ import { auditContract } from "./audit.js";
 import { filesContract } from "./files.js";
 import { flagsContract } from "./flags.js";
 import { organizationsContract } from "./organizations.js";
+import { privacyContract } from "./privacy.js";
 import { projectsContract } from "./projects.js";
 import { meContract, usersContract } from "./users.js";
 
@@ -15,6 +16,7 @@ export const contract = populateContractRouterPaths({
   files: filesContract,
   users: usersContract,
   me: meContract,
+  privacy: privacyContract,
   audit: auditContract,
   organizations: organizationsContract,
   flags: flagsContract,

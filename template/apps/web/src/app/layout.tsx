@@ -3,6 +3,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { getLocale } from "next-intl/server";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import type { ReactNode } from "react";
+import { Footer } from "@/components/footer";
 import { Providers } from "@/components/providers";
 import "./globals.css";
 
@@ -24,10 +25,13 @@ export default async function RootLayout({
   const locale = await getLocale();
   return (
     <html lang={locale} suppressHydrationWarning>
-      <body className="min-h-dvh antialiased">
+      <body className="flex min-h-dvh flex-col antialiased">
         <NuqsAdapter>
           <NextIntlClientProvider>
-            <Providers>{children}</Providers>
+            <Providers>
+              <div className="flex flex-1 flex-col">{children}</div>
+              <Footer />
+            </Providers>
           </NextIntlClientProvider>
         </NuqsAdapter>
       </body>

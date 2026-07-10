@@ -103,6 +103,25 @@
       "disabled": "Two-factor authentication disabled",
       "wrongPassword": "Password is incorrect",
       "invalidCode": "That code is not valid"
+    },
+    "privacy": {
+      "title": "Privacy & data",
+      "description": "Your GDPR rights, self-service: export your data or manage analytics cookies.",
+      "downloadData": "Download my data",
+      "exportFailed": "Could not export your data — try again later.",
+      "cookiePreferences": "Cookie preferences",
+      "privacyPolicy": "Privacy policy"
+    },
+    "deleteAccount": {
+      "title": "Delete account",
+      "description": "Permanently delete your account and its data. Organizations you solely own must be transferred or deleted first.",
+      "action": "Delete my account",
+      "confirmTitle": "Delete your account?",
+      "confirmDescription": "This cannot be undone. Your projects, files and memberships will be removed; audit entries are kept anonymized.",
+      "passwordLabel": "Confirm your password",
+      "confirmAction": "Permanently delete",
+      "deleted": "Your account has been deleted",
+      "failed": "Could not delete your account"
     }
   },
   "organizations": {
@@ -195,7 +214,26 @@
     "backToApp": "Back to the app",
     "changelog": {
       "title": "Changelog"
+    },
+    "legal": {
+      "mentions": "Legal mentions",
+      "privacy": "Privacy policy",
+      "terms": "Terms of service"
     }
+  },
+  "footer": {
+    "ariaLabel": "Legal and information links",
+    "legalMentions": "Legal mentions",
+    "privacy": "Privacy",
+    "terms": "Terms",
+    "changelog": "Changelog",
+    "cookiePreferences": "Cookie preferences"
+  },
+  "consent": {
+    "title": "Cookies & analytics",
+    "description": "We use analytics cookies (PostHog) to understand how the app is used. They are only set if you accept. Essential cookies (session, language, theme) are always on.",
+    "accept": "Accept",
+    "decline": "Decline"
   },
   "errorPages": {
     "errorTitle": "Something went wrong",

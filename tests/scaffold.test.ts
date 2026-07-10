@@ -141,6 +141,17 @@ describe("scaffold", () => {
       "CHANGELOG.md",
       "apps/web/content/changelog.md",
       "apps/web/src/app/(public)/changelog/page.tsx",
+      "apps/web/content/legal/mentions.en.md",
+      "apps/web/content/legal/mentions.fr.md",
+      "apps/web/content/legal/privacy.en.md",
+      "apps/web/content/legal/privacy.fr.md",
+      "apps/web/content/legal/terms.en.md",
+      "apps/web/content/legal/terms.fr.md",
+      "apps/web/src/app/(public)/legal/privacy/page.tsx",
+      "apps/web/src/components/footer.tsx",
+      "apps/web/src/components/consent.tsx",
+      "apps/api/src/privacy/privacy.module.ts",
+      "docs/compliance.md",
     ]) {
       expect(existsSync(path.join(targetDir, file)), `missing ${file}`).toBe(
         true

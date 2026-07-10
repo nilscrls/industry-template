@@ -4,6 +4,7 @@ import { Toaster } from "@repo/ui/components/sonner";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
 import { type ReactNode, useState } from "react";
+import { ConsentProvider } from "@/components/consent";
 import { AbilityProvider } from "@/lib/ability";
 
 export function Providers({ children }: { children: ReactNode }) {
@@ -28,10 +29,12 @@ export function Providers({ children }: { children: ReactNode }) {
         disableTransitionOnChange
         enableSystem
       >
-        <AbilityProvider>
-          {children}
-          <Toaster position="top-center" />
-        </AbilityProvider>
+        <ConsentProvider>
+          <AbilityProvider>
+            {children}
+            <Toaster position="top-center" />
+          </AbilityProvider>
+        </ConsentProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

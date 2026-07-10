@@ -6,23 +6,28 @@ import { DbService } from "../db/db.module";
 import { MailModule } from "../mail/mail.module";
 import { MailService } from "../mail/mail.service";
 import { REDIS } from "../redis/redis.constants";
+import { StorageModule } from "../storage/storage.module";
+import { StorageService } from "../storage/storage.service";
 import { AbilityFactory } from "./ability.factory";
+import { createUserDeletionHooks } from "./user-deletion";
 
 export const AUTH = "BETTER_AUTH_INSTANCE";
 
 @Global()
 @Module({
-  imports: [MailModule],
+  imports: [MailModule, StorageModule],
   providers: [
     {
       provide: AUTH,
-      inject: [DbService, MailService, REDIS],
+      inject: [DbService, MailService, REDIS, StorageService],
       useFactory: (
         dbService: DbService,
         mail: MailService,
-        redis: Redis
-      ): Auth =>
-        createAuth({
+        redis: Redis,
+        storage: StorageService
+      ): Auth => {
+        const deletion = createUserDeletionHooks(dbService.db, storage);
+        return createAuth({
           db: dbService.db,
           secret: env.BETTER_AUTH_SECRET,
           baseUrl: `${env.WEB_URL}/api/auth`,
@@ -49,7 +54,10 @@ export const AUTH = "BETTER_AUTH_INSTANCE";
             },
           },
           requireEmailVerification: env.NODE_ENV === "production",
-        }),
+          onBeforeUserDelete: deletion.beforeDelete,
+          onAfterUserDelete: deletion.afterDelete,
+        });
+      },
     },
     AbilityFactory,
   ],

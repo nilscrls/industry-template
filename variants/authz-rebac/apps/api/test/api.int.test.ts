@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { createDb, member, user } from "@repo/db";
+import { auditLog, createDb, member, user } from "@repo/db";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
@@ -171,6 +171,25 @@ describe("api integration", () => {
     const response = await request(server).get("/health/ready");
     expect(response.status).toBe(200);
     expect(response.body.status).toBe("ok");
+  });
+
+  it("defaults every response to no-store, with an explicit public opt-in for docs", async () => {
+    // Authenticated JSON must never be stored by a shared cache (IDOR).
+    const authed = await request(server).get("/projects");
+    expect(authed.headers["cache-control"]).toBe("private, no-store");
+
+    // The Express-mounted Better-Auth handler is covered too.
+    const auth = await request(server).post("/auth/sign-in/email").send({});
+    expect(auth.headers["cache-control"]).toBe("private, no-store");
+
+    // Health stays no-store (Terminus sets its own equivalent header).
+    const health = await request(server).get("/health/ready");
+    expect(health.headers["cache-control"]).toContain("no-store");
+
+    // openapi.json is caller-independent and opts into public caching.
+    const docs = await request(server).get("/openapi.json");
+    expect(docs.status).toBe(200);
+    expect(docs.headers["cache-control"]).toBe("public, max-age=300");
   });
 
   it("serializes unauthenticated access with a typed error code", async () => {
@@ -386,5 +405,76 @@ describe("api integration", () => {
     expect(created.organizationId).toBe(acmeOrgId);
     expect(created.actorEmail).toBe("alice@example.com");
     expect(created.requestId).toBeTruthy();
+  });
+
+  it("exports the requesting user's data as JSON (GDPR portability)", async () => {
+    const dana = await signUp("Dana", "dana@example.com");
+    const orgId = await createOrganization(dana, "Dana Co", "dana-co");
+    const created = await dana
+      .post("/projects")
+      .send({ name: "Dana's project", status: "draft" });
+    expect(created.status).toBe(200);
+
+    const exported = await dana.get("/me/export");
+    expect(exported.status).toBe(200);
+    expect(exported.body.user.email).toBe("dana@example.com");
+    expect(exported.body.memberships).toContainEqual(
+      expect.objectContaining({ organizationId: orgId, role: "owner" })
+    );
+    expect(exported.body.projects).toContainEqual(
+      expect.objectContaining({ name: "Dana's project" })
+    );
+    expect(Array.isArray(exported.body.files)).toBe(true);
+    // The export itself is audited — visible in her own audit entries on a
+    // subsequent export.
+    const again = await dana.get("/me/export");
+    expect(again.body.auditEntries).toContainEqual(
+      expect.objectContaining({ action: "user.exportData" })
+    );
+  });
+
+  it("blocks account deletion for sole organization owners, then erases", async () => {
+    const erin = await signUp("Erin", "erin@example.com");
+    const orgId = await createOrganization(erin, "Erin Co", "erin-co");
+
+    // Sole owner of Erin Co → blocked with an actionable message.
+    const blocked = await erin
+      .post("/auth/delete-user")
+      .send({ password: "Password123!" });
+    expect(blocked.status).toBe(400);
+    expect(blocked.body.message).toMatch(/only owner/i);
+
+    // Delete the organization, then erasure goes through.
+    const orgGone = await erin
+      .post("/auth/organization/delete")
+      .send({ organizationId: orgId });
+    expect(orgGone.status).toBe(200);
+    const deleted = await erin
+      .post("/auth/delete-user")
+      .send({ password: "Password123!" });
+    expect(deleted.status).toBe(200);
+
+    // Session is dead and the account cannot sign in again.
+    const afterwards = await erin.get("/projects");
+    expect(afterwards.status).toBe(401);
+    const signIn = await request(server)
+      .post("/auth/sign-in/email")
+      .send({ email: "erin@example.com", password: "Password123!" });
+    expect(signIn.status).not.toBe(200);
+
+    // The user row is gone; the erasure left an anonymized audit event.
+    const { db, pool } = createDb(process.env.DATABASE_URL as string);
+    const users = await db
+      .select({ id: user.id })
+      .from(user)
+      .where(eq(user.email, "erin@example.com"));
+    const events = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.action, "user.delete"));
+    await pool.end();
+    expect(users).toHaveLength(0);
+    expect(events.length).toBeGreaterThanOrEqual(1);
+    expect(events.at(-1)?.actorId).toBeNull();
   });
 });
