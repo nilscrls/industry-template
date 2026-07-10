@@ -12,6 +12,8 @@
         "WEB_URL",
         "NEXT_PUBLIC_*",
         "DATABASE_URL",
+        "DATABASE_URL_*",
+        "FGA_*",
         "REDIS_URL",
         "BETTER_AUTH_SECRET",
         "MICROSOFT_*",
@@ -26,7 +28,26 @@
     },
     "dev": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "env": [
+        "API_PORT",
+        "API_URL",
+        "WEB_URL",
+        "NEXT_PUBLIC_*",
+        "DATABASE_URL",
+        "DATABASE_URL_*",
+        "FGA_*",
+        "REDIS_URL",
+        "BETTER_AUTH_SECRET",
+        "MICROSOFT_*",
+        "OTEL_*",
+        "SENTRY_*",
+        "POSTHOG_*",
+        "S3_*",
+        "SMTP_*",
+        "MAIL_FROM",
+        "LOG_*"
+      ]
     },
     "lint": {},
     "check-types": {

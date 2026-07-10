@@ -31,7 +31,7 @@ test.describe
       await page.goto("/login");
       await page.getByLabel("Email").fill("admin@example.com");
       await page.getByLabel("Password").fill(PASSWORD);
-      await page.getByRole("button", { name: "Sign in" }).click();
+      await page.getByRole("button", { name: "Sign in", exact: true }).click();
       await expect(page).toHaveURL(/\/dashboard/);
 
       await page.goto("/admin/organizations");
@@ -45,8 +45,11 @@ test.describe
         page.getByRole("link", { name: "Feature flags" })
       ).toBeVisible();
 
-      // The seeded demo tenant is listed in the organization overview.
-      await expect(page.getByText("Acme Inc")).toBeVisible();
+      // The seeded demo tenant is findable in the organization overview
+      // (search first: newest orgs sort to page 1; assert the table cell,
+      // not the org-switcher trigger which also shows a name).
+      await page.getByPlaceholder("Search organizations…").fill("Acme");
+      await expect(page.getByRole("cell", { name: "Acme Inc" })).toBeVisible();
     });
 
     test("renders the audit log and feature-flag sections for an admin", async ({
@@ -55,7 +58,7 @@ test.describe
       await page.goto("/login");
       await page.getByLabel("Email").fill("admin@example.com");
       await page.getByLabel("Password").fill(PASSWORD);
-      await page.getByRole("button", { name: "Sign in" }).click();
+      await page.getByRole("button", { name: "Sign in", exact: true }).click();
       await expect(page).toHaveURL(/\/dashboard/);
 
       await page.goto("/admin/audit");
