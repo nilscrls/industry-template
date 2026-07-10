@@ -210,6 +210,79 @@ describe("scaffold", () => {
     expect(migrations).not.toContain("yielding_cloak");
   });
 
+  it("stamps the default production branch (main) with no marker residue", () => {
+    const targetDir = path.join(workDir, "real-main");
+    scaffold({
+      templateDir: REAL_TEMPLATE,
+      variantsDir: REAL_VARIANTS,
+      targetDir,
+      projectName: "real-app",
+    });
+
+    expect(
+      readFileSync(path.join(targetDir, ".github/workflows/ci.yml"), "utf8")
+    ).toContain("branches: [main, develop]");
+    for (const file of [
+      ".github/workflows/ci.yml",
+      "README.md",
+      "docs/guides.md",
+      "CONTRIBUTING.md",
+      "AGENTS.md",
+    ]) {
+      expect(
+        readFileSync(path.join(targetDir, file), "utf8"),
+        `marker left in ${file}`
+      ).not.toContain("__PROD_BRANCH__");
+    }
+    expect(
+      readFileSync(path.join(targetDir, "CONTRIBUTING.md"), "utf8")
+    ).toContain("`main` — production");
+  });
+
+  it("stamps master everywhere when prodBranch=master", () => {
+    const targetDir = path.join(workDir, "real-master");
+    scaffold({
+      templateDir: REAL_TEMPLATE,
+      variantsDir: REAL_VARIANTS,
+      targetDir,
+      projectName: "real-app",
+      prodBranch: "master",
+    });
+
+    expect(
+      readFileSync(path.join(targetDir, ".github/workflows/ci.yml"), "utf8")
+    ).toContain("branches: [master, develop]");
+    expect(readFileSync(path.join(targetDir, "README.md"), "utf8")).toContain(
+      "`master` (production)"
+    );
+    expect(
+      readFileSync(path.join(targetDir, "docs/guides.md"), "utf8")
+    ).toContain("`master` = production");
+    expect(
+      readFileSync(path.join(targetDir, "CONTRIBUTING.md"), "utf8")
+    ).toContain("`master` — production");
+    // ai=claude default: AGENTS.md convention stamped too.
+    const agents = readFileSync(path.join(targetDir, "AGENTS.md"), "utf8");
+    expect(agents).toContain("`master`/`develop`");
+    expect(agents).not.toContain("__PROD_BRANCH__");
+  });
+
+  it("throws when a branch-marked file has lost its marker", () => {
+    const templateDir = makeFixtureTemplate();
+    writeFileSync(
+      path.join(templateDir, "CONTRIBUTING.md"),
+      "# Contributing\n\nProduction branch: main\n"
+    );
+    expect(() =>
+      scaffold({
+        templateDir,
+        targetDir: path.join(workDir, "bad-branch-marker"),
+        projectName: "acme-erp",
+        ai: "none",
+      })
+    ).toThrow(/Marker __PROD_BRANCH__ not found/);
+  });
+
   it("sets the default locale when locale=fr", () => {
     const targetDir = path.join(workDir, "real-fr");
     scaffold({

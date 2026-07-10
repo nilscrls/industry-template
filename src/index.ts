@@ -10,6 +10,7 @@ import {
   type AuthzVariant,
   isDirEmpty,
   type LocaleVariant,
+  type ProdBranch,
   scaffold,
   type UiVariant,
   validateProjectName,
@@ -28,11 +29,19 @@ function resolveVariantsDir(): string {
   return path.join(packageRoot(), "variants");
 }
 
+const WHITESPACE = /\s/;
+
 function run(command: string, args: string[], cwd: string): boolean {
-  const result = spawnSync(command, args, {
+  // Windows needs a shell to resolve .cmd shims (pnpm), but a shell also
+  // concatenates args unquoted — so quote anything containing whitespace.
+  const useShell = process.platform === "win32";
+  const shellArgs = useShell
+    ? args.map((arg) => (WHITESPACE.test(arg) ? `"${arg}"` : arg))
+    : args;
+  const result = spawnSync(command, shellArgs, {
     cwd,
     stdio: "inherit",
-    shell: process.platform === "win32",
+    shell: useShell,
   });
   return result.status === 0;
 }
@@ -61,6 +70,7 @@ interface VariantChoices {
   ai: AiVariant;
   authz: AuthzVariant;
   locale: LocaleVariant;
+  prodBranch: ProdBranch;
   ui: UiVariant;
 }
 
@@ -145,11 +155,22 @@ async function promptVariants(flags: CliFlags): Promise<VariantChoices> {
       initialValue: "claude" as const,
     })
   );
-  return { ui, authz, locale, ai };
+  const prodBranch = await promptVariant(flags.branch, flags.yes, "main", () =>
+    p.select({
+      message: "Production branch (git-flow)",
+      options: [
+        { value: "main" as const, label: "main", hint: "GitHub default" },
+        { value: "master" as const, label: "master", hint: "classic git-flow" },
+      ],
+      initialValue: "main" as const,
+    })
+  );
+  return { ui, authz, locale, ai, prodBranch };
 }
 
 async function promptSetupSteps(
-  flags: CliFlags
+  flags: CliFlags,
+  prodBranch: ProdBranch
 ): Promise<{ git: boolean; install: boolean }> {
   if (flags.yes) {
     return { git: flags.git, install: flags.install };
@@ -159,7 +180,7 @@ async function promptSetupSteps(
     options: [
       {
         value: "git",
-        label: "Initialize git (main + develop, git-flow-next ready)",
+        label: `Initialize git (${prodBranch} + develop, git-flow-next ready)`,
       },
       { value: "install", label: "Install dependencies (pnpm)" },
     ],
@@ -202,14 +223,16 @@ function runScaffold(
 // Split around `pnpm install`: the repo must exist first (the template's
 // prepare script installs git hooks), the commit must come last (so the
 // lockfile the install may update is part of the initial commit).
-function initGitRepo(targetDir: string): boolean {
-  const initialized = run("git", ["init", "-b", "main"], targetDir);
+function initGitRepo(targetDir: string, prodBranch: ProdBranch): boolean {
+  const initialized = run("git", ["init", "-b", prodBranch], targetDir);
   if (!initialized) {
     p.log.warn("git init failed — initialize manually.");
   }
   return initialized;
 }
 
+// Ends on `develop`: git-flow daily work (feature branches) starts there,
+// and leaving HEAD on the production branch invites accidental commits to it.
 function commitScaffold(targetDir: string): void {
   const committed =
     run("git", ["add", "-A"], targetDir) &&
@@ -218,7 +241,8 @@ function commitScaffold(targetDir: string): void {
       ["commit", "-m", "chore: initial scaffold from create-industry-app"],
       targetDir
     ) &&
-    run("git", ["branch", "develop"], targetDir);
+    run("git", ["branch", "develop"], targetDir) &&
+    run("git", ["checkout", "develop"], targetDir);
   if (!committed) {
     p.log.warn("git commit failed — commit manually.");
   }
@@ -254,10 +278,11 @@ async function main(): Promise<void> {
   }
 
   const variants = await promptVariants(flags);
-  const { git, install } = await promptSetupSteps(flags);
+  const { git, install } = await promptSetupSteps(flags, variants.prodBranch);
   runScaffold(targetDir, projectName, variants);
 
-  const gitReady = git && existsSync(targetDir) && initGitRepo(targetDir);
+  const gitReady =
+    git && existsSync(targetDir) && initGitRepo(targetDir, variants.prodBranch);
 
   let installed = false;
   if (install) {

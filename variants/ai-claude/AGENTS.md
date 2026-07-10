@@ -86,7 +86,7 @@ constraint site and in `docs/`.
    `apps/api`) each guard a runtime failure — never "clean them up".
 7. **Conventional commits** via `pnpm commit`; lefthook runs Biome,
    commitlint and typecheck on commit. Branches follow git-flow
-   (`main`/`develop`, `feature/*`).
+   (`__PROD_BRANCH__`/`develop`, `feature/*`).
 
 ## Verifying changes
 

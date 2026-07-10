@@ -79,9 +79,10 @@ pnpm compose:prod           # prod overlay: external `proxy` network, no host po
 
 ## Workflow
 
-git-flow-next branches: `main` (production), `develop` (integration), `feature/*`,
+git-flow-next branches: `__PROD_BRANCH__` (production), `develop` (integration), `feature/*`,
 `release/*`, `hotfix/*`. Commits follow Conventional Commits — use `pnpm commit`.
 Hooks (lefthook): biome on staged files, commitlint on messages, typecheck on push.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full branching model.
 
 ## Deployment
 
