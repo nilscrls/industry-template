@@ -1,66 +1,67 @@
 import { z } from "zod";
 
-export const actions = [
-  "manage",
-  "create",
-  "read",
-  "update",
-  "delete",
-] as const;
-export const subjects = [
-  "Project",
-  "User",
-  "File",
-  "AuditLog",
-  "Organization",
-  "FeatureFlag",
-  "all",
-] as const;
+/**
+ * Authorization vocabulary. The rules themselves live in the OpenFGA model
+ * (`packages/fga/model.fga`) — this file only names the capabilities and
+ * relations so contracts, guards and the web app share one typed list.
+ */
 export const roles = ["admin", "manager", "member"] as const;
-
-export type Action = (typeof actions)[number];
-export type AppSubject = (typeof subjects)[number];
 export type Role = (typeof roles)[number];
-
 export const roleSchema = z.enum(roles);
 
+/** Resource types in the FGA model (kept in sync by `pnpm gen feature`). */
+export const resources = ["project", "file"] as const;
+export type Resource = (typeof resources)[number];
+
+/** Org-scoped capabilities, checked against `org:<activeOrganizationId>`. */
+export const orgCapabilities = [
+  "can_read_project",
+  "can_create_project",
+  "can_read_file",
+  "can_create_file",
+  "can_read_all_files",
+  "can_read_audit_log",
+  "can_manage_feature_flag",
+] as const;
+export type OrgCapability = (typeof orgCapabilities)[number];
+
+/** Cross-tenant admin capabilities, checked against `system:global`. */
+export const systemCapabilities = [
+  "can_read_user",
+  "can_manage_user",
+  "can_manage_organization",
+] as const;
+export type SystemCapability = (typeof systemCapabilities)[number];
+
 /**
- * A serializable CASL rule. `conditions` values support the `"${userId}"`
- * placeholder, interpolated by the shared ability factory at build time.
- * `inverted: true` is a deny rule — deny always wins over allow.
+ * Per-user grant tuples on individual resources (admin-managed). A
+ * `denied_*` grant beats every allow, including the owner's (`but not` in
+ * the model).
  */
-export const permissionRuleSchema = z.object({
-  action: z.enum(actions),
-  subject: z.enum(subjects),
-  conditions: z.record(z.string(), z.unknown()).optional(),
-  inverted: z.boolean().optional(),
+export const grantRelations = [
+  "granted_read",
+  "granted_write",
+  "denied_read",
+  "denied_write",
+] as const;
+export type GrantRelation = (typeof grantRelations)[number];
+
+export const grantSchema = z.object({
+  /** FGA object ref, e.g. `project:7d64…`. */
+  object: z
+    .string()
+    .regex(/^[a-z_]+:[\w-]+$/, "expected an FGA object ref like project:<id>"),
+  relation: z.enum(grantRelations),
 });
+export type Grant = z.infer<typeof grantSchema>;
 
-export type PermissionRule = z.infer<typeof permissionRuleSchema>;
-
-/** Baseline rules per role — seeded into the database, editable at runtime. */
-export const defaultRolePermissions: Record<Role, PermissionRule[]> = {
-  admin: [{ action: "manage", subject: "all" }],
-  manager: [
-    { action: "manage", subject: "Project" },
-    { action: "manage", subject: "File" },
-    { action: "read", subject: "User" },
-  ],
-  member: [
-    { action: "read", subject: "Project" },
-    { action: "create", subject: "Project" },
-    {
-      action: "update",
-      subject: "Project",
-      conditions: { ownerId: "${userId}" },
-    },
-    {
-      action: "delete",
-      subject: "Project",
-      conditions: { ownerId: "${userId}" },
-    },
-    { action: "create", subject: "File" },
-    { action: "read", subject: "File", conditions: { ownerId: "${userId}" } },
-    { action: "delete", subject: "File", conditions: { ownerId: "${userId}" } },
-  ],
-};
+/**
+ * The signed-in user's capability snapshot — computed server-side with FGA
+ * ListRelations and consumed by the web app for UI gating (cosmetic; the
+ * api re-checks everything).
+ */
+export const permissionSnapshotSchema = z.object({
+  org: z.array(z.enum(orgCapabilities)),
+  system: z.array(z.enum(systemCapabilities)),
+});
+export type PermissionSnapshot = z.infer<typeof permissionSnapshotSchema>;

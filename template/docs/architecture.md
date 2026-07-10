@@ -10,7 +10,8 @@ packages/
   contracts/            THE source of truth: zod schemas, oRPC contract,
                         error catalog, permission definitions
   db/                   drizzle schema, migrations (drizzle/), seeds, client factory
-  auth/                 better-auth factory + shared CASL ability builder
+  auth/                 better-auth factory (org/member lifecycle hooks)
+  fga/                  OpenFGA model (model.fga), client, bootstrap + sync
   emails/               react-email templates + render helper
   i18n/                 locale config + message catalogs (next-intl typed keys)
   ui/                   shadcn/ui design system (source-exported, Tailwind v4 tokens)
@@ -97,19 +98,22 @@ The web app uses `authClient` (`apps/web/src/lib/auth-client.ts`) for
 sign-in/up/out and `useSession`. `src/middleware.ts` does fast cookie-presence
 redirects only — real enforcement is always the api's `AuthGuard`.
 
-## Authorization (CASL)
+## Authorization (OpenFGA + Postgres RLS)
 
-- Serializable CASL rules power both api enforcement and web UI gating: the
-  api's `AbilityFactory` builds an ability per request (Redis-cached), and
-  the web rebuilds **the same ability** from `GET /me/permissions`
-  (`apps/web/src/lib/ability.tsx`, `<Can>` / `useAbility()`). UI gating is
-  cosmetic; the api is the authority.
-- Enforcement is two-layered: `@RequireAbility({ action, subject })` for
-  coarse route checks (PoliciesGuard), `ability.can(action, asSubject("Project", row))`
-  in services for row-level checks.
-- Where the rules come from depends on the model chosen at scaffold time
-  (RBAC role tables or ReBAC memberships) — see `docs/authorization.md` for
-  the full picture of this project's setup.
+- The authorization model lives in `packages/fga/model.fga` (OpenFGA DSL);
+  relationship tuples mirror the database (Postgres is the source of truth,
+  `pnpm fga:sync` reconciles). The api checks capabilities over the network
+  via `FgaService` (`apps/api/src/fga/`); the web consumes a capability
+  snapshot from `GET /me/permissions` (`apps/web/src/lib/permissions.tsx`,
+  `<Can>` / `useCan()`). UI gating is cosmetic; the api is the authority.
+- Enforcement is three-layered: `@RequirePermission({ relation, scope })`
+  for coarse route checks (PermissionsGuard), `fga.check(fga.me(),
+  "can_update", fga.ref.project(id))` in services for row-level checks, and
+  Postgres row-level security underneath (`DbService.tenant(...)`) so a
+  forgotten WHERE clause cannot cross a tenant boundary.
+- The relation vocabulary depends on the model chosen at scaffold time
+  (RBAC roles + grants, or ReBAC per-project relations) — see
+  `docs/authorization.md` for the full picture of this project's setup.
 
 ## Error pipeline
 

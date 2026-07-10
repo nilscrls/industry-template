@@ -7,7 +7,7 @@ Industrial-grade full-stack TypeScript monorepo, scaffolded by `create-industry-
 | Layer | Tech |
 |---|---|
 | Frontend | Next.js 16, shadcn/ui (Tailwind v4), TanStack Query/Table, react-hook-form, next-intl, next-themes, recharts |
-| Backend | NestJS 11, Better-Auth, CASL, Drizzle (Postgres), Redis, BullMQ, Minio (S3), nestjs-pino |
+| Backend | NestJS 11, Better-Auth, OpenFGA (+ Postgres RLS), Drizzle (Postgres), Redis, BullMQ, Minio (S3), nestjs-pino |
 | Contract | oRPC — one zod contract in `packages/contracts`, live end-to-end types, OpenAPI at `/api/openapi.json` |
 | Quality | Biome (ultracite), Vitest, Testcontainers, Playwright, lefthook + commitlint |
 
@@ -46,10 +46,11 @@ Maildev UI: <http://localhost:1080> · Minio console: <http://localhost:9001>.
 - **Auth.** Better-Auth lives on the api (`/api/auth/*`), sessions in Postgres with a Redis
   secondary storage and a 5-minute signed cookie cache. Emails (verification, reset) render
   with react-email and send through a BullMQ queue with retries.
-- **Authorization.** Serializable CASL rules (model chosen at scaffold time — see
-  `docs/authorization.md`). The api builds a CASL ability per request (rules cached in
-  Redis); the web builds the *same* ability from `/api/me/permissions` to show/hide UI.
-  The api is the authority — UI gating is cosmetic.
+- **Authorization.** OpenFGA (model in `packages/fga/model.fga`, chosen at scaffold
+  time — see `docs/authorization.md`) with Postgres row-level security underneath.
+  The api checks capabilities per request; the web consumes a capability snapshot
+  from `/api/me/permissions` to show/hide UI. The api is the authority — UI gating
+  is cosmetic.
 - **Errors.** Everything serializes to `{ code, params, traceId }`. `code` maps to a
   translation in `packages/i18n/messages/*`; `traceId` matches the api log line.
 - **Files.** The api presigns Minio PUT/GET URLs; bytes never stream through Nest.
@@ -79,9 +80,10 @@ pnpm compose:prod           # prod overlay: external `proxy` network, no host po
 
 ## Workflow
 
-git-flow-next branches: `main` (production), `develop` (integration), `feature/*`,
+git-flow-next branches: `__PROD_BRANCH__` (production), `develop` (integration), `feature/*`,
 `release/*`, `hotfix/*`. Commits follow Conventional Commits — use `pnpm commit`.
 Hooks (lefthook): biome on staged files, commitlint on messages, typecheck on push.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full branching model.
 
 ## Deployment
 

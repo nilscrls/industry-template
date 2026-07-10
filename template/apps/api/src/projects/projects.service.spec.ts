@@ -1,17 +1,19 @@
 import { projectStatuses } from "@repo/contracts";
 import { describe, expect, it } from "vitest";
 import type { DbService } from "../db/db.module";
+import type { FgaService } from "../fga/fga.service";
 import type { CacheService } from "../redis/cache.service";
 import { ProjectsService } from "./projects.service";
 
 /**
  * Called with no active organization (no request scope), stats() takes the
- * empty branch — no DB access — so the dense 30-day series shape can be
- * pinned without Postgres.
+ * empty branch — no DB or FGA access — so the dense 30-day series shape can
+ * be pinned without Postgres.
  */
 const service = new ProjectsService(
   { db: {} } as unknown as DbService,
-  {} as unknown as CacheService
+  {} as unknown as CacheService,
+  {} as unknown as FgaService
 );
 
 describe("ProjectsService.stats (no active organization)", () => {

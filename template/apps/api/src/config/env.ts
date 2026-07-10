@@ -13,9 +13,19 @@ export const env = createEnv({
     /** Public origin of the web app — trusted origin + base for auth URLs. */
     WEB_URL: z.url(),
 
+    /** Runtime pool — the `app_user` role, subject to row-level security. */
     DATABASE_URL: z.string().min(1),
+    /** Better-Auth pool — the `app_auth` BYPASSRLS role (auth tables only). */
+    DATABASE_URL_AUTH: z.string().min(1),
     REDIS_URL: z.string().min(1),
     BETTER_AUTH_SECRET: z.string().min(32),
+
+    /** OpenFGA — the authorization engine (hard runtime dependency). */
+    FGA_API_URL: z.url(),
+    FGA_STORE_ID: z.string().min(1),
+    FGA_API_TOKEN: z.string().min(1),
+    /** Pin a model id in production; empty string = latest model. */
+    FGA_MODEL_ID: z.string().optional(),
 
     /** Microsoft Entra ID SSO (OIDC). */
     MICROSOFT_CLIENT_ID: z.string().min(1),

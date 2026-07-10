@@ -21,7 +21,7 @@ npx create-industry-app my-app -- --yes --ui=base --authz=rebac --locale=fr
 |---|---|
 | `[directory]` | target path; its basename becomes the default project name |
 | `--ui=radix\|base` | shadcn/ui primitive library (default `radix`): Radix UI, or Base UI (`@base-ui/react`, `render`-prop composition) |
-| `--authz=rbac\|rebac` | CASL authorization model (default `rbac`): global roles + per-user overrides, or per-project memberships (owner/editor/viewer) |
+| `--authz=rbac\|rebac` | OpenFGA authorization model (default `rbac`): global roles + per-user grants, or per-project relations (owner/editor/viewer) |
 | `--locale=en\|fr` | default UI language (default `en`); both catalogs always ship |
 | `--ai=claude\|none` | AI assistant config (default `claude`): `AGENTS.md` (agent instructions, stamped with the chosen variants), `CLAUDE.md` (imports it), path-scoped `.claude/rules/` (incl. authz/ui rules matching the chosen variants), `.claude/skills/` (the `scaffold-feature` generator workflow + vendored Vercel/Anthropic skills, provenance in `vendored.lock.json`) and a `code-reviewer` agent |
 | `--yes`, `-y` | skip all prompts, take defaults/flags |

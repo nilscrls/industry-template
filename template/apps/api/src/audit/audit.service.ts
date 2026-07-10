@@ -42,10 +42,6 @@ function defaultEntityId(input: unknown, output: unknown): string | undefined {
 export class AuditService {
   constructor(private readonly dbService: DbService) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
   /**
    * THE choke point for audit writes: an oRPC middleware attached to every
    * mutating procedure (`implement(...).use(audit.audited({...}))`). It runs
@@ -80,17 +76,19 @@ export class AuditService {
       query.entityType ? eq(auditLog.entityType, query.entityType) : undefined
     );
 
-    const [rows, totals] = await Promise.all([
-      this.db
-        .select({ entry: auditLog, actorEmail: user.email })
-        .from(auditLog)
-        .leftJoin(user, eq(user.id, auditLog.actorId))
-        .where(where)
-        .orderBy(desc(auditLog.createdAt))
-        .limit(query.pageSize)
-        .offset((query.page - 1) * query.pageSize),
-      this.db.select({ value: count() }).from(auditLog).where(where),
-    ]);
+    const [rows, totals] = await this.dbService.tenant((db) =>
+      Promise.all([
+        db
+          .select({ entry: auditLog, actorEmail: user.email })
+          .from(auditLog)
+          .leftJoin(user, eq(user.id, auditLog.actorId))
+          .where(where)
+          .orderBy(desc(auditLog.createdAt))
+          .limit(query.pageSize)
+          .offset((query.page - 1) * query.pageSize),
+        db.select({ value: count() }).from(auditLog).where(where),
+      ])
+    );
 
     const total = totals[0]?.value ?? 0;
     return {
@@ -115,15 +113,17 @@ export class AuditService {
       input && typeof input === "object" && !Array.isArray(input)
         ? (input as Record<string, unknown>)
         : null;
-    await this.db.insert(auditLog).values({
-      organizationId: activeOrganizationId(),
-      actorId: me.id,
-      action: meta.action,
-      entityType: meta.entityType,
-      entityId: entityId ?? null,
-      payload,
-      requestId: currentRequestId() ?? null,
-    });
+    await this.dbService.tenant((db) =>
+      db.insert(auditLog).values({
+        organizationId: activeOrganizationId(),
+        actorId: me.id,
+        action: meta.action,
+        entityType: meta.entityType,
+        entityId: entityId ?? null,
+        payload,
+        requestId: currentRequestId() ?? null,
+      })
+    );
   }
 
   private toDto(row: AuditRow, actorEmail: string | null): AuditLogEntry {

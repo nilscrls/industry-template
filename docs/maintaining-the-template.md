@@ -26,10 +26,11 @@ docs/         this documentation
 - `variants/ui-base/` — Base UI (`@base-ui/react`) ports of the 7
   Radix-based `@repo/ui` components, the ui `package.json`/`components.json`,
   and the three app files that used `asChild` (render-prop conversions).
-- `variants/authz-rebac/` — membership-based CASL: permission contracts,
+- `variants/authz-rebac/` — relation-based OpenFGA model: its own
+  `packages/fga/model.fga` + `sync.ts`, permission contracts,
   `project_member` schema + regenerated drizzle migrations (`_delete.json`
-  removes the RBAC ones), ability factory, projects/users services and
-  controllers, seeds, `docs/authorization.md`, and its own integration suite.
+  removes the RBAC ones), projects/users services and controllers, seeds,
+  `docs/authorization.md`, and its own integration suite.
 - `variants/ai-claude/` — AI assistant config, applied **by default**
   (`--ai=none` opts out): `AGENTS.md` (agent instructions inside
   `BEGIN/END:create-industry-app` markers; `__UI_VARIANT__` /

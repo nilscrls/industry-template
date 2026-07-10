@@ -2,8 +2,19 @@ import type { Database } from "@repo/db";
 import * as schema from "@repo/db/schema";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { APIError } from "better-auth/api";
 import { admin, organization, twoFactor } from "better-auth/plugins";
 import { eq } from "drizzle-orm";
+
+export interface DeletedUser {
+  email: string;
+  id: string;
+}
+
+export interface MembershipEvent {
+  organizationId: string;
+  userId: string;
+}
 
 export interface AuthEmail {
   to: string;
@@ -40,6 +51,25 @@ export interface CreateAuthOptions {
    * config addition here + a `socialProviders` entry, not a rewrite.
    */
   microsoft?: MicrosoftSsoOptions;
+  /**
+   * Runs after a user account was deleted (rows already cascaded) — the api
+   * wires blob cleanup and the audit trail here. Seeds pass nothing.
+   */
+  onAfterUserDelete?: (user: DeletedUser) => Promise<void>;
+  /**
+   * Runs before a user account is deleted. Throw an Error to block the
+   * deletion — its message is returned to the client (e.g. "transfer your
+   * organizations first").
+   */
+  onBeforeUserDelete?: (user: DeletedUser) => Promise<void>;
+  /**
+   * Membership lifecycle callbacks — the api mirrors them into OpenFGA
+   * tuples. Seeds pass nothing and run `pnpm fga:sync` instead.
+   */
+  onMemberAdded?: (event: MembershipEvent) => Promise<void>;
+  onMemberRemoved?: (event: MembershipEvent) => Promise<void>;
+  onOrganizationCreated?: (event: MembershipEvent) => Promise<void>;
+  onOrganizationDeleted?: (event: { organizationId: string }) => Promise<void>;
   requireEmailVerification?: boolean;
   /** Redis-backed session/rate-limit storage — recommended in production. */
   secondaryStorage?: SecondaryStorage;
@@ -102,6 +132,35 @@ export function createAuth(options: CreateAuthOptions) {
       // Short-lived signed cookie cache: most requests skip the store lookup.
       cookieCache: { enabled: true, maxAge: 5 * 60 },
     },
+    user: {
+      // GDPR right to erasure: self-service, re-authenticated with the
+      // password (authClient.deleteUser({ password })). DB rows cascade via
+      // FKs; audit_log.actorId is SET NULL — the trail survives, anonymized.
+      deleteUser: {
+        enabled: true,
+        beforeDelete: async (user) => {
+          try {
+            await options.onBeforeUserDelete?.({
+              id: user.id,
+              email: user.email,
+            });
+          } catch (error) {
+            throw new APIError("BAD_REQUEST", {
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Account deletion is blocked",
+            });
+          }
+        },
+        afterDelete: async (user) => {
+          await options.onAfterUserDelete?.({
+            id: user.id,
+            email: user.email,
+          });
+        },
+      },
+    },
     databaseHooks: {
       session: {
         create: {
@@ -126,7 +185,33 @@ export function createAuth(options: CreateAuthOptions) {
     },
     plugins: [
       admin({ defaultRole: "member", adminRoles: ["admin"] }),
-      organization(),
+      organization({
+        organizationHooks: {
+          afterCreateOrganization: async ({ organization, user }) => {
+            await options.onOrganizationCreated?.({
+              organizationId: organization.id,
+              userId: user.id,
+            });
+          },
+          afterDeleteOrganization: async ({ organization }) => {
+            await options.onOrganizationDeleted?.({
+              organizationId: organization.id,
+            });
+          },
+          afterAddMember: async ({ member }) => {
+            await options.onMemberAdded?.({
+              organizationId: member.organizationId,
+              userId: member.userId,
+            });
+          },
+          afterRemoveMember: async ({ member }) => {
+            await options.onMemberRemoved?.({
+              organizationId: member.organizationId,
+              userId: member.userId,
+            });
+          },
+        },
+      }),
       // Opt-in per user (TOTP + backup codes); nothing is gated on it.
       twoFactor(),
     ],

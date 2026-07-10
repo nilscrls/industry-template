@@ -41,24 +41,26 @@ export {
   sortOrders,
 } from "./pagination.js";
 export {
-  type Action,
-  type AppSubject,
-  actions,
-  adminPermissions,
-  baselinePermissions,
-  type PermissionRule,
-  type ProjectMembership,
+  type OrgCapability,
+  orgCapabilities,
+  type PermissionSnapshot,
+  permissionSnapshotSchema,
   type ProjectRelation,
-  permissionRuleSchema,
   projectRelationSchema,
   projectRelations,
+  type Resource,
+  resources,
   type Role,
-  relationActions,
   roleSchema,
   roles,
-  rulesFromMemberships,
-  subjects,
+  type SystemCapability,
+  systemCapabilities,
 } from "./permissions.js";
+export {
+  type MeExport,
+  meExportSchema,
+  privacyContract,
+} from "./privacy.js";
 export {
   createProjectSchema,
   isProjectSortField,

@@ -1,5 +1,7 @@
-import { index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { index, pgPolicy, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { user } from "./auth.js";
+import { appUserRole } from "./roles.js";
 
 /**
  * Better-Auth organization plugin tables — the tenancy foundation. Every
@@ -29,8 +31,20 @@ export const member = pgTable(
     role: text().notNull().default("member"),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index().on(table.organizationId), index().on(table.userId)]
-);
+  (table) => [
+    index().on(table.organizationId),
+    index().on(table.userId),
+    // The user's own memberships stay readable pre-tenant (org switcher,
+    // GDPR export); admins read across tenants (member counts). Better-Auth
+    // itself uses the BYPASSRLS app_auth pool.
+    pgPolicy("member_tenant_isolation", {
+      for: "all",
+      to: appUserRole,
+      using: sql`organization_id = current_setting('app.current_org_id', true) OR user_id = current_setting('app.current_user_id', true) OR current_setting('app.is_admin', true) = 'true'`,
+      withCheck: sql`organization_id = current_setting('app.current_org_id', true)`,
+    }),
+  ]
+).enableRLS();
 
 export const invitation = pgTable(
   "invitation",
@@ -48,5 +62,14 @@ export const invitation = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index().on(table.organizationId), index().on(table.email)]
-);
+  (table) => [
+    index().on(table.organizationId),
+    index().on(table.email),
+    pgPolicy("invitation_tenant_isolation", {
+      for: "all",
+      to: appUserRole,
+      using: sql`organization_id = current_setting('app.current_org_id', true)`,
+      withCheck: sql`organization_id = current_setting('app.current_org_id', true)`,
+    }),
+  ]
+).enableRLS();

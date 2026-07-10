@@ -22,13 +22,18 @@ export type LocaleVariant = (typeof LOCALE_VARIANTS)[number];
 export const AI_VARIANTS = ["claude", "none"] as const;
 export type AiVariant = (typeof AI_VARIANTS)[number];
 
+export const PROD_BRANCH_VARIANTS = ["main", "master"] as const;
+export type ProdBranch = (typeof PROD_BRANCH_VARIANTS)[number];
+
 export interface ScaffoldOptions {
   /** AI assistant config (AGENTS.md, CLAUDE.md, .claude/rules). Default: "claude". */
   ai?: AiVariant;
-  /** CASL authorization model. Default: "rbac". */
+  /** OpenFGA authorization model. Default: "rbac". */
   authz?: AuthzVariant;
   /** Default UI language. Default: "en". */
   locale?: LocaleVariant;
+  /** Git-flow production branch name stamped into CI/docs. Default: "main". */
+  prodBranch?: ProdBranch;
   projectName: string;
   targetDir: string;
   templateDir: string;
@@ -156,10 +161,45 @@ const LOCALE_LABELS: Record<LocaleVariant, string> = {
   fr: "fr (Français)",
 };
 
+/**
+ * Base-template files that reference the git-flow production branch. Stamping
+ * throws if a listed file exists without the marker, so template drift is
+ * caught by the scaffold tests. Missing files are skipped (test fixtures use
+ * minimal templates).
+ */
+const PROD_BRANCH_FILES = [
+  ".github/workflows/ci.yml",
+  ".github/workflows/release-please.yml",
+  "README.md",
+  "docs/guides.md",
+  "docs/releases.md",
+  "CONTRIBUTING.md",
+];
+
+/** Replace the __PROD_BRANCH__ marker with the chosen production branch name. */
+function stampProdBranch(targetDir: string, branch: ProdBranch): void {
+  for (const relative of PROD_BRANCH_FILES) {
+    const filePath = path.join(targetDir, relative);
+    if (!existsSync(filePath)) {
+      continue;
+    }
+    const source = readFileSync(filePath, "utf8");
+    if (!source.includes("__PROD_BRANCH__")) {
+      throw new Error(`Marker __PROD_BRANCH__ not found in ${filePath}`);
+    }
+    writeFileSync(filePath, source.replaceAll("__PROD_BRANCH__", branch));
+  }
+}
+
 /** Stamp the chosen variants into the AGENTS.md emitted by the ai-claude overlay. */
 function stampAgentsVariants(
   targetDir: string,
-  choices: { authz: AuthzVariant; locale: LocaleVariant; ui: UiVariant }
+  choices: {
+    authz: AuthzVariant;
+    locale: LocaleVariant;
+    prodBranch: ProdBranch;
+    ui: UiVariant;
+  }
 ): void {
   const agentsPath = path.join(targetDir, "AGENTS.md");
   let source = readFileSync(agentsPath, "utf8");
@@ -167,6 +207,7 @@ function stampAgentsVariants(
     ["__UI_VARIANT__", UI_LABELS[choices.ui]],
     ["__AUTHZ_VARIANT__", AUTHZ_LABELS[choices.authz]],
     ["__LOCALE_VARIANT__", LOCALE_LABELS[choices.locale]],
+    ["__PROD_BRANCH__", choices.prodBranch],
   ];
   for (const [marker, value] of replacements) {
     if (!source.includes(marker)) {
@@ -272,6 +313,7 @@ export function scaffold(options: ScaffoldOptions): void {
     authz = "rbac",
     locale = "en",
     ai = "claude",
+    prodBranch = "main",
   } = options;
   const nameError = validateProjectName(projectName);
   if (nameError) {
@@ -293,9 +335,11 @@ export function scaffold(options: ScaffoldOptions): void {
   }
   if (ai === "claude") {
     applyVariantOverlay(variantsDir, "ai-claude", targetDir);
-    stampAgentsVariants(targetDir, { ui, authz, locale });
+    stampAgentsVariants(targetDir, { ui, authz, locale, prodBranch });
     selectVariantRules(targetDir, { ui, authz });
   }
+  // Unconditional (even for the default "main") so the marker never leaks.
+  stampProdBranch(targetDir, prodBranch);
   setDefaultLocale(targetDir, locale);
   restoreDotfiles(targetDir);
   setProjectName(targetDir, projectName);

@@ -20,7 +20,8 @@ Node >= 22.12) scaffolded by create-industry-app with these choices:
 Layout:
 
 - `apps/api` — NestJS 11 (Express, **CommonJS**), oRPC contract-first API,
-  Drizzle ORM (Postgres 17), Better-Auth, CASL, BullMQ + ioredis, pino.
+  Drizzle ORM (Postgres 17, row-level security), Better-Auth, OpenFGA,
+  BullMQ + ioredis, pino.
 - `apps/web` — Next.js 16 App Router, TanStack Query/Table, next-intl,
   react-hook-form, nuqs.
 - `packages/` — `contracts` (oRPC contracts + Zod schemas), `db` (Drizzle
@@ -86,7 +87,7 @@ constraint site and in `docs/`.
    `apps/api`) each guard a runtime failure — never "clean them up".
 7. **Conventional commits** via `pnpm commit`; lefthook runs Biome,
    commitlint and typecheck on commit. Branches follow git-flow
-   (`main`/`develop`, `feature/*`).
+   (`__PROD_BRANCH__`/`develop`, `feature/*`).
 
 ## Verifying changes
 

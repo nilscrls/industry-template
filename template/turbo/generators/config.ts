@@ -58,8 +58,28 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
       {
         type: "modify",
         path: "{{ turbo.paths.root }}/packages/contracts/src/permissions.ts",
-        pattern: /(export const subjects = \[)/,
-        template: '$1"{{ pascalCase name }}", ',
+        pattern: /(export const resources = \[)/,
+        template: '$1"{{ snakeCase name }}", ',
+      },
+      // ── authorization model ──────────────────────────────────────────
+      {
+        type: "modify",
+        path: "{{ turbo.paths.root }}/packages/fga/model.fga",
+        pattern:
+          /(# fga-generator-marker: new resource types are appended below by `pnpm gen feature`)/,
+        // Generated entities start user-scoped (owner-only). Add an `org`
+        // link + org-derived capabilities when the entity becomes
+        // tenant-shared (and give the table an organizationId + RLS policy).
+        template: [
+          "$1",
+          "",
+          "type {{ snakeCase name }}",
+          "  relations",
+          "    define owner: [user]",
+          "    define can_read: owner",
+          "    define can_update: owner",
+          "    define can_delete: owner",
+        ].join("\n"),
       },
       // ── db ───────────────────────────────────────────────────────────
       {
@@ -118,7 +138,7 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
         return [
           "Next steps:",
           "  1. pnpm db:generate && pnpm db:migrate   # create the migration",
-          "  2. Grant permissions for the new subject (see docs/authorization.md)",
+          "  2. Review the generated type in packages/fga/model.fga, then pnpm fga:bootstrap",
           "  3. Add i18n keys under `{{ camelCase plural }}` in packages/i18n/messages/*.json",
           "  4. Add a nav item in apps/web/src/components/app-shell.tsx",
           "  5. Make the generated int tests pass (TDD: they start as todos)",

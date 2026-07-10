@@ -1,15 +1,13 @@
-import type { AppAbility, AuthUser, SessionData } from "@repo/auth";
+import type { AuthUser, SessionData } from "@repo/auth";
 import { describe, expect, it } from "vitest";
 import {
   activeOrganizationId,
-  currentAbility,
   currentRequestId,
   currentUser,
   requestContext,
 } from "./request-context";
 
 const user = { id: "u1", email: "a@example.com" } as unknown as AuthUser;
-const ability = {} as AppAbility;
 
 function withSession(activeOrg: string | null): SessionData {
   return {
@@ -43,20 +41,6 @@ describe("currentUser", () => {
   it("returns the authenticated user", () => {
     requestContext.run({ requestId: "r", user }, () => {
       expect(currentUser()).toBe(user);
-    });
-  });
-});
-
-describe("currentAbility", () => {
-  it("throws AUTH_UNAUTHORIZED when no ability is attached", () => {
-    expect(() =>
-      requestContext.run({ requestId: "r" }, () => currentAbility())
-    ).toThrow();
-  });
-
-  it("returns the attached ability", () => {
-    requestContext.run({ requestId: "r", ability }, () => {
-      expect(currentAbility()).toBe(ability);
     });
   });
 });

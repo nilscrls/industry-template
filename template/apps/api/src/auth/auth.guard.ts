@@ -10,7 +10,6 @@ import { fromNodeHeaders } from "better-auth/node";
 import type { Request } from "express";
 import { appError } from "../common/app-error";
 import { requestContext } from "../common/request-context";
-import { AbilityFactory } from "./ability.factory";
 import { AUTH } from "./auth.module";
 import { IS_PUBLIC_KEY } from "./decorators";
 
@@ -18,8 +17,7 @@ import { IS_PUBLIC_KEY } from "./decorators";
 export class AuthGuard implements CanActivate {
   constructor(
     @Inject(AUTH) private readonly auth: Auth,
-    private readonly reflector: Reflector,
-    private readonly abilityFactory: AbilityFactory
+    private readonly reflector: Reflector
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -43,10 +41,6 @@ export class AuthGuard implements CanActivate {
     if (store) {
       store.session = session;
       store.user = session.user;
-      store.ability = await this.abilityFactory.abilityFor({
-        id: session.user.id,
-        role: session.user.role ?? "member",
-      });
     }
     return true;
   }

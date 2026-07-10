@@ -1,30 +1,31 @@
 ---
 paths:
   - "packages/contracts/src/permissions.ts"
-  - "packages/auth/**"
+  - "packages/fga/**"
   - "apps/api/src/auth/**"
+  - "apps/api/src/fga/**"
   - "packages/db/src/schema/permissions.ts"
 ---
 
-# Authorization — ReBAC (this scaffold's model)
+# Authorization — ReBAC on OpenFGA (this scaffold's model)
 
-- Global roles are only `admin` (bypasses relationship checks:
-  `manage all`) and `member`. Real access comes from per-project
-  memberships: `project_member` tuples with a relation of `owner`,
-  `editor`, or `viewer` (`projectRelations`), mapped to actions by
-  `relationActions` (`packages/contracts/src/permissions.ts`).
-- `rulesFromMemberships` converts membership tuples into serializable CASL
-  rules — one rule per (relation, action) with
-  `conditions: { id: { $in: [...projectIds] } }`. `baselinePermissions`
-  covers what every authenticated user can do regardless of memberships.
-  The same rules flow to the web app via `GET /me/permissions`.
-- **List/read endpoints carry no coarse `@RequireAbility`** — the service
-  scopes queries by membership. A fresh user must get an empty list, not a
-  403. Guard mutations with ability checks.
-- The creator's `owner` membership is inserted **in the same transaction**
-  as project creation — never as a follow-up write.
-- A user's resolved rules are cached in Redis: **every membership write
-  must invalidate that user's cached rules**, or they keep stale access.
+- The model is `packages/fga/model.fga` (OpenFGA DSL). Global roles are
+  only `admin` (bypasses relations) and `member`. Real access is the
+  per-project relation ladder `owner ⊃ editor ⊃ viewer`, exposed as
+  `can_read`/`can_update`/`can_delete`/`can_manage_members` capabilities.
+- **`project_member` rows are the DB source of truth**; every membership
+  write mirrors into an FGA tuple in the same request (row first, tuple
+  after commit — see `syncMemberTuples`). The creator's `owner` row is
+  inserted in the same transaction as project creation. `pnpm fga:sync`
+  rebuilds all derived tuples.
+- Model changes require `pnpm fga:bootstrap` (models are immutable — a new
+  version is written).
+- Guard routes with `@RequirePermission({relation, scope})`; list/read
+  endpoints stay service-scoped (DB join on `project_member`) — a fresh
+  user must get an empty list, not a 403. Row-level checks:
+  `await fga.check(fga.me(), "can_update", fga.ref.project(id))`.
+- The web consumes the capability snapshot (`GET /me/permissions`,
+  `useCan()`); row-level buttons use DTO flags (`canUpdate`/`canDelete`).
 - New entity (via `pnpm gen feature`): decide whether it is
-  membership-scoped (extend the membership/relation model) or baseline
-  (add to `baselinePermissions`). See `docs/authorization.md`.
+  relation-scoped (give it its own relations in the generated `type`
+  block) or org-baseline. See `docs/authorization.md`.

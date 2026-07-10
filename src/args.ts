@@ -5,6 +5,8 @@ import {
   type AuthzVariant,
   LOCALE_VARIANTS,
   type LocaleVariant,
+  PROD_BRANCH_VARIANTS,
+  type ProdBranch,
   UI_VARIANTS,
   type UiVariant,
 } from "./scaffold.js";
@@ -12,6 +14,7 @@ import {
 export interface CliFlags {
   ai: AiVariant | undefined;
   authz: AuthzVariant | undefined;
+  branch: ProdBranch | undefined;
   directory: string | undefined;
   git: boolean;
   install: boolean;
@@ -55,5 +58,6 @@ export function parseArgs(argv: string[]): CliFlags {
     authz: enumFlag(argv, "authz", AUTHZ_VARIANTS),
     locale: enumFlag(argv, "locale", LOCALE_VARIANTS),
     ai: enumFlag(argv, "ai", AI_VARIANTS),
+    branch: enumFlag(argv, "branch", PROD_BRANCH_VARIANTS),
   };
 }

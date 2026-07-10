@@ -135,6 +135,26 @@ describe("scaffold", () => {
       "packages/i18n/messages/fr.json",
       "packages/ui/package.json",
       "packages/ui/src/components/button.tsx",
+      "release-please-config.json",
+      ".release-please-manifest.json",
+      ".github/workflows/release-please.yml",
+      "CHANGELOG.md",
+      "apps/web/content/changelog.md",
+      "apps/web/src/app/(public)/changelog/page.tsx",
+      "apps/web/content/legal/mentions.en.md",
+      "apps/web/content/legal/mentions.fr.md",
+      "apps/web/content/legal/privacy.en.md",
+      "apps/web/content/legal/privacy.fr.md",
+      "apps/web/content/legal/terms.en.md",
+      "apps/web/content/legal/terms.fr.md",
+      "apps/web/src/app/(public)/legal/privacy/page.tsx",
+      "apps/web/src/components/footer.tsx",
+      "apps/web/src/components/consent.tsx",
+      "apps/api/src/privacy/privacy.module.ts",
+      "docs/compliance.md",
+      "packages/db/drizzle/0000_roles.sql",
+      "packages/db/drizzle/0001_init.sql",
+      "packages/db/sql/init-roles.sh",
     ]) {
       expect(existsSync(path.join(targetDir, file)), `missing ${file}`).toBe(
         true
@@ -151,7 +171,14 @@ describe("scaffold", () => {
         path.join(targetDir, "packages/contracts/src/permissions.ts"),
         "utf8"
       )
-    ).toContain("defaultRolePermissions");
+    ).toContain('"manager"');
+    // RBAC flavor of the FGA model: global roles + per-user deny grants.
+    const model = readFileSync(
+      path.join(targetDir, "packages/fga/model.fga"),
+      "utf8"
+    );
+    expect(model).toContain("define manager: [user]");
+    expect(model).toContain("but not denied_read");
     expect(
       readFileSync(path.join(targetDir, "packages/i18n/src/config.ts"), "utf8")
     ).toContain('DEFAULT_LOCALE: Locale = "en"');
@@ -195,19 +222,111 @@ describe("scaffold", () => {
       "utf8"
     );
     expect(permissions).toContain("projectRelations");
-    expect(permissions).not.toContain("defaultRolePermissions");
+    expect(permissions).not.toContain('"manager"');
     expect(
       readFileSync(
         path.join(targetDir, "packages/db/src/schema/permissions.ts"),
         "utf8"
       )
     ).toContain("projectMember");
-    // The RBAC migrations are replaced wholesale by the manifest.
-    const migrations = readFileSync(
-      path.join(targetDir, "packages/db/drizzle/meta/_journal.json"),
+    // ReBAC flavor of the FGA model: the owner ⊃ editor ⊃ viewer ladder.
+    const model = readFileSync(
+      path.join(targetDir, "packages/fga/model.fga"),
       "utf8"
     );
-    expect(migrations).not.toContain("yielding_cloak");
+    expect(model).toContain("define editor: [user] or owner");
+    expect(model).not.toContain("granted_read");
+    // The RBAC migrations are replaced wholesale by the manifest.
+    expect(
+      readFileSync(
+        path.join(targetDir, "packages/db/drizzle/0001_init.sql"),
+        "utf8"
+      )
+    ).toContain("project_member");
+    expect(
+      existsSync(path.join(targetDir, "packages/db/drizzle/0000_roles.sql"))
+    ).toBe(true);
+  });
+
+  it("stamps the default production branch (main) with no marker residue", () => {
+    const targetDir = path.join(workDir, "real-main");
+    scaffold({
+      templateDir: REAL_TEMPLATE,
+      variantsDir: REAL_VARIANTS,
+      targetDir,
+      projectName: "real-app",
+    });
+
+    expect(
+      readFileSync(path.join(targetDir, ".github/workflows/ci.yml"), "utf8")
+    ).toContain("branches: [main, develop]");
+    expect(
+      readFileSync(
+        path.join(targetDir, ".github/workflows/release-please.yml"),
+        "utf8"
+      )
+    ).toContain("branches: [main]");
+    for (const file of [
+      ".github/workflows/ci.yml",
+      ".github/workflows/release-please.yml",
+      "README.md",
+      "docs/guides.md",
+      "docs/releases.md",
+      "CONTRIBUTING.md",
+      "AGENTS.md",
+    ]) {
+      expect(
+        readFileSync(path.join(targetDir, file), "utf8"),
+        `marker left in ${file}`
+      ).not.toContain("__PROD_BRANCH__");
+    }
+    expect(
+      readFileSync(path.join(targetDir, "CONTRIBUTING.md"), "utf8")
+    ).toContain("`main` — production");
+  });
+
+  it("stamps master everywhere when prodBranch=master", () => {
+    const targetDir = path.join(workDir, "real-master");
+    scaffold({
+      templateDir: REAL_TEMPLATE,
+      variantsDir: REAL_VARIANTS,
+      targetDir,
+      projectName: "real-app",
+      prodBranch: "master",
+    });
+
+    expect(
+      readFileSync(path.join(targetDir, ".github/workflows/ci.yml"), "utf8")
+    ).toContain("branches: [master, develop]");
+    expect(readFileSync(path.join(targetDir, "README.md"), "utf8")).toContain(
+      "`master` (production)"
+    );
+    expect(
+      readFileSync(path.join(targetDir, "docs/guides.md"), "utf8")
+    ).toContain("`master` = production");
+    expect(
+      readFileSync(path.join(targetDir, "CONTRIBUTING.md"), "utf8")
+    ).toContain("`master` — production");
+    // ai=claude default: AGENTS.md convention stamped too.
+    const agents = readFileSync(path.join(targetDir, "AGENTS.md"), "utf8");
+    expect(agents).toContain("`master`/`develop`");
+    expect(agents).not.toContain("__PROD_BRANCH__");
+  });
+
+  it("throws when a branch-marked file has lost its marker", () => {
+    const templateDir = makeFixtureTemplate();
+    writeFileSync(
+      path.join(templateDir, "CONTRIBUTING.md"),
+      "# Contributing\n\nProduction branch: main\n"
+    );
+    expect(() =>
+      scaffold({
+        templateDir,
+        targetDir: path.join(workDir, "bad-branch-marker"),
+        projectName: "acme-erp",
+        ai: "none",
+      })
+    ).toThrow(/Marker __PROD_BRANCH__ not found/);
   });
 
   it("sets the default locale when locale=fr", () => {
@@ -382,12 +501,13 @@ describe("scaffold", () => {
       "utf8"
     );
     expect(permissions).toContain("projectRelations");
-    expect(permissions).not.toContain("defaultRolePermissions");
-    const journal = readFileSync(
-      path.join(targetDir, "packages/db/drizzle/meta/_journal.json"),
-      "utf8"
-    );
-    expect(journal).not.toContain("yielding_cloak");
+    expect(permissions).not.toContain('"manager"');
+    expect(
+      readFileSync(
+        path.join(targetDir, "packages/db/drizzle/0001_init.sql"),
+        "utf8"
+      )
+    ).toContain("project_member");
 
     // French fallback locale.
     expect(

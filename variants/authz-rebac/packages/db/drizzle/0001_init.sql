@@ -11,6 +11,7 @@ CREATE TABLE "audit_log" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+ALTER TABLE "audit_log" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "account" (
 	"id" text PRIMARY KEY NOT NULL,
 	"account_id" text NOT NULL,
@@ -85,6 +86,7 @@ CREATE TABLE "file_object" (
 	CONSTRAINT "file_object_storageKey_unique" UNIQUE("storage_key")
 );
 --> statement-breakpoint
+ALTER TABLE "file_object" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "invitation" (
 	"id" text PRIMARY KEY NOT NULL,
 	"organization_id" text NOT NULL,
@@ -96,6 +98,7 @@ CREATE TABLE "invitation" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+ALTER TABLE "invitation" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "member" (
 	"id" text PRIMARY KEY NOT NULL,
 	"organization_id" text NOT NULL,
@@ -104,6 +107,7 @@ CREATE TABLE "member" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+ALTER TABLE "member" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "organization" (
 	"id" text PRIMARY KEY NOT NULL,
 	"name" text NOT NULL,
@@ -115,24 +119,12 @@ CREATE TABLE "organization" (
 	CONSTRAINT "organization_slug_unique" UNIQUE("slug")
 );
 --> statement-breakpoint
-CREATE TABLE "role_permission" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"role" text NOT NULL,
-	"action" text NOT NULL,
-	"subject" text NOT NULL,
-	"conditions" jsonb,
-	"inverted" boolean DEFAULT false NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE "user_permission_override" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+CREATE TABLE "project_member" (
+	"project_id" uuid NOT NULL,
 	"user_id" text NOT NULL,
-	"action" text NOT NULL,
-	"subject" text NOT NULL,
-	"conditions" jsonb,
-	"inverted" boolean DEFAULT false NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+	"relation" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "project_member_project_id_user_id_pk" PRIMARY KEY("project_id","user_id")
 );
 --> statement-breakpoint
 CREATE TABLE "project" (
@@ -146,6 +138,7 @@ CREATE TABLE "project" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+ALTER TABLE "project" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "audit_log" ADD CONSTRAINT "audit_log_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "audit_log" ADD CONSTRAINT "audit_log_actor_id_user_id_fk" FOREIGN KEY ("actor_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "account" ADD CONSTRAINT "account_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -157,7 +150,8 @@ ALTER TABLE "invitation" ADD CONSTRAINT "invitation_organization_id_organization
 ALTER TABLE "invitation" ADD CONSTRAINT "invitation_inviter_id_user_id_fk" FOREIGN KEY ("inviter_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "member" ADD CONSTRAINT "member_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "member" ADD CONSTRAINT "member_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "user_permission_override" ADD CONSTRAINT "user_permission_override_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "project_member" ADD CONSTRAINT "project_member_project_id_project_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."project"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "project_member" ADD CONSTRAINT "project_member_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "project" ADD CONSTRAINT "project_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "project" ADD CONSTRAINT "project_owner_id_user_id_fk" FOREIGN KEY ("owner_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "audit_log_organization_id_index" ON "audit_log" USING btree ("organization_id");--> statement-breakpoint
@@ -174,9 +168,13 @@ CREATE INDEX "invitation_organization_id_index" ON "invitation" USING btree ("or
 CREATE INDEX "invitation_email_index" ON "invitation" USING btree ("email");--> statement-breakpoint
 CREATE INDEX "member_organization_id_index" ON "member" USING btree ("organization_id");--> statement-breakpoint
 CREATE INDEX "member_user_id_index" ON "member" USING btree ("user_id");--> statement-breakpoint
-CREATE INDEX "role_permission_role_index" ON "role_permission" USING btree ("role");--> statement-breakpoint
-CREATE INDEX "user_permission_override_user_id_index" ON "user_permission_override" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "project_member_user_id_index" ON "project_member" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "project_organization_id_index" ON "project" USING btree ("organization_id");--> statement-breakpoint
 CREATE INDEX "project_owner_id_index" ON "project" USING btree ("owner_id");--> statement-breakpoint
 CREATE INDEX "project_status_index" ON "project" USING btree ("status");--> statement-breakpoint
-CREATE INDEX "project_created_at_index" ON "project" USING btree ("created_at");
+CREATE INDEX "project_created_at_index" ON "project" USING btree ("created_at");--> statement-breakpoint
+CREATE POLICY "audit_log_tenant_isolation" ON "audit_log" AS PERMISSIVE FOR ALL TO "app_user" USING (organization_id = current_setting('app.current_org_id', true) OR actor_id = current_setting('app.current_user_id', true)) WITH CHECK (organization_id IS NULL OR organization_id = current_setting('app.current_org_id', true));--> statement-breakpoint
+CREATE POLICY "file_object_tenant_isolation" ON "file_object" AS PERMISSIVE FOR ALL TO "app_user" USING (organization_id = current_setting('app.current_org_id', true) OR owner_id = current_setting('app.current_user_id', true)) WITH CHECK (organization_id = current_setting('app.current_org_id', true));--> statement-breakpoint
+CREATE POLICY "invitation_tenant_isolation" ON "invitation" AS PERMISSIVE FOR ALL TO "app_user" USING (organization_id = current_setting('app.current_org_id', true)) WITH CHECK (organization_id = current_setting('app.current_org_id', true));--> statement-breakpoint
+CREATE POLICY "member_tenant_isolation" ON "member" AS PERMISSIVE FOR ALL TO "app_user" USING (organization_id = current_setting('app.current_org_id', true) OR user_id = current_setting('app.current_user_id', true) OR current_setting('app.is_admin', true) = 'true') WITH CHECK (organization_id = current_setting('app.current_org_id', true));--> statement-breakpoint
+CREATE POLICY "project_tenant_isolation" ON "project" AS PERMISSIVE FOR ALL TO "app_user" USING (organization_id = current_setting('app.current_org_id', true) OR owner_id = current_setting('app.current_user_id', true)) WITH CHECK (organization_id = current_setting('app.current_org_id', true));

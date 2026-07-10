@@ -1,94 +1,54 @@
 import { z } from "zod";
 
-export const actions = [
-  "manage",
-  "create",
-  "read",
-  "update",
-  "delete",
-] as const;
-export const subjects = [
-  "Project",
-  "User",
-  "File",
-  "AuditLog",
-  "Organization",
-  "FeatureFlag",
-  "all",
-] as const;
+/**
+ * Authorization vocabulary (ReBAC variant). The rules themselves live in
+ * the OpenFGA model (`packages/fga/model.fga`) — this file only names the
+ * capabilities and relations so contracts, guards and the web app share
+ * one typed list.
+ */
 export const roles = ["admin", "member"] as const;
-export const projectRelations = ["owner", "editor", "viewer"] as const;
-
-export type Action = (typeof actions)[number];
-export type AppSubject = (typeof subjects)[number];
 export type Role = (typeof roles)[number];
-export type ProjectRelation = (typeof projectRelations)[number];
-
 export const roleSchema = z.enum(roles);
+
+/** Resource types in the FGA model (kept in sync by `pnpm gen feature`). */
+export const resources = ["project", "file"] as const;
+export type Resource = (typeof resources)[number];
+
+/**
+ * Per-project relations — the ReBAC ladder. Every owner is an editor,
+ * every editor a viewer (see the model).
+ */
+export const projectRelations = ["owner", "editor", "viewer"] as const;
+export type ProjectRelation = (typeof projectRelations)[number];
 export const projectRelationSchema = z.enum(projectRelations);
 
+/** Org-scoped capabilities, checked against `org:<activeOrganizationId>`. */
+export const orgCapabilities = [
+  "can_read_project",
+  "can_create_project",
+  "can_read_file",
+  "can_create_file",
+  "can_read_all_files",
+  "can_read_audit_log",
+  "can_manage_feature_flag",
+] as const;
+export type OrgCapability = (typeof orgCapabilities)[number];
+
+/** Cross-tenant admin capabilities, checked against `system:global`. */
+export const systemCapabilities = [
+  "can_read_user",
+  "can_manage_user",
+  "can_manage_organization",
+] as const;
+export type SystemCapability = (typeof systemCapabilities)[number];
+
 /**
- * A serializable CASL rule. `conditions` values support the `"${userId}"`
- * placeholder, interpolated by the shared ability factory at build time.
- * `inverted: true` is a deny rule — deny always wins over allow.
+ * The signed-in user's capability snapshot — computed server-side with FGA
+ * ListRelations and consumed by the web app for UI gating (cosmetic; the
+ * api re-checks everything).
  */
-export const permissionRuleSchema = z.object({
-  action: z.enum(actions),
-  subject: z.enum(subjects),
-  conditions: z.record(z.string(), z.unknown()).optional(),
-  inverted: z.boolean().optional(),
+export const permissionSnapshotSchema = z.object({
+  org: z.array(z.enum(orgCapabilities)),
+  system: z.array(z.enum(systemCapabilities)),
 });
-
-export type PermissionRule = z.infer<typeof permissionRuleSchema>;
-
-/** Actions each relation grants on the projects it covers (ReBAC). */
-export const relationActions: Record<ProjectRelation, readonly Action[]> = {
-  owner: ["manage"],
-  editor: ["read", "update"],
-  viewer: ["read"],
-};
-
-/** Rules every authenticated user gets, regardless of relationships. */
-export const baselinePermissions: PermissionRule[] = [
-  { action: "create", subject: "Project" },
-  { action: "create", subject: "File" },
-  { action: "read", subject: "File", conditions: { ownerId: "${userId}" } },
-  { action: "delete", subject: "File", conditions: { ownerId: "${userId}" } },
-];
-
-/** Site admins bypass relationship checks entirely. */
-export const adminPermissions: PermissionRule[] = [
-  { action: "manage", subject: "all" },
-];
-
-export interface ProjectMembership {
-  projectId: string;
-  relation: ProjectRelation;
-}
-
-/**
- * Turn membership tuples into serializable CASL rules: one rule per
- * (relation, action) pair, scoped with `{ id: { $in: [...projectIds] } }`.
- * The same rules flow to the web app via `GET /me/permissions`.
- */
-export function rulesFromMemberships(
-  memberships: ProjectMembership[]
-): PermissionRule[] {
-  const idsByRelation = new Map<ProjectRelation, string[]>();
-  for (const membership of memberships) {
-    const ids = idsByRelation.get(membership.relation) ?? [];
-    ids.push(membership.projectId);
-    idsByRelation.set(membership.relation, ids);
-  }
-  return projectRelations.flatMap((relation) => {
-    const ids = idsByRelation.get(relation);
-    if (!ids || ids.length === 0) {
-      return [];
-    }
-    return relationActions[relation].map((action) => ({
-      action,
-      subject: "Project" as const,
-      conditions: { id: { $in: ids } },
-    }));
-  });
-}
+export type PermissionSnapshot = z.infer<typeof permissionSnapshotSchema>;

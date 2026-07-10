@@ -2,7 +2,7 @@ import { Controller } from "@nestjs/common";
 import { Implement, implement } from "@orpc/nest";
 import { contract } from "@repo/contracts";
 import { AuditService } from "../audit/audit.service";
-import { RequireAbility } from "../auth/decorators";
+import { RequirePermission } from "../auth/decorators";
 import { ProjectsService } from "./projects.service";
 
 @Controller()
@@ -38,7 +38,7 @@ export class ProjectsController {
     );
   }
 
-  @RequireAbility({ action: "create", subject: "Project" })
+  @RequirePermission({ relation: "can_create_project", scope: "org" })
   @Implement(contract.projects.create)
   create() {
     return implement(contract.projects.create)
@@ -48,7 +48,8 @@ export class ProjectsController {
       .handler(({ input }) => this.projects.create(input));
   }
 
-  @RequireAbility({ action: "update", subject: "Project" })
+  // Row-level relation checks (can_update via FGA) happen in the service.
+  @RequirePermission({ relation: "can_read_project", scope: "org" })
   @Implement(contract.projects.update)
   update() {
     return implement(contract.projects.update)
@@ -58,7 +59,7 @@ export class ProjectsController {
       .handler(({ input }) => this.projects.update(input));
   }
 
-  @RequireAbility({ action: "delete", subject: "Project" })
+  @RequirePermission({ relation: "can_read_project", scope: "org" })
   @Implement(contract.projects.remove)
   remove() {
     return implement(contract.projects.remove)
@@ -75,8 +76,8 @@ export class ProjectsController {
     );
   }
 
-  // `manage` on the specific project (owner relation or admin) — checked in
-  // the service against the row.
+  // `can_manage_members` on the specific project (owner relation or admin)
+  // — checked in the service against the row via FGA.
   @Implement(contract.projects.setMember)
   setMember() {
     return implement(contract.projects.setMember)

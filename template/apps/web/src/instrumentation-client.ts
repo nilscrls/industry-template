@@ -20,6 +20,11 @@ if (env.NEXT_PUBLIC_POSTHOG_ENABLED && !isTest) {
   posthog.init(env.NEXT_PUBLIC_POSTHOG_KEY, {
     api_host: env.NEXT_PUBLIC_POSTHOG_HOST,
     capture_exceptions: true,
+    // GDPR: the SDK loads dormant — no cookies, no localStorage, no events —
+    // until the consent banner calls posthog.opt_in_capturing(). PostHog
+    // persists the choice itself, so opt-in survives reloads.
+    opt_out_capturing_by_default: true,
+    opt_out_persistence_by_default: true,
   });
 }
 

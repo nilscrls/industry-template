@@ -1,5 +1,6 @@
 {
   "name": "industry-app",
+  "version": "0.1.0",
   "private": true,
   "engines": {
     "node": ">=22.12"
@@ -16,8 +17,10 @@
     "test:e2e": "dotenv -e .env -- turbo run test:e2e",
     "db:generate": "dotenv -e .env -- pnpm --filter @repo/db generate",
     "db:migrate": "dotenv -e .env -- pnpm --filter @repo/db migrate",
-    "db:seed": "dotenv -e .env -- pnpm --filter @repo/db seed && dotenv -e .env -- pnpm --filter @repo/auth seed:dev",
+    "db:seed": "dotenv -e .env -- pnpm --filter @repo/db seed && dotenv -e .env -- pnpm --filter @repo/auth seed:dev && dotenv -e .env -- pnpm --filter @repo/fga sync",
     "auth:schema": "dotenv -e .env -- pnpm --filter @repo/auth generate-schema",
+    "fga:bootstrap": "dotenv -e .env -- pnpm --filter @repo/fga bootstrap",
+    "fga:sync": "dotenv -e .env -- pnpm --filter @repo/fga sync",
     "compose:dev": "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile dev up -d",
     "compose:dev:down": "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile dev down",
     "compose:all": "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile all up -d --build",

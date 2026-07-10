@@ -6,8 +6,12 @@ import { AuditService } from "./audit.service";
 
 function makeService() {
   const values = vi.fn().mockResolvedValue(undefined);
+  const db = { insert: vi.fn().mockReturnValue({ values }) };
   const dbService = {
-    db: { insert: vi.fn().mockReturnValue({ values }) },
+    db,
+    // The real tenant() opens an RLS-scoped transaction; here it just hands
+    // the same mock db to the callback.
+    tenant: (fn: (tx: typeof db) => unknown) => fn(db),
   } as unknown as DbService;
   return { service: new AuditService(dbService), values };
 }

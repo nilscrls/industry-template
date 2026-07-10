@@ -14,34 +14,36 @@ type ListQuery = PaginationQuery & { search?: string | undefined };
 export class OrganizationsService {
   constructor(private readonly dbService: DbService) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  /** Admin overview across ALL tenants — deliberately not org-scoped. */
+  /**
+   * Admin overview across ALL tenants — deliberately not org-scoped. The
+   * member RLS policy grants cross-tenant reads only when the tenant
+   * context marks the session admin (guarded by @RequireAbility upstream).
+   */
   async list(query: ListQuery): Promise<Paginated<OrganizationSummary>> {
     const where = query.search
       ? ilike(organization.name, `%${query.search}%`)
       : undefined;
 
-    const [rows, totals] = await Promise.all([
-      this.db
-        .select({
-          id: organization.id,
-          name: organization.name,
-          slug: organization.slug,
-          createdAt: organization.createdAt,
-          memberCount: count(member.id),
-        })
-        .from(organization)
-        .leftJoin(member, eq(member.organizationId, organization.id))
-        .where(where)
-        .groupBy(organization.id)
-        .orderBy(desc(organization.createdAt))
-        .limit(query.pageSize)
-        .offset((query.page - 1) * query.pageSize),
-      this.db.select({ value: count() }).from(organization).where(where),
-    ]);
+    const [rows, totals] = await this.dbService.tenant((db) =>
+      Promise.all([
+        db
+          .select({
+            id: organization.id,
+            name: organization.name,
+            slug: organization.slug,
+            createdAt: organization.createdAt,
+            memberCount: count(member.id),
+          })
+          .from(organization)
+          .leftJoin(member, eq(member.organizationId, organization.id))
+          .where(where)
+          .groupBy(organization.id)
+          .orderBy(desc(organization.createdAt))
+          .limit(query.pageSize)
+          .offset((query.page - 1) * query.pageSize),
+        db.select({ value: count() }).from(organization).where(where),
+      ])
+    );
 
     const total = totals[0]?.value ?? 0;
     return {

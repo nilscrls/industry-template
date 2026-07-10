@@ -13,6 +13,10 @@ services:
       - "9000:9000" # S3 API
       - "9001:9001" # console
 
+  openfga:
+    ports:
+      - "8080:8080" # HTTP API (playground stays disabled: 3000 belongs to web)
+
   maildev:
     ports:
       - "1080:1080" # web UI

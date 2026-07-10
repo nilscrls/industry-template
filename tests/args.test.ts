@@ -49,6 +49,7 @@ describe("parseArgs", () => {
       authz: undefined,
       locale: undefined,
       ai: undefined,
+      branch: undefined,
     });
   });
 
@@ -78,6 +79,7 @@ describe("parseArgs", () => {
       "--authz=rebac",
       "--locale=fr",
       "--ai=none",
+      "--branch=master",
     ]);
     expect(flags).toMatchObject({
       directory: "app",
@@ -85,6 +87,24 @@ describe("parseArgs", () => {
       authz: "rebac",
       locale: "fr",
       ai: "none",
+      branch: "master",
     });
+  });
+
+  it("rejects an invalid --branch value", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {
+      // swallow
+    });
+    const exit = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+
+    parseArgs(["--branch=trunk"]);
+
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining("Invalid --branch=trunk")
+    );
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("main, master"));
+    expect(exit).toHaveBeenCalledWith(1);
   });
 });

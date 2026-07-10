@@ -1,55 +1,65 @@
-# Authorization — ReBAC (per-resource memberships)
+# Authorization — ReBAC (per-resource relations) on OpenFGA
 
-This project uses the **ReBAC** flavor of the CASL setup (chosen at scaffold
-time; the alternative is a role-matrix RBAC model).
+This project uses the **ReBAC** flavor of the OpenFGA setup (chosen at
+scaffold time; the alternative is a role-matrix RBAC model).
 
 Access to a project is a **relation** held by a user on that specific
-project: `owner`, `editor` or `viewer`. There are only two global roles —
-`admin` (bypasses relationship checks entirely) and `member` (everyone else).
+project: `owner`, `editor` or `viewer` (a ladder — every owner is an
+editor, every editor a viewer). There are only two global roles — `admin`
+(bypasses relations entirely) and `member`.
+
+Underneath the application layer, **Postgres row-level security** enforces
+tenant isolation as defense in depth: org-scoped tables (`project`,
+`file_object`, `audit_log`, `member`, `invitation`) carry policies matching
+`current_setting('app.current_org_id')`, set per request by
+`DbService.tenant(...)` (SET LOCAL inside a transaction). The API connects
+as the restricted `app_user` role; a query that forgets its WHERE clause
+returns zero foreign rows instead of leaking them. Better-Auth uses the
+`app_auth` BYPASSRLS role (it reads `member` before a tenant exists);
+migrations/seeds run as the owner. See `packages/db/src/schema/roles.ts`.
 
 ## How it works
 
-- Relationship tuples live in the `project_member` table
-  (`projectId, userId, relation`). Creating a project inserts the creator's
-  `owner` tuple in the same transaction — ownership IS the grant.
-- `relationActions` in `packages/contracts/src/permissions.ts` maps each
-  relation to the actions it grants: owner → `manage`, editor →
-  `read, update`, viewer → `read`.
-- `AbilityFactory` (`apps/api/src/auth/ability.factory.ts`) loads the user's
-  memberships and turns them into serializable CASL rules
-  (`{ id: { $in: [...projectIds] } }` conditions) via `rulesFromMemberships`,
-  merged with `baselinePermissions` (create Project/File, own-file access).
-  Rules are cached in Redis for 5 minutes and invalidated on every
-  membership write (`invalidateUser`).
-- Listing is scoped in the service: non-admins only see projects they hold a
-  relation on (`/projects` joins against `project_member`). A user with no
-  memberships gets an empty list, not a 403 — that's why `list`/`find` carry
-  no coarse `@RequireAbility` guard; the row-level `ability.can(...)` checks
-  in the service are the authority.
-- The web builds **the same ability** from `GET /me/permissions`
-  (`apps/web/src/lib/ability.tsx`, `<Can>` / `useAbility()`) to show/hide UI.
-  UI gating is cosmetic; the api is the authority.
+- **The model** lives in `packages/fga/model.fga` (OpenFGA DSL). The
+  project type defines the relation ladder and the `can_*` capabilities
+  derived from it (`can_read: viewer or admin from org`, `can_update:
+  editor or admin from org`, `can_delete` / `can_manage_members`: owner or
+  admin).
+- **`project_member` is the DB source of truth** for relations; every
+  membership write mirrors into an FGA tuple in the same request (row
+  first, tuple after commit). Project creation grants the creator `owner`
+  in both places. `pnpm fga:sync` rebuilds every derived tuple from the DB.
+- Enforcement is two-layered: `@RequirePermission({relation, scope})` for
+  coarse route checks (org capabilities / `system:global` admin surface),
+  and `fga.check(fga.me(), "can_update", fga.ref.project(id))` in services
+  for row-level checks against the relation ladder.
+- Listing stays a DB join on `project_member` (pageable, index-friendly);
+  FGA re-answers the same question per row for the DTO's
+  `canUpdate`/`canDelete` hints (one BatchCheck per page).
+- The web consumes the capability snapshot from `GET /me/permissions`
+  (`apps/web/src/lib/permissions.tsx`, `useCan()` / `<Can>`). UI gating is
+  cosmetic; the api is the authority.
+- **OpenFGA is a hard runtime dependency**: checks are network calls; the
+  guard fails closed with a 5xx when the engine is unreachable.
 
 ## Management endpoints
 
-- `GET /projects/:id/members` — list members (anyone who can read the project).
-- `PUT /projects/:id/members/:userId` `{ relation }` — grant or change a
-  relation (requires `manage`: the owner relation or admin). A project always
-  keeps at least one owner — demoting or removing the last owner is rejected.
-- `DELETE /projects/:id/members/:userId` — revoke access.
-- `PATCH /users/:id/role` — promote/demote site admins (admin only).
-- `GET /me/permissions` — resolved rules for the signed-in user.
+- `GET /projects/:id/members` — list relations (any project reader).
+- `PUT /projects/:id/members/:userId` — grant/change a relation
+  (`can_manage_members`: owner or admin). A project always keeps ≥1 owner.
+- `DELETE /projects/:id/members/:userId` — remove a relation.
+- `PATCH /users/:id/role` — change a user's global role (admin).
+- `GET /me/permissions` — capability snapshot for the signed-in user.
 
 ## Add / change permissions
 
-- **New subject**: add it to `subjects` in
-  `packages/contracts/src/permissions.ts` (the feature generator does this).
-  Then decide whether the new resource is relationship-scoped (add its own
-  membership table + rules, mirroring projects) or baseline/ownership-scoped
-  (add rules to `baselinePermissions`, e.g. with
-  `{ ownerId: "${userId}" }` conditions like File).
-- **Change what a relation grants**: edit `relationActions` — it applies on
-  the next ability rebuild (≤ 5 min cache, or immediately after a membership
-  write for that user).
-- **Grant/revoke access to a project**: use the members endpoints above —
-  no deploy, no seed, it's data.
+- **New resource type**: `pnpm gen feature` appends a `type` block to
+  `packages/fga/model.fga` and registers the resource in
+  `packages/contracts/src/permissions.ts`.
+- **Model changes**: edit `model.fga`, then `pnpm fga:bootstrap` (models
+  are immutable — a new version is written; unpinned clients pick it up
+  immediately).
+- **Run-book / drift**: same as the base setup — `pnpm compose:dev` →
+  `pnpm db:migrate` → `pnpm fga:bootstrap` → `pnpm db:seed` (chains
+  `fga:sync`); rerun `pnpm fga:sync` after any lost post-commit tuple
+  write.

@@ -19,20 +19,23 @@ Email + password with verification and reset emails, powered by Better-Auth.
 - Dev users after `pnpm db:seed` (password `Password123!`):
   `admin@example.com`, `manager@example.com`, `member@example.com`.
 
-## Authorization — CASL
+## Authorization — OpenFGA
 
-Serializable CASL rules enforced by the api and mirrored in the web UI. The
-rule model (RBAC roles or ReBAC memberships) is chosen at scaffold time —
-`docs/authorization.md` documents this project's setup end to end.
+Zanzibar-style authorization: the model lives in `packages/fga/model.fga`,
+tuples mirror the database, checks run against the OpenFGA service shipped
+in compose. The relation model (RBAC roles + grants or ReBAC per-project
+relations) is chosen at scaffold time — `docs/authorization.md` documents
+this project's setup end to end, including the Postgres row-level-security
+net underneath.
 
-- Definitions: `packages/contracts/src/permissions.ts` (actions, subjects,
-  rule sources).
-- Enforcement (api): `@RequireAbility({ action, subject })` on controller
-  methods; `ability.can(action, asSubject("Project", row))` in services for
-  row-level checks.
-- UI gating (web): `<Can action="update" subject={asSubject("Project", row)}>`
-  and `useAbility()` from `apps/web/src/lib/ability.tsx` — built from the
-  same rules the api enforces (`GET /me/permissions`).
+- Vocabulary: `packages/contracts/src/permissions.ts` (capabilities,
+  resources, snapshot schema).
+- Enforcement (api): `@RequirePermission({ relation, scope })` on
+  controller methods; `fga.check(...)` in services for row-level checks.
+- UI gating (web): `useCan("can_create_project")` / `<Can>` from
+  `apps/web/src/lib/permissions.tsx` (capability snapshot from
+  `GET /me/permissions`); row buttons use DTO flags (`canUpdate`).
+- Ops: `pnpm fga:bootstrap` (store + model), `pnpm fga:sync` (reconcile).
 
 ## Multi-tenancy (organizations)
 
@@ -129,10 +132,31 @@ string; `useAppMutation` already toasts it. Translations live under
 
 ## Caching (Redis)
 
-`CacheService` (`apps/api/src/redis/cache.service.ts`): JSON `get/set/del`
-and `getOrSet(key, ttl, factory)`. Used for dashboard stats (60 s, invalidated
-on project writes) and permission rules (5 min, invalidated on
-role/override changes). Redis also backs sessions, queues and rate limits.
+`CacheService` (`apps/api/src/redis/cache.service.ts`) is scope-first:
+`forOrg(orgId)` / `forUser(userId)` / `global()` return a `ScopedCache`
+(JSON `get/set/del/getOrSet`) whose keys carry the authorization scope —
+unscoped keys (the cache-poisoning / cross-tenant IDOR vector) are
+impossible. Used for dashboard stats (60 s, org-scoped, invalidated on
+project writes) and permission rules (5 min, invalidated on role/override
+changes). HTTP responses default to `Cache-Control: private, no-store`
+(`app.setup.ts`). Redis also backs sessions, queues and rate limits. See
+`docs/guides.md` for the rules.
+
+## GDPR / privacy
+
+Cookie-consent-gated analytics, public legal pages (en/fr, operator
+placeholders), data export (`GET /me/export`), password-confirmed account
+deletion with sole-owner protection and anonymized audit retention, global
+footer with legal links. Details and the operator checklist:
+`docs/compliance.md`.
+
+## Changelog & releases
+
+release-please maintains the version and `apps/web/content/changelog.md`
+from conventional commits (workflow: `.github/workflows/release-please.yml`);
+the app renders it at the public `/changelog` route
+(`apps/web/src/app/(public)/changelog/page.tsx`, react-markdown, server-side).
+Flow and hotfix back-merges: `docs/releases.md`.
 
 ## Logging & tracing
 
@@ -158,6 +182,11 @@ role/override changes). Redis also backs sessions, queues and rate limits.
 
 ## Hardening & operations
 
+- **Postgres row-level security** on every org-scoped table: the API runs
+  as the restricted `app_user` role and each request pins its tenant with
+  `DbService.tenant(...)` — a forgotten WHERE clause returns zero foreign
+  rows. Better-Auth uses the `app_auth` BYPASSRLS role; migrations/seeds
+  the owner. See `docs/authorization.md`.
 - `/health/live` and `/health/ready` (db + redis probes) — compose
   healthchecks and `depends_on` gate on them.
 - Rate limiting: 300 req/min/IP default, Redis-backed

@@ -9,17 +9,19 @@ import { AnalyticsModule } from "./analytics/analytics.module";
 import { AuditModule } from "./audit/audit.module";
 import { AuthGuard } from "./auth/auth.guard";
 import { AuthModule } from "./auth/auth.module";
-import { PoliciesGuard } from "./auth/policies.guard";
+import { PermissionsGuard } from "./auth/permissions.guard";
 import { AllExceptionsFilter } from "./common/exception.filter";
 import { loggerOptions } from "./common/logger";
 import { env } from "./config/env";
 import { DbModule } from "./db/db.module";
 import { DocsModule } from "./docs/docs.module";
+import { FgaModule } from "./fga/fga.module";
 import { FilesModule } from "./files/files.module";
 import { FlagsModule } from "./flags/flags.module";
 import { HealthModule } from "./health/health.module";
 import { MailModule } from "./mail/mail.module";
 import { OrganizationsModule } from "./organizations/organizations.module";
+import { PrivacyModule } from "./privacy/privacy.module";
 import { ProjectsModule } from "./projects/projects.module";
 import { REDIS } from "./redis/redis.constants";
 import { RedisModule } from "./redis/redis.module";
@@ -56,6 +58,7 @@ function redisConnectionOptions(url: string) {
       connection: redisConnectionOptions(env.REDIS_URL),
     }),
     MailModule,
+    FgaModule,
     AuthModule,
     AuditModule,
     AnalyticsModule,
@@ -65,6 +68,7 @@ function redisConnectionOptions(url: string) {
     FilesModule,
     UsersModule,
     OrganizationsModule,
+    PrivacyModule,
     FlagsModule,
   ],
   providers: [
@@ -72,7 +76,7 @@ function redisConnectionOptions(url: string) {
     // Order matters: rate limit → authenticate → authorize.
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: AuthGuard },
-    { provide: APP_GUARD, useClass: PoliciesGuard },
+    { provide: APP_GUARD, useClass: PermissionsGuard },
   ],
 })
 export class AppModule {}

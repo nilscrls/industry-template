@@ -103,6 +103,25 @@
       "disabled": "Authentification à deux facteurs désactivée",
       "wrongPassword": "Mot de passe incorrect",
       "invalidCode": "Ce code n'est pas valide"
+    },
+    "privacy": {
+      "title": "Confidentialité & données",
+      "description": "Vos droits RGPD en libre-service : exportez vos données ou gérez les cookies d'analyse.",
+      "downloadData": "Télécharger mes données",
+      "exportFailed": "Impossible d'exporter vos données — réessayez plus tard.",
+      "cookiePreferences": "Préférences cookies",
+      "privacyPolicy": "Politique de confidentialité"
+    },
+    "deleteAccount": {
+      "title": "Supprimer le compte",
+      "description": "Supprime définitivement votre compte et ses données. Les organisations dont vous êtes l'unique propriétaire doivent d'abord être transférées ou supprimées.",
+      "action": "Supprimer mon compte",
+      "confirmTitle": "Supprimer votre compte ?",
+      "confirmDescription": "Action irréversible. Vos projets, fichiers et appartenances seront supprimés ; les entrées d'audit sont conservées anonymisées.",
+      "passwordLabel": "Confirmez votre mot de passe",
+      "confirmAction": "Supprimer définitivement",
+      "deleted": "Votre compte a été supprimé",
+      "failed": "Impossible de supprimer votre compte"
     }
   },
   "organizations": {
@@ -190,6 +209,31 @@
     "FILE_TYPE_NOT_ALLOWED": "Type de fichier non autorisé. Autorisés : {allowed}.",
     "RATE_LIMITED": "Trop de requêtes — réessayez dans {retryAfterSeconds}s.",
     "INTERNAL": "Une erreur est survenue. Veuillez réessayer."
+  },
+  "publicPages": {
+    "backToApp": "Retour à l'application",
+    "changelog": {
+      "title": "Notes de version"
+    },
+    "legal": {
+      "mentions": "Mentions légales",
+      "privacy": "Politique de confidentialité",
+      "terms": "Conditions générales"
+    }
+  },
+  "footer": {
+    "ariaLabel": "Liens légaux et d'information",
+    "legalMentions": "Mentions légales",
+    "privacy": "Confidentialité",
+    "terms": "CGU",
+    "changelog": "Notes de version",
+    "cookiePreferences": "Préférences cookies"
+  },
+  "consent": {
+    "title": "Cookies & analyse",
+    "description": "Nous utilisons des cookies d'analyse (PostHog) pour comprendre l'usage de l'application. Ils ne sont déposés que si vous acceptez. Les cookies essentiels (session, langue, thème) sont toujours actifs.",
+    "accept": "Accepter",
+    "decline": "Refuser"
   },
   "errorPages": {
     "errorTitle": "Une erreur est survenue",

@@ -1,27 +1,33 @@
 ---
 paths:
   - "packages/contracts/src/permissions.ts"
-  - "packages/auth/**"
+  - "packages/fga/**"
   - "apps/api/src/auth/**"
-  - "packages/db/src/schema/permissions.ts"
+  - "apps/api/src/fga/**"
 ---
 
-# Authorization — RBAC (this scaffold's model)
+# Authorization — RBAC on OpenFGA (this scaffold's model)
 
-- Roles are global: `admin`, `manager`, `member`
-  (`packages/contracts/src/permissions.ts`). `defaultRolePermissions` holds
-  the baseline serializable CASL rules per role — seeded into the database
-  and editable at runtime, so changing the constant only affects fresh
-  seeds, not existing databases.
-- Rules are serializable `PermissionRule` objects (`action`, `subject`,
-  optional `conditions`, optional `inverted`). Condition values support the
-  `"${userId}"` placeholder, interpolated by the shared ability factory.
-  `inverted: true` is a deny rule and deny always wins.
-- The same rules flow to the web app (`GET /me/permissions`) — never
-  implement a permission check that exists only on one side.
-- New entity (via `pnpm gen feature`): the generator adds the subject to
-  `subjects`; you must still grant it in `defaultRolePermissions` (and/or
-  seeds) or every non-admin gets 403. See `docs/authorization.md`.
-- Guard mutating endpoints with `@RequireAbility({ action, subject })`;
-  scope list/read results in the service query instead of guarding coarsely
-  — a user with no access must get an empty list, not a 403.
+- The model is `packages/fga/model.fga` (OpenFGA DSL). Global roles
+  (`admin`, `manager`, `member`) hang off `system:global`; tenants are
+  `org:<id>`; resources carry `org` + `owner` relations. Only `can_*`
+  capability relations are ever checked — never structural relations.
+- **Postgres is the source of truth, FGA a derived index**: write the DB
+  row first, the tuple after commit (FgaService writes are idempotent).
+  `pnpm fga:sync` rebuilds derived tuples; per-user grants
+  (`granted_*`/`denied_*`) live ONLY in FGA and are preserved by sync.
+  Deny grants beat every allow (`but not` in the model).
+- Model changes require `pnpm fga:bootstrap` (models are immutable — a new
+  version is written). Role baselines are model edits, not DB rows.
+- Guard routes with `@RequirePermission({relation, scope})` — `scope:
+  "org"` checks `org:<activeOrganizationId>` (skipped when no active org:
+  services must answer with empty lists, never 403), `scope: "system"`
+  checks the cross-tenant admin surface. Row-level checks in services:
+  `await fga.check(fga.me(), "can_update", fga.ref.project(id))`.
+- The web consumes the capability snapshot (`GET /me/permissions`,
+  `useCan()` in `apps/web/src/lib/permissions.tsx`); row-level buttons use
+  DTO flags (`canUpdate`/`canDelete`, one BatchCheck per page). Never
+  implement a permission that exists on only one side.
+- New entity (via `pnpm gen feature`): the generator appends a `type` block
+  to `model.fga` and registers the resource in contracts — review the
+  generated capabilities, then `pnpm fga:bootstrap`.

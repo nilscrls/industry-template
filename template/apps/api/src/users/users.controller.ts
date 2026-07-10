@@ -2,7 +2,7 @@ import { Controller } from "@nestjs/common";
 import { Implement, implement } from "@orpc/nest";
 import { contract } from "@repo/contracts";
 import { AuditService } from "../audit/audit.service";
-import { RequireAbility } from "../auth/decorators";
+import { RequirePermission } from "../auth/decorators";
 import { UsersService } from "./users.service";
 
 @Controller()
@@ -12,7 +12,7 @@ export class UsersController {
     private readonly audit: AuditService
   ) {}
 
-  @RequireAbility({ action: "read", subject: "User" })
+  @RequirePermission({ relation: "can_read_user", scope: "system" })
   @Implement(contract.users.list)
   list() {
     return implement(contract.users.list).handler(({ input }) =>
@@ -20,7 +20,7 @@ export class UsersController {
     );
   }
 
-  @RequireAbility({ action: "update", subject: "User" })
+  @RequirePermission({ relation: "can_manage_user", scope: "system" })
   @Implement(contract.users.setRole)
   setRole() {
     return implement(contract.users.setRole)
@@ -28,32 +28,27 @@ export class UsersController {
       .handler(({ input }) => this.users.setRole(input));
   }
 
-  @RequireAbility({ action: "read", subject: "User" })
-  @Implement(contract.users.getPermissionOverrides)
-  getPermissionOverrides() {
-    return implement(contract.users.getPermissionOverrides).handler(
-      ({ input }) => this.users.getPermissionOverrides(input.id)
+  @RequirePermission({ relation: "can_read_user", scope: "system" })
+  @Implement(contract.users.getGrants)
+  getGrants() {
+    return implement(contract.users.getGrants).handler(({ input }) =>
+      this.users.getGrants(input.id)
     );
   }
 
-  @RequireAbility({ action: "update", subject: "User" })
-  @Implement(contract.users.setPermissionOverrides)
-  setPermissionOverrides() {
-    return implement(contract.users.setPermissionOverrides)
-      .use(
-        this.audit.audited({
-          action: "user.setPermissionOverrides",
-          entityType: "User",
-        })
-      )
-      .handler(({ input }) => this.users.setPermissionOverrides(input));
+  @RequirePermission({ relation: "can_manage_user", scope: "system" })
+  @Implement(contract.users.setGrants)
+  setGrants() {
+    return implement(contract.users.setGrants)
+      .use(this.audit.audited({ action: "user.setGrants", entityType: "User" }))
+      .handler(({ input }) => this.users.setGrants(input));
   }
 
-  /** Any authenticated user — powers the web app's ability provider. */
+  /** Any authenticated user — powers the web app's permission provider. */
   @Implement(contract.me.permissions)
   myPermissions() {
-    return implement(contract.me.permissions).handler(async () => ({
-      rules: await this.users.myPermissions(),
-    }));
+    return implement(contract.me.permissions).handler(() =>
+      this.users.myPermissions()
+    );
   }
 }

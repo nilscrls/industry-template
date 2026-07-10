@@ -1,25 +1,37 @@
 import { Injectable } from "@nestjs/common";
-import { asSubject } from "@repo/auth";
 import type { Paginated, PaginationQuery, {{ pascalCase name }} } from "@repo/contracts";
 import { {{ camelCase name }} } from "@repo/db";
 import { and, count, desc, eq, ilike } from "drizzle-orm";
 import { forbidden, notFound } from "../common/app-error";
-import { currentAbility, currentUser } from "../common/request-context";
+import { currentUser } from "../common/request-context";
 import { DbService } from "../db/db.module";
+import { FgaService } from "../fga/fga.service";
 
 type ListQuery = PaginationQuery & { search?: string | undefined };
 type Row = typeof {{ camelCase name }}.$inferSelect;
 
+/**
+ * Generated entity: user-scoped (owner-only capabilities in model.fga).
+ * If it becomes tenant-shared, add an organizationId column + RLS policy,
+ * an `org` link in the model, and run queries through dbService.tenant().
+ */
 @Injectable()
 export class {{ pascalCase plural }}Service {
-  constructor(private readonly dbService: DbService) {}
+  constructor(
+    private readonly dbService: DbService,
+    private readonly fga: FgaService
+  ) {}
 
   private get db() {
     return this.dbService.db;
   }
 
   async list(query: ListQuery): Promise<Paginated<{{ pascalCase name }}>> {
-    const where = and(query.search ? ilike({{ camelCase name }}.name, `%${query.search}%`) : undefined);
+    // Owner-scoped: the model grants can_read to the owner only.
+    const where = and(
+      eq({{ camelCase name }}.ownerId, currentUser().id),
+      query.search ? ilike({{ camelCase name }}.name, `%${query.search}%`) : undefined
+    );
     const [rows, totals] = await Promise.all([
       this.db
         .select()
@@ -42,26 +54,31 @@ export class {{ pascalCase plural }}Service {
 
   async find(id: string): Promise<{{ pascalCase name }}> {
     const row = await this.findRow(id);
-    if (!currentAbility().can("read", asSubject("{{ pascalCase name }}", { ...row }))) {
+    if (!(await this.can("can_read", row.id))) {
       throw forbidden("read", "{{ pascalCase name }}");
     }
     return this.toDto(row);
   }
 
   async create(input: { name: string }): Promise<{{ pascalCase name }}> {
+    const me = currentUser();
     const [row] = await this.db
       .insert({{ camelCase name }})
-      .values({ name: input.name, ownerId: currentUser().id })
+      .values({ name: input.name, ownerId: me.id })
       .returning();
     if (!row) {
       throw notFound("{{ pascalCase name }}");
     }
+    // Tuple AFTER the DB commit (Postgres is the source of truth).
+    await this.fga.writeTuples([
+      { user: this.fga.ref.user(me.id), relation: "owner", object: this.ref(row.id) },
+    ]);
     return this.toDto(row);
   }
 
   async update(input: { id: string; name?: string | undefined }): Promise<{{ pascalCase name }}> {
     const row = await this.findRow(input.id);
-    if (!currentAbility().can("update", asSubject("{{ pascalCase name }}", { ...row }))) {
+    if (!(await this.can("can_update", row.id))) {
       throw forbidden("update", "{{ pascalCase name }}");
     }
     const [updated] = await this.db
@@ -77,11 +94,20 @@ export class {{ pascalCase plural }}Service {
 
   async remove(id: string): Promise<{ id: string }> {
     const row = await this.findRow(id);
-    if (!currentAbility().can("delete", asSubject("{{ pascalCase name }}", { ...row }))) {
+    if (!(await this.can("can_delete", row.id))) {
       throw forbidden("delete", "{{ pascalCase name }}");
     }
     await this.db.delete({{ camelCase name }}).where(eq({{ camelCase name }}.id, id));
+    await this.fga.deleteObjectTuples(this.ref(id));
     return { id };
+  }
+
+  private ref(id: string): string {
+    return `{{ snakeCase name }}:${id}`;
+  }
+
+  private can(relation: string, id: string): Promise<boolean> {
+    return this.fga.check(this.fga.me(), relation, this.ref(id));
   }
 
   private async findRow(id: string): Promise<Row> {

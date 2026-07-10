@@ -1,6 +1,14 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { createDb, member, user } from "@repo/db";
+import {
+  auditLog,
+  createDb,
+  member,
+  project,
+  user,
+  withTenant,
+} from "@repo/db";
+import { createFgaClient, loadModelJson, ref } from "@repo/fga";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
@@ -12,6 +20,11 @@ import {
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import request from "supertest";
+import {
+  GenericContainer,
+  type StartedTestContainer,
+  Wait,
+} from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
@@ -21,24 +34,54 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  */
 let postgres: StartedPostgreSqlContainer;
 let redis: StartedRedisContainer;
+let openfga: StartedTestContainer;
 let app: Awaited<ReturnType<typeof import("../src/app.setup.js")["createApp"]>>;
 let server: Parameters<typeof request>[0];
 
 // vitest runs with cwd = apps/api
 const MIGRATIONS = path.resolve(process.cwd(), "../../packages/db/drizzle");
 
+/** Operator-style FGA access for test fixtures (mirrors `pnpm fga:sync`). */
+function fgaClient() {
+  return createFgaClient({
+    apiUrl: process.env.FGA_API_URL as string,
+    storeId: process.env.FGA_STORE_ID as string,
+    apiToken: process.env.FGA_API_TOKEN as string,
+  });
+}
+
 beforeAll(async () => {
-  [postgres, redis] = await Promise.all([
+  [postgres, redis, openfga] = await Promise.all([
     new PostgreSqlContainer("postgres:17-alpine").start(),
     new RedisContainer("redis:7-alpine").start(),
+    // In-memory datastore: fast, throwaway, no auth (tests only).
+    new GenericContainer("openfga/openfga:v1")
+      .withCommand(["run"])
+      .withExposedPorts(8080)
+      .withWaitStrategy(Wait.forHttp("/healthz", 8080).forStatusCode(200))
+      .start(),
   ]);
 
   // env.ts reads process.env at import time — set everything first.
   // The schema has no defaults, so every server var must be present here.
+  const ownerUrl = postgres.getConnectionUri();
+  const roleUrl = (role: string) => {
+    const url = new URL(ownerUrl);
+    url.username = role;
+    url.password = role;
+    return url.toString();
+  };
   process.env.NODE_ENV = "test";
   process.env.API_PORT = "3001";
-  process.env.DATABASE_URL = postgres.getConnectionUri();
+  // Owner for migrations/seeds; restricted app_user for the api runtime;
+  // BYPASSRLS app_auth for Better-Auth — same principals as production.
+  process.env.DATABASE_URL_MIGRATIONS = ownerUrl;
+  process.env.DATABASE_URL = roleUrl("app_user");
+  process.env.DATABASE_URL_AUTH = roleUrl("app_auth");
   process.env.REDIS_URL = redis.getConnectionUrl();
+  process.env.FGA_API_URL = `http://${openfga.getHost()}:${openfga.getMappedPort(8080)}`;
+  process.env.FGA_API_TOKEN = "test-token";
+  process.env.FGA_MODEL_ID = "";
   process.env.BETTER_AUTH_SECRET = "integration-test-secret-0123456789abcdef";
   process.env.MICROSOFT_CLIENT_ID = "test-client-id";
   process.env.MICROSOFT_CLIENT_SECRET = "test-client-secret";
@@ -66,9 +109,26 @@ beforeAll(async () => {
   process.env.LOG_FILE_ENABLED = "false";
   process.env.LOG_DIR = "./logs";
 
-  const { db, pool } = createDb(process.env.DATABASE_URL);
+  const { db, pool } = createDb(ownerUrl);
   await migrate(db, { migrationsFolder: MIGRATIONS });
+  // The roles migration creates them NOLOGIN (no init script inside
+  // Testcontainers) — enable them exactly like an operator would.
+  await pool.query("ALTER ROLE app_user LOGIN PASSWORD 'app_user'");
+  await pool.query("ALTER ROLE app_auth LOGIN PASSWORD 'app_auth'");
   await pool.end();
+
+  // Same as `pnpm fga:bootstrap`: create the store + write the model.
+  const admin = createFgaClient({
+    apiUrl: process.env.FGA_API_URL,
+    apiToken: process.env.FGA_API_TOKEN,
+  });
+  const store = await admin.createStore({ name: "integration-tests" });
+  process.env.FGA_STORE_ID = store.id;
+  await createFgaClient({
+    apiUrl: process.env.FGA_API_URL,
+    apiToken: process.env.FGA_API_TOKEN,
+    storeId: store.id,
+  }).writeAuthorizationModel(loadModelJson());
 
   const { createApp } = await import("../src/app.setup.js");
   app = await createApp();
@@ -77,7 +137,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app?.close();
-  await Promise.all([postgres?.stop(), redis?.stop()]);
+  await Promise.all([postgres?.stop(), redis?.stop(), openfga?.stop()]);
 });
 
 async function signUp(name: string, email: string) {
@@ -128,7 +188,7 @@ async function addMemberByEmail(
   organizationId: string,
   email: string
 ): Promise<void> {
-  const { db, pool } = createDb(process.env.DATABASE_URL as string);
+  const { db, pool } = createDb(process.env.DATABASE_URL_MIGRATIONS as string);
   const [target] = await db
     .select({ id: user.id })
     .from(user)
@@ -144,6 +204,15 @@ async function addMemberByEmail(
     role: "member",
   });
   await pool.end();
+  // Direct inserts bypass the Better-Auth hooks — mirror the tuple by hand
+  // (operators would run `pnpm fga:sync`).
+  await fgaClient().writeTuples([
+    {
+      user: ref.user(target.id),
+      relation: "member",
+      object: ref.org(organizationId),
+    },
+  ]);
 }
 
 /** Join the organization and make it the agent's active tenant. */
@@ -171,6 +240,25 @@ describe("api integration", () => {
     const response = await request(server).get("/health/ready");
     expect(response.status).toBe(200);
     expect(response.body.status).toBe("ok");
+  });
+
+  it("defaults every response to no-store, with an explicit public opt-in for docs", async () => {
+    // Authenticated JSON must never be stored by a shared cache (IDOR).
+    const authed = await request(server).get("/projects");
+    expect(authed.headers["cache-control"]).toBe("private, no-store");
+
+    // The Express-mounted Better-Auth handler is covered too.
+    const auth = await request(server).post("/auth/sign-in/email").send({});
+    expect(auth.headers["cache-control"]).toBe("private, no-store");
+
+    // Health stays no-store (Terminus sets its own equivalent header).
+    const health = await request(server).get("/health/ready");
+    expect(health.headers["cache-control"]).toContain("no-store");
+
+    // openapi.json is caller-independent and opts into public caching.
+    const docs = await request(server).get("/openapi.json");
+    expect(docs.status).toBe(200);
+    expect(docs.headers["cache-control"]).toBe("public, max-age=300");
   });
 
   it("serializes unauthenticated access with a typed error code", async () => {
@@ -331,13 +419,23 @@ describe("api integration", () => {
     const noAccess = await eve.get("/users");
     expect(noAccess.status).toBe(403);
 
-    // Promote via db, as an operator would; permissions cache is per-user.
-    const { db, pool } = createDb(process.env.DATABASE_URL as string);
-    await db
+    // Promote via db + tuple, as an operator would (db row is the source
+    // of truth; the tuple is what fga:sync would derive from it).
+    const { db, pool } = createDb(
+      process.env.DATABASE_URL_MIGRATIONS as string
+    );
+    const [eveRow] = await db
       .update(user)
       .set({ role: "admin" })
-      .where(eq(user.email, "eve@example.com"));
+      .where(eq(user.email, "eve@example.com"))
+      .returning({ id: user.id });
     await pool.end();
+    if (!eveRow) {
+      throw new Error("expected eve to exist");
+    }
+    await fgaClient().writeTuples([
+      { user: ref.user(eveRow.id), relation: "admin", object: ref.system() },
+    ]);
 
     // The signed cookie cache still carries the old role — a fresh sign-in
     // picks up the promotion (same as a real user re-logging in).
@@ -358,15 +456,21 @@ describe("api integration", () => {
     expect(projects.status).toBe(200);
     expect(projects.body.total).toBeGreaterThan(0);
 
+    // Capability snapshot straight from FGA — no cache lag on role changes.
     const me = await eveAdmin.get("/me/permissions");
     expect(me.status).toBe(200);
-    expect(me.body.rules).toEqual([{ action: "manage", subject: "all" }]);
+    expect(me.body.system).toContain("can_manage_user");
+    expect(me.body.org).toContain("can_read_audit_log");
 
-    // Mutations left an audit trail: admin-only, tenant-scoped, correlated.
-    const deniedRead = await eve.get("/audit-logs");
-    expect(deniedRead.status).toBe(403);
-    const deniedOrgs = await eve.get("/organizations");
-    expect(deniedOrgs.status).toBe(403);
+    // eve's ORIGINAL session: FGA checks have no cache lag, so the
+    // promotion applies to existing sessions immediately — but that session
+    // still has no active org, so org-scoped audit reads answer with an
+    // empty page while the system-scoped org overview now succeeds.
+    const staleSessionRead = await eve.get("/audit-logs");
+    expect(staleSessionRead.status).toBe(200);
+    expect(staleSessionRead.body.items).toHaveLength(0);
+    const staleSessionOrgs = await eve.get("/organizations");
+    expect(staleSessionOrgs.status).toBe(200);
 
     const organizations = await eveAdmin.get("/organizations");
     expect(organizations.status).toBe(200);
@@ -386,5 +490,128 @@ describe("api integration", () => {
     expect(created.organizationId).toBe(acmeOrgId);
     expect(created.actorEmail).toBe("alice@example.com");
     expect(created.requestId).toBeTruthy();
+  });
+
+  it("enforces row-level security even on queries with no WHERE clause", async () => {
+    // Simulates a forgotten organization filter: connect as the runtime
+    // role (app_user) and select everything.
+    const { db, pool } = createDb(process.env.DATABASE_URL as string);
+    try {
+      // No tenant context → the policies match nothing.
+      const bare = await db.select().from(project);
+      expect(bare).toHaveLength(0);
+
+      // Tenant context → only that tenant's rows, without any WHERE.
+      const scoped = await withTenant(
+        db,
+        { organizationId: acmeOrgId, userId: null },
+        (tx) => tx.select().from(project)
+      );
+      expect(scoped.length).toBeGreaterThan(0);
+      expect(scoped.every((row) => row.organizationId === acmeOrgId)).toBe(
+        true
+      );
+
+      // Cross-tenant writes violate the WITH CHECK clause.
+      const [foreign] = await withTenant(
+        db,
+        { organizationId: acmeOrgId, userId: null },
+        (tx) => tx.select().from(project).limit(1)
+      );
+      if (!foreign) {
+        throw new Error("expected an acme project to exist");
+      }
+      // Drizzle wraps the pg error — the RLS violation is the cause.
+      await expect(
+        withTenant(
+          db,
+          { organizationId: "some-other-org", userId: null },
+          (tx) =>
+            tx.insert(project).values({
+              name: "smuggled",
+              status: "draft",
+              organizationId: foreign.organizationId,
+              ownerId: foreign.ownerId,
+            })
+        )
+      ).rejects.toMatchObject({
+        cause: expect.objectContaining({
+          message: expect.stringMatching(/row-level security/),
+        }),
+      });
+    } finally {
+      await pool.end();
+    }
+  });
+
+  it("exports the requesting user's data as JSON (GDPR portability)", async () => {
+    const dana = await signUp("Dana", "dana@example.com");
+    const orgId = await createOrganization(dana, "Dana Co", "dana-co");
+    const created = await dana
+      .post("/projects")
+      .send({ name: "Dana's project", status: "draft" });
+    expect(created.status).toBe(200);
+
+    const exported = await dana.get("/me/export");
+    expect(exported.status).toBe(200);
+    expect(exported.body.user.email).toBe("dana@example.com");
+    expect(exported.body.memberships).toContainEqual(
+      expect.objectContaining({ organizationId: orgId, role: "owner" })
+    );
+    expect(exported.body.projects).toContainEqual(
+      expect.objectContaining({ name: "Dana's project" })
+    );
+    expect(Array.isArray(exported.body.files)).toBe(true);
+    // The export itself is audited — visible in her own audit entries on a
+    // subsequent export.
+    const again = await dana.get("/me/export");
+    expect(again.body.auditEntries).toContainEqual(
+      expect.objectContaining({ action: "user.exportData" })
+    );
+  });
+
+  it("blocks account deletion for sole organization owners, then erases", async () => {
+    const erin = await signUp("Erin", "erin@example.com");
+    const orgId = await createOrganization(erin, "Erin Co", "erin-co");
+
+    // Sole owner of Erin Co → blocked with an actionable message.
+    const blocked = await erin
+      .post("/auth/delete-user")
+      .send({ password: "Password123!" });
+    expect(blocked.status).toBe(400);
+    expect(blocked.body.message).toMatch(/only owner/i);
+
+    // Delete the organization, then erasure goes through.
+    const orgGone = await erin
+      .post("/auth/organization/delete")
+      .send({ organizationId: orgId });
+    expect(orgGone.status).toBe(200);
+    const deleted = await erin
+      .post("/auth/delete-user")
+      .send({ password: "Password123!" });
+    expect(deleted.status).toBe(200);
+
+    // Session is dead and the account cannot sign in again.
+    const afterwards = await erin.get("/projects");
+    expect(afterwards.status).toBe(401);
+    const signIn = await request(server)
+      .post("/auth/sign-in/email")
+      .send({ email: "erin@example.com", password: "Password123!" });
+    expect(signIn.status).not.toBe(200);
+
+    // The user row is gone; the erasure left an anonymized audit event.
+    const { db, pool } = createDb(process.env.DATABASE_URL_MIGRATIONS as string);
+    const users = await db
+      .select({ id: user.id })
+      .from(user)
+      .where(eq(user.email, "erin@example.com"));
+    const events = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.action, "user.delete"));
+    await pool.end();
+    expect(users).toHaveLength(0);
+    expect(events.length).toBeGreaterThanOrEqual(1);
+    expect(events.at(-1)?.actorId).toBeNull();
   });
 });

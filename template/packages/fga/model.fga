@@ -1,0 +1,57 @@
+model
+  schema 1.1
+
+# Global roles hang off the singleton `system:global` object; tenants are
+# `org:<organizationId>`; every resource carries an `org` link. Capability
+# relations (`can_*`) are what the guards check — never raw structural
+# relations. Per-user deny grants beat every allow (`but not`).
+type user
+
+type system
+  relations
+    define admin: [user]
+    define manager: [user]
+    # Cross-tenant admin surfaces (user management, org overview) hang off
+    # the singleton `system:global`, not an org.
+    define can_read_user: manager or admin
+    define can_manage_user: admin
+    define can_manage_organization: admin
+
+type org
+  relations
+    define system: [system]
+    define member: [user]
+    define admin: admin from system
+    define manager: manager from system
+    # Type-level capabilities checked by @RequirePermission on org routes
+    # and snapshotted by GET /me/permissions for UI gating.
+    define can_read_project: member or manager or admin
+    define can_create_project: member or manager or admin
+    define can_read_file: member or manager or admin
+    define can_create_file: member or manager or admin
+    # Managers/admins list every file in the org; members only their own.
+    define can_read_all_files: manager or admin
+    define can_read_audit_log: admin
+    define can_manage_feature_flag: admin
+
+type project
+  relations
+    define org: [org]
+    define owner: [user]
+    # Per-user overrides (admin-managed grants); denied_* wins over any allow.
+    define granted_read: [user]
+    define granted_write: [user]
+    define denied_read: [user]
+    define denied_write: [user]
+    define can_read: (member from org or granted_read or manager from org or admin from org) but not denied_read
+    define can_update: (owner or granted_write or manager from org or admin from org) but not denied_write
+    define can_delete: (owner or granted_write or manager from org or admin from org) but not denied_write
+
+type file
+  relations
+    define org: [org]
+    define owner: [user]
+    define can_read: owner or manager from org or admin from org
+    define can_delete: owner or manager from org or admin from org
+
+# fga-generator-marker: new resource types are appended below by `pnpm gen feature`

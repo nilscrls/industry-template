@@ -1,22 +1,26 @@
 import { type CustomDecorator, SetMetadata } from "@nestjs/common";
-import type { Action, AppSubject } from "@repo/contracts";
+import type { OrgCapability, SystemCapability } from "@repo/contracts";
 
 export const IS_PUBLIC_KEY = "isPublic";
-export const ABILITY_KEY = "requiredAbilities";
+export const PERMISSION_KEY = "requiredPermissions";
 
 /** Skip authentication (health probes, OpenAPI spec, …). */
 export const Public = (): CustomDecorator<string> =>
   SetMetadata(IS_PUBLIC_KEY, true);
 
-export interface AbilityRequirement {
-  action: Action;
-  subject: AppSubject;
-}
+export type PermissionRequirement =
+  | { relation: OrgCapability; scope: "org" }
+  | { relation: SystemCapability; scope: "system" };
 
 /**
- * Coarse, route-level authorization. Row-level checks (ownership conditions)
- * belong in services via `ability.can(action, asSubject(...))`.
+ * Coarse, route-level authorization: an OpenFGA capability check against
+ * the active organization (`scope: "org"`) or the `system:global` singleton
+ * (`scope: "system"`, cross-tenant admin surfaces). Row-level checks belong
+ * in services via `fga.check(fga.me(), "can_update", fga.ref.project(id))`.
+ *
+ * Org-scoped routes with NO active organization pass the guard — services
+ * answer with empty lists (fresh users see nothing, never 403).
  */
-export const RequireAbility = (
-  ...requirements: AbilityRequirement[]
-): CustomDecorator<string> => SetMetadata(ABILITY_KEY, requirements);
+export const RequirePermission = (
+  ...requirements: PermissionRequirement[]
+): CustomDecorator<string> => SetMetadata(PERMISSION_KEY, requirements);

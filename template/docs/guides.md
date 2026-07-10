@@ -86,14 +86,35 @@ ignores that directory.
 
 ## Use the cache
 
+Every cache key carries its authorization scope — the API makes an unscoped
+key impossible, which is the classic cache-poisoning / cross-tenant IDOR
+vector:
+
 ```ts
 constructor(private readonly cache: CacheService) {}
-this.cache.getOrSet(`thing:${id}`, 300, () => this.load(id));
-await this.cache.del(`thing:${id}`);   // on writes
+// Tenant data → org scope (key becomes org:<orgId>:things)
+this.cache.forOrg(orgId).getOrSet("things", 300, () => this.load(orgId));
+await this.cache.forOrg(orgId).del("things"); // on writes
+// Per-user data → user scope
+this.cache.forUser(userId).getOrSet("prefs", 300, () => ...);
+// global() is a deliberate escape hatch: ONLY for values identical for
+// every caller (role rule sets, feature defaults) — never anything derived
+// from a request's session or headers.
 ```
 
-Prefix keys per domain (`perm:`, `projects:` are taken); pick TTLs you can
-defend; invalidate in the same service that writes.
+Rules:
+
+- Scope ids come from the **authenticated session** (`activeOrganizationId()`,
+  `currentUser().id`) — never from request headers or query params.
+- Prefix keys per domain (`perm:`, `projects:` are taken); pick TTLs you can
+  defend; invalidate in the same service that writes.
+- HTTP responses are `Cache-Control: private, no-store` by default (set in
+  `app.setup.ts`); a public, caller-independent endpoint opts in explicitly
+  with `@Header("Cache-Control", "public, max-age=…")` — and must then also
+  set `Vary` on any request header it varies by.
+- Deployment note: the reverse proxy must forward an accurate `Host` /
+  `X-Forwarded-*`; nothing in the app derives cache keys or URLs from
+  request headers, keep it that way.
 
 ## Regenerate the Better-Auth schema
 
@@ -103,8 +124,8 @@ against `auth.ts`, merge, then `pnpm db:generate`.
 
 ## Conventions
 
-- **Branches** (git-flow-next): `main` = production, `develop` = integration,
-  `feature/*` → develop, `release/*` and `hotfix/*` → main + develop.
+- **Branches** (git-flow-next): `__PROD_BRANCH__` = production, `develop` = integration,
+  `feature/*` → develop, `release/*` and `hotfix/*` → __PROD_BRANCH__ + develop.
 - **Commits**: Conventional Commits, guided by `pnpm commit`; commitlint
   enforces on `commit-msg`.
 - **Hooks** (lefthook): biome on staged files (pre-commit), commitlint
