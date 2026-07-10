@@ -59,8 +59,6 @@ export function ConsentProvider({ children }: { children: ReactNode }) {
 
   const setChoice = useCallback((next: ConsentChoice) => {
     localStorage.setItem(STORAGE_KEY, next);
-    // Mirror to a cookie in case a server component ever needs to read it.
-    document.cookie = `${STORAGE_KEY}=${next}; path=/; max-age=31536000; samesite=lax`;
     setChoiceState(next);
     setBannerOpen(false);
     if (env.NEXT_PUBLIC_POSTHOG_ENABLED) {
@@ -87,9 +85,9 @@ function ConsentBanner() {
   const { setChoice } = useConsent();
   return (
     <div
+      aria-label={t("title")}
       className="fixed inset-x-0 bottom-0 z-50 border-t bg-background p-4 shadow-lg"
       role="dialog"
-      aria-label={t("title")}
     >
       <div className="mx-auto flex max-w-3xl flex-col gap-3 sm:flex-row sm:items-center">
         <div className="flex-1 text-sm">

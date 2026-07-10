@@ -9,7 +9,7 @@ import {
   projectStatuses,
   type updateProjectSchema,
 } from "@repo/contracts";
-import { project } from "@repo/db";
+import { type Database, project } from "@repo/db";
 import { and, asc, count, desc, eq, gte, ilike, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { forbidden, notFound } from "../common/app-error";
@@ -32,16 +32,17 @@ const STATS_WINDOW_DAYS = 30;
 // Scoped through cache.forOrg(orgId), so the full key carries the tenant id.
 const STATS_KEY = "projects:stats";
 
+/**
+ * All queries run through dbService.tenant(...) — the RLS context. The
+ * explicit organizationId filters stay: RLS is the safety net underneath,
+ * not the primary filter (and the filters keep query plans index-friendly).
+ */
 @Injectable()
 export class ProjectsService {
   constructor(
     private readonly dbService: DbService,
     private readonly cache: CacheService
   ) {}
-
-  private get db() {
-    return this.dbService.db;
-  }
 
   async list(query: ListQuery): Promise<Paginated<Project>> {
     const orgId = activeOrganizationId();
@@ -61,16 +62,18 @@ export class ProjectsService {
     const orderBy =
       query.sortOrder === "asc" ? asc(sortColumn) : desc(sortColumn);
 
-    const [rows, totals] = await Promise.all([
-      this.db
-        .select()
-        .from(project)
-        .where(where)
-        .orderBy(orderBy)
-        .limit(query.pageSize)
-        .offset((query.page - 1) * query.pageSize),
-      this.db.select({ value: count() }).from(project).where(where),
-    ]);
+    const [rows, totals] = await this.dbService.tenant((db) =>
+      Promise.all([
+        db
+          .select()
+          .from(project)
+          .where(where)
+          .orderBy(orderBy)
+          .limit(query.pageSize)
+          .offset((query.page - 1) * query.pageSize),
+        db.select({ value: count() }).from(project).where(where),
+      ])
+    );
 
     const total = totals[0]?.value ?? 0;
     return {
@@ -83,7 +86,7 @@ export class ProjectsService {
   }
 
   async find(id: string): Promise<Project> {
-    const row = await this.findRow(id);
+    const row = await this.dbService.tenant((db) => this.findRow(db, id));
     if (!currentAbility().can("read", asSubject("Project", { ...row }))) {
       throw forbidden("read", "Project");
     }
@@ -96,62 +99,72 @@ export class ProjectsService {
       // Creating requires a tenant to create into.
       throw forbidden("create", "Project");
     }
-    const [row] = await this.db
-      .insert(project)
-      .values({
-        name: input.name,
-        description: input.description ?? null,
-        status: input.status,
-        organizationId: orgId,
-        ownerId: currentUser().id,
-      })
-      .returning();
-    if (!row) {
-      throw notFound("Project");
-    }
+    const row = await this.dbService.tenant(async (db) => {
+      const [created] = await db
+        .insert(project)
+        .values({
+          name: input.name,
+          description: input.description ?? null,
+          status: input.status,
+          organizationId: orgId,
+          ownerId: currentUser().id,
+        })
+        .returning();
+      if (!created) {
+        throw notFound("Project");
+      }
+      return created;
+    });
     await this.cache.forOrg(orgId).del(STATS_KEY);
     return this.toDto(row);
   }
 
   async update(input: UpdateInput): Promise<Project> {
-    const row = await this.findRow(input.id);
-    if (!currentAbility().can("update", asSubject("Project", { ...row }))) {
-      throw forbidden("update", "Project");
-    }
+    const updated = await this.dbService.tenant(async (db) => {
+      const row = await this.findRow(db, input.id);
+      if (!currentAbility().can("update", asSubject("Project", { ...row }))) {
+        throw forbidden("update", "Project");
+      }
 
-    const patch: Partial<Pick<ProjectRow, "name" | "description" | "status">> =
-      {};
-    if (input.name !== undefined) {
-      patch.name = input.name;
-    }
-    if (input.description !== undefined) {
-      patch.description = input.description;
-    }
-    if (input.status !== undefined) {
-      patch.status = input.status;
-    }
-    if (Object.keys(patch).length === 0) {
-      return this.toDto(row);
-    }
+      const patch: Partial<
+        Pick<ProjectRow, "name" | "description" | "status">
+      > = {};
+      if (input.name !== undefined) {
+        patch.name = input.name;
+      }
+      if (input.description !== undefined) {
+        patch.description = input.description;
+      }
+      if (input.status !== undefined) {
+        patch.status = input.status;
+      }
+      if (Object.keys(patch).length === 0) {
+        return row;
+      }
 
-    const [updated] = await this.db
-      .update(project)
-      .set(patch)
-      .where(eq(project.id, input.id))
-      .returning();
-    if (!updated) {
-      throw notFound("Project");
-    }
-    await this.cache.forOrg(row.organizationId).del(STATS_KEY);
+      const [next] = await db
+        .update(project)
+        .set(patch)
+        .where(eq(project.id, input.id))
+        .returning();
+      if (!next) {
+        throw notFound("Project");
+      }
+      return next;
+    });
+    await this.cache.forOrg(updated.organizationId).del(STATS_KEY);
     return this.toDto(updated);
   }
 
   async remove(id: string): Promise<{ id: string }> {
-    const row = await this.findRow(id);
-    if (!currentAbility().can("delete", asSubject("Project", { ...row }))) {
-      throw forbidden("delete", "Project");
-    }
-    await this.db.delete(project).where(eq(project.id, id));
+    const row = await this.dbService.tenant(async (db) => {
+      const found = await this.findRow(db, id);
+      if (!currentAbility().can("delete", asSubject("Project", { ...found }))) {
+        throw forbidden("delete", "Project");
+      }
+      await db.delete(project).where(eq(project.id, id));
+      return found;
+    });
     await this.cache.forOrg(row.organizationId).del(STATS_KEY);
     return { id };
   }
@@ -173,19 +186,22 @@ export class ProjectsService {
     const dayExpr = sql<string>`to_char(date_trunc('day', ${project.createdAt}), 'YYYY-MM-DD')`;
     const inOrg = eq(project.organizationId, orgId);
 
-    const [totals, byStatusRows, perDayRows] = await Promise.all([
-      this.db.select({ value: count() }).from(project).where(inOrg),
-      this.db
-        .select({ status: project.status, count: count() })
-        .from(project)
-        .where(inOrg)
-        .groupBy(project.status),
-      this.db
-        .select({ date: dayExpr, count: count() })
-        .from(project)
-        .where(and(inOrg, gte(project.createdAt, since)))
-        .groupBy(dayExpr),
-    ]);
+    const [totals, byStatusRows, perDayRows] = await this.dbService.tenant(
+      (db) =>
+        Promise.all([
+          db.select({ value: count() }).from(project).where(inOrg),
+          db
+            .select({ status: project.status, count: count() })
+            .from(project)
+            .where(inOrg)
+            .groupBy(project.status),
+          db
+            .select({ date: dayExpr, count: count() })
+            .from(project)
+            .where(and(inOrg, gte(project.createdAt, since)))
+            .groupBy(dayExpr),
+        ])
+    );
 
     const byStatus = projectStatuses.map((status) => ({
       status,
@@ -207,12 +223,12 @@ export class ProjectsService {
   }
 
   /** Rows outside the active organization do not exist for this request. */
-  private async findRow(id: string): Promise<ProjectRow> {
+  private async findRow(db: Database, id: string): Promise<ProjectRow> {
     const orgId = activeOrganizationId();
     if (!orgId) {
       throw notFound("Project");
     }
-    const [row] = await this.db
+    const [row] = await db
       .select()
       .from(project)
       .where(and(eq(project.id, id), eq(project.organizationId, orgId)));

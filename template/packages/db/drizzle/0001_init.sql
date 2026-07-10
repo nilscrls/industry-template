@@ -11,6 +11,7 @@ CREATE TABLE "audit_log" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+ALTER TABLE "audit_log" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "account" (
 	"id" text PRIMARY KEY NOT NULL,
 	"account_id" text NOT NULL,
@@ -85,6 +86,7 @@ CREATE TABLE "file_object" (
 	CONSTRAINT "file_object_storageKey_unique" UNIQUE("storage_key")
 );
 --> statement-breakpoint
+ALTER TABLE "file_object" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "invitation" (
 	"id" text PRIMARY KEY NOT NULL,
 	"organization_id" text NOT NULL,
@@ -96,6 +98,7 @@ CREATE TABLE "invitation" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+ALTER TABLE "invitation" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "member" (
 	"id" text PRIMARY KEY NOT NULL,
 	"organization_id" text NOT NULL,
@@ -104,6 +107,7 @@ CREATE TABLE "member" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+ALTER TABLE "member" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "organization" (
 	"id" text PRIMARY KEY NOT NULL,
 	"name" text NOT NULL,
@@ -146,6 +150,7 @@ CREATE TABLE "project" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+ALTER TABLE "project" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "audit_log" ADD CONSTRAINT "audit_log_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "audit_log" ADD CONSTRAINT "audit_log_actor_id_user_id_fk" FOREIGN KEY ("actor_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "account" ADD CONSTRAINT "account_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -179,4 +184,9 @@ CREATE INDEX "user_permission_override_user_id_index" ON "user_permission_overri
 CREATE INDEX "project_organization_id_index" ON "project" USING btree ("organization_id");--> statement-breakpoint
 CREATE INDEX "project_owner_id_index" ON "project" USING btree ("owner_id");--> statement-breakpoint
 CREATE INDEX "project_status_index" ON "project" USING btree ("status");--> statement-breakpoint
-CREATE INDEX "project_created_at_index" ON "project" USING btree ("created_at");
+CREATE INDEX "project_created_at_index" ON "project" USING btree ("created_at");--> statement-breakpoint
+CREATE POLICY "audit_log_tenant_isolation" ON "audit_log" AS PERMISSIVE FOR ALL TO "app_user" USING (organization_id = current_setting('app.current_org_id', true) OR actor_id = current_setting('app.current_user_id', true)) WITH CHECK (organization_id IS NULL OR organization_id = current_setting('app.current_org_id', true));--> statement-breakpoint
+CREATE POLICY "file_object_tenant_isolation" ON "file_object" AS PERMISSIVE FOR ALL TO "app_user" USING (organization_id = current_setting('app.current_org_id', true) OR owner_id = current_setting('app.current_user_id', true)) WITH CHECK (organization_id = current_setting('app.current_org_id', true));--> statement-breakpoint
+CREATE POLICY "invitation_tenant_isolation" ON "invitation" AS PERMISSIVE FOR ALL TO "app_user" USING (organization_id = current_setting('app.current_org_id', true)) WITH CHECK (organization_id = current_setting('app.current_org_id', true));--> statement-breakpoint
+CREATE POLICY "member_tenant_isolation" ON "member" AS PERMISSIVE FOR ALL TO "app_user" USING (organization_id = current_setting('app.current_org_id', true) OR user_id = current_setting('app.current_user_id', true) OR current_setting('app.is_admin', true) = 'true') WITH CHECK (organization_id = current_setting('app.current_org_id', true));--> statement-breakpoint
+CREATE POLICY "project_tenant_isolation" ON "project" AS PERMISSIVE FOR ALL TO "app_user" USING (organization_id = current_setting('app.current_org_id', true) OR owner_id = current_setting('app.current_user_id', true)) WITH CHECK (organization_id = current_setting('app.current_org_id', true));

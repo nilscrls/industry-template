@@ -1,6 +1,8 @@
+import { sql } from "drizzle-orm";
 import {
   bigint,
   index,
+  pgPolicy,
   pgTable,
   text,
   timestamp,
@@ -9,6 +11,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { user } from "./auth.js";
 import { organization } from "./organizations.js";
+import { appUserRole } from "./roles.js";
 
 export const fileObject = pgTable(
   "file_object",
@@ -27,5 +30,15 @@ export const fileObject = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index().on(table.organizationId), index().on(table.ownerId)]
-);
+  (table) => [
+    index().on(table.organizationId),
+    index().on(table.ownerId),
+    // Tenant rows plus the user's own uploads (GDPR export spans orgs).
+    pgPolicy("file_object_tenant_isolation", {
+      for: "all",
+      to: appUserRole,
+      using: sql`organization_id = current_setting('app.current_org_id', true) OR owner_id = current_setting('app.current_user_id', true)`,
+      withCheck: sql`organization_id = current_setting('app.current_org_id', true)`,
+    }),
+  ]
+).enableRLS();

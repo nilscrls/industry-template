@@ -1,6 +1,13 @@
 import { Injectable } from "@nestjs/common";
 import type { MeExport } from "@repo/contracts";
-import { auditLog, fileObject, member, organization, project, user } from "@repo/db";
+import {
+  auditLog,
+  fileObject,
+  member,
+  organization,
+  project,
+  user,
+} from "@repo/db";
 import { desc, eq } from "drizzle-orm";
 import { notFound } from "../common/app-error";
 import { currentUser } from "../common/request-context";
@@ -16,37 +23,37 @@ import { DbService } from "../db/db.module";
 export class PrivacyService {
   constructor(private readonly dbService: DbService) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
   async exportMyData(): Promise<MeExport> {
     const me = currentUser();
-    const [row] = await this.db.select().from(user).where(eq(user.id, me.id));
+    // tenant() also pins app.current_user_id — the RLS "own rows" clauses
+    // are what make this export span the user's organizations.
+    const [[row], memberships, projects, files, auditEntries] =
+      await this.dbService.tenant((db) =>
+        Promise.all([
+          db.select().from(user).where(eq(user.id, me.id)),
+          db
+            .select({
+              organizationId: member.organizationId,
+              organizationName: organization.name,
+              role: member.role,
+              createdAt: member.createdAt,
+            })
+            .from(member)
+            .innerJoin(organization, eq(organization.id, member.organizationId))
+            .where(eq(member.userId, me.id)),
+          db.select().from(project).where(eq(project.ownerId, me.id)),
+          db.select().from(fileObject).where(eq(fileObject.ownerId, me.id)),
+          // The user's own activity across all organizations — their data.
+          db
+            .select()
+            .from(auditLog)
+            .where(eq(auditLog.actorId, me.id))
+            .orderBy(desc(auditLog.createdAt)),
+        ])
+      );
     if (!row) {
       throw notFound("User");
     }
-
-    const [memberships, projects, files, auditEntries] = await Promise.all([
-      this.db
-        .select({
-          organizationId: member.organizationId,
-          organizationName: organization.name,
-          role: member.role,
-          createdAt: member.createdAt,
-        })
-        .from(member)
-        .innerJoin(organization, eq(organization.id, member.organizationId))
-        .where(eq(member.userId, me.id)),
-      this.db.select().from(project).where(eq(project.ownerId, me.id)),
-      this.db.select().from(fileObject).where(eq(fileObject.ownerId, me.id)),
-      // The user's own activity across all organizations — it is their data.
-      this.db
-        .select()
-        .from(auditLog)
-        .where(eq(auditLog.actorId, me.id))
-        .orderBy(desc(auditLog.createdAt)),
-    ]);
 
     return {
       exportedAt: new Date().toISOString(),

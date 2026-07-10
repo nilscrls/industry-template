@@ -179,6 +179,11 @@ Flow and hotfix back-merges: `docs/releases.md`.
 
 ## Hardening & operations
 
+- **Postgres row-level security** on every org-scoped table: the API runs
+  as the restricted `app_user` role and each request pins its tenant with
+  `DbService.tenant(...)` — a forgotten WHERE clause returns zero foreign
+  rows. Better-Auth uses the `app_auth` BYPASSRLS role; migrations/seeds
+  the owner. See `docs/authorization.md`.
 - `/health/live` and `/health/ready` (db + redis probes) — compose
   healthchecks and `depends_on` gate on them.
 - Rate limiting: 300 req/min/IP default, Redis-backed

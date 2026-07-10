@@ -13,7 +13,10 @@ export const env = createEnv({
     /** Public origin of the web app — trusted origin + base for auth URLs. */
     WEB_URL: z.url(),
 
+    /** Runtime pool — the `app_user` role, subject to row-level security. */
     DATABASE_URL: z.string().min(1),
+    /** Better-Auth pool — the `app_auth` BYPASSRLS role (auth tables only). */
+    DATABASE_URL_AUTH: z.string().min(1),
     REDIS_URL: z.string().min(1),
     BETTER_AUTH_SECRET: z.string().min(32),
 

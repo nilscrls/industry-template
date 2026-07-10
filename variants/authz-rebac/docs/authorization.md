@@ -7,6 +7,16 @@ Access to a project is a **relation** held by a user on that specific
 project: `owner`, `editor` or `viewer`. There are only two global roles —
 `admin` (bypasses relationship checks entirely) and `member` (everyone else).
 
+Underneath the application layer, **Postgres row-level security** enforces
+tenant isolation as defense in depth: org-scoped tables (`project`,
+`file_object`, `audit_log`, `member`, `invitation`) carry policies matching
+`current_setting('app.current_org_id')`, set per request by
+`DbService.tenant(...)` (SET LOCAL inside a transaction). The API connects
+as the restricted `app_user` role; a query that forgets its WHERE clause
+returns zero foreign rows instead of leaking them. Better-Auth uses the
+`app_auth` BYPASSRLS role (it reads `member` before a tenant exists);
+migrations/seeds run as the owner. See `packages/db/src/schema/roles.ts`.
+
 ## How it works
 
 - Relationship tuples live in the `project_member` table

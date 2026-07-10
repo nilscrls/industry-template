@@ -22,9 +22,7 @@ test.describe("public pages and consent", () => {
     ).toBeVisible();
   });
 
-  test("footer links the legal pages from the login page", async ({
-    page,
-  }) => {
+  test("footer links the legal pages from the login page", async ({ page }) => {
     await page.goto("/login");
     await expect(
       page.getByRole("link", { name: "Privacy", exact: true })

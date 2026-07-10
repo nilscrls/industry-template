@@ -25,7 +25,12 @@ beforeEach(() => {
 describe("CacheService scoping", () => {
   it("prefixes org-scoped keys with the tenant id", async () => {
     await cache.forOrg("org-1").set("stats", { a: 1 }, 60);
-    expect(redis.set).toHaveBeenCalledWith("org:org-1:stats", '{"a":1}', "EX", 60);
+    expect(redis.set).toHaveBeenCalledWith(
+      "org:org-1:stats",
+      '{"a":1}',
+      "EX",
+      60
+    );
   });
 
   it("prefixes user-scoped keys with the user id", async () => {

@@ -7,9 +7,12 @@ import { createDb } from "./client.js";
  * runs locally (`pnpm db:migrate`) and as the compose `migrate` service.
  */
 async function main(): Promise<void> {
-  const connectionString = process.env.DATABASE_URL;
+  // Migrations run as the owner (bypasses RLS); the runtime DATABASE_URL is
+  // the restricted app_user role and cannot ALTER tables.
+  const connectionString =
+    process.env.DATABASE_URL_MIGRATIONS ?? process.env.DATABASE_URL;
   if (!connectionString) {
-    console.error("DATABASE_URL is not set");
+    console.error("DATABASE_URL_MIGRATIONS (or DATABASE_URL) is not set");
     process.exit(1);
   }
 

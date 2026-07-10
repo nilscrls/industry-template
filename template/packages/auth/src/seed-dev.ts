@@ -18,12 +18,14 @@ async function main(): Promise<void> {
     return;
   }
 
-  const connectionString = process.env.DATABASE_URL;
+  // Owner connection: seeds cross tenants and bypass RLS.
+  const connectionString =
+    process.env.DATABASE_URL_MIGRATIONS ?? process.env.DATABASE_URL;
   const secret = process.env.BETTER_AUTH_SECRET;
   const webUrl = process.env.WEB_URL;
   if (!(connectionString && secret && webUrl)) {
     const missing = Object.entries({
-      DATABASE_URL: connectionString,
+      DATABASE_URL_MIGRATIONS: connectionString,
       BETTER_AUTH_SECRET: secret,
       WEB_URL: webUrl,
     })

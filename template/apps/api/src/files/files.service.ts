@@ -27,10 +27,6 @@ export class FilesService {
     private readonly storage: StorageService
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
   async list(query: ListQuery): Promise<Paginated<FileObject>> {
     const user = currentUser();
     const orgId = activeOrganizationId();
@@ -55,16 +51,18 @@ export class FilesService {
       query.search ? ilike(fileObject.fileName, `%${query.search}%`) : undefined
     );
 
-    const [rows, totals] = await Promise.all([
-      this.db
-        .select()
-        .from(fileObject)
-        .where(where)
-        .orderBy(desc(fileObject.createdAt))
-        .limit(query.pageSize)
-        .offset((query.page - 1) * query.pageSize),
-      this.db.select({ value: count() }).from(fileObject).where(where),
-    ]);
+    const [rows, totals] = await this.dbService.tenant((db) =>
+      Promise.all([
+        db
+          .select()
+          .from(fileObject)
+          .where(where)
+          .orderBy(desc(fileObject.createdAt))
+          .limit(query.pageSize)
+          .offset((query.page - 1) * query.pageSize),
+        db.select({ value: count() }).from(fileObject).where(where),
+      ])
+    );
 
     const total = totals[0]?.value ?? 0;
     return {
@@ -87,21 +85,24 @@ export class FilesService {
     const safeName = input.fileName.replace(/[^\w.\- ]/g, "_");
     const storageKey = `${orgId}/${user.id}/${id}/${safeName}`;
 
-    const [row] = await this.db
-      .insert(fileObject)
-      .values({
-        id,
-        fileName: safeName,
-        contentType: input.contentType,
-        sizeBytes: input.sizeBytes,
-        storageKey,
-        organizationId: orgId,
-        ownerId: user.id,
-      })
-      .returning();
-    if (!row) {
-      throw notFound("File");
-    }
+    const row = await this.dbService.tenant(async (db) => {
+      const [created] = await db
+        .insert(fileObject)
+        .values({
+          id,
+          fileName: safeName,
+          contentType: input.contentType,
+          sizeBytes: input.sizeBytes,
+          storageKey,
+          organizationId: orgId,
+          ownerId: user.id,
+        })
+        .returning();
+      if (!created) {
+        throw notFound("File");
+      }
+      return created;
+    });
 
     const uploadUrl = await this.storage.presignUpload(
       storageKey,
@@ -133,7 +134,9 @@ export class FilesService {
       throw forbidden("delete", "File");
     }
     await this.storage.deleteObject(row.storageKey);
-    await this.db.delete(fileObject).where(eq(fileObject.id, id));
+    await this.dbService.tenant((db) =>
+      db.delete(fileObject).where(eq(fileObject.id, id))
+    );
     return { id };
   }
 
@@ -143,10 +146,12 @@ export class FilesService {
     if (!orgId) {
       throw notFound("File");
     }
-    const [row] = await this.db
-      .select()
-      .from(fileObject)
-      .where(and(eq(fileObject.id, id), eq(fileObject.organizationId, orgId)));
+    const [row] = await this.dbService.tenant((db) =>
+      db
+        .select()
+        .from(fileObject)
+        .where(and(eq(fileObject.id, id), eq(fileObject.organizationId, orgId)))
+    );
     if (!row) {
       throw notFound("File");
     }

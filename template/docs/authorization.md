@@ -6,6 +6,16 @@ time; the alternative is a relationship-based ReBAC model).
 Three roles (`admin`, `manager`, `member`) with editable rules in the DB and
 per-user allow/deny overrides. Deny wins.
 
+Underneath the application layer, **Postgres row-level security** enforces
+tenant isolation as defense in depth: org-scoped tables (`project`,
+`file_object`, `audit_log`, `member`, `invitation`) carry policies matching
+`current_setting('app.current_org_id')`, set per request by
+`DbService.tenant(...)` (SET LOCAL inside a transaction). The API connects
+as the restricted `app_user` role; a query that forgets its WHERE clause
+returns zero foreign rows instead of leaking them. Better-Auth uses the
+`app_auth` BYPASSRLS role (it reads `member` before a tenant exists);
+migrations/seeds run as the owner. See `packages/db/src/schema/roles.ts`.
+
 ## How it works
 
 - Rule storage: `role_permission` (seeded from `defaultRolePermissions` in

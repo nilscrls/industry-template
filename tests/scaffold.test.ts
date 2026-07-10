@@ -152,6 +152,9 @@ describe("scaffold", () => {
       "apps/web/src/components/consent.tsx",
       "apps/api/src/privacy/privacy.module.ts",
       "docs/compliance.md",
+      "packages/db/drizzle/0000_roles.sql",
+      "packages/db/drizzle/0001_init.sql",
+      "packages/db/sql/init-roles.sh",
     ]) {
       expect(existsSync(path.join(targetDir, file)), `missing ${file}`).toBe(
         true
@@ -220,11 +223,15 @@ describe("scaffold", () => {
       )
     ).toContain("projectMember");
     // The RBAC migrations are replaced wholesale by the manifest.
-    const migrations = readFileSync(
-      path.join(targetDir, "packages/db/drizzle/meta/_journal.json"),
-      "utf8"
-    );
-    expect(migrations).not.toContain("yielding_cloak");
+    expect(
+      readFileSync(
+        path.join(targetDir, "packages/db/drizzle/0001_init.sql"),
+        "utf8"
+      )
+    ).toContain("project_member");
+    expect(
+      existsSync(path.join(targetDir, "packages/db/drizzle/0000_roles.sql"))
+    ).toBe(true);
   });
 
   it("stamps the default production branch (main) with no marker residue", () => {
@@ -481,11 +488,12 @@ describe("scaffold", () => {
     );
     expect(permissions).toContain("projectRelations");
     expect(permissions).not.toContain("defaultRolePermissions");
-    const journal = readFileSync(
-      path.join(targetDir, "packages/db/drizzle/meta/_journal.json"),
-      "utf8"
-    );
-    expect(journal).not.toContain("yielding_cloak");
+    expect(
+      readFileSync(
+        path.join(targetDir, "packages/db/drizzle/0001_init.sql"),
+        "utf8"
+      )
+    ).toContain("project_member");
 
     // French fallback locale.
     expect(

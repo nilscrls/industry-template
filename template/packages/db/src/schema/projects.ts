@@ -1,7 +1,9 @@
 import { projectStatuses } from "@repo/contracts";
+import { sql } from "drizzle-orm";
 import {
   index,
   pgEnum,
+  pgPolicy,
   pgTable,
   text,
   timestamp,
@@ -10,6 +12,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { user } from "./auth.js";
 import { organization } from "./organizations.js";
+import { appUserRole } from "./roles.js";
 
 export const projectStatusEnum = pgEnum("project_status", projectStatuses);
 
@@ -37,5 +40,15 @@ export const project = pgTable(
     index().on(table.ownerId),
     index().on(table.status),
     index().on(table.createdAt),
+    // Defense in depth under the CASL/service checks: the runtime role only
+    // sees the transaction's tenant (set by DbService.tenant()) plus the
+    // user's own rows (GDPR export spans organizations). Writes are
+    // tenant-only.
+    pgPolicy("project_tenant_isolation", {
+      for: "all",
+      to: appUserRole,
+      using: sql`organization_id = current_setting('app.current_org_id', true) OR owner_id = current_setting('app.current_user_id', true)`,
+      withCheck: sql`organization_id = current_setting('app.current_org_id', true)`,
+    }),
   ]
-);
+).enableRLS();

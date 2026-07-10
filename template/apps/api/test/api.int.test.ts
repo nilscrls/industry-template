@@ -1,7 +1,15 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { defaultRolePermissions } from "@repo/contracts";
-import { auditLog, createDb, member, rolePermission, user } from "@repo/db";
+import {
+  auditLog,
+  createDb,
+  member,
+  project,
+  rolePermission,
+  user,
+  withTenant,
+} from "@repo/db";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
@@ -38,9 +46,20 @@ beforeAll(async () => {
 
   // env.ts reads process.env at import time — set everything first.
   // The schema has no defaults, so every server var must be present here.
+  const ownerUrl = postgres.getConnectionUri();
+  const roleUrl = (role: string) => {
+    const url = new URL(ownerUrl);
+    url.username = role;
+    url.password = role;
+    return url.toString();
+  };
   process.env.NODE_ENV = "test";
   process.env.API_PORT = "3001";
-  process.env.DATABASE_URL = postgres.getConnectionUri();
+  // Owner for migrations/seeds; restricted app_user for the api runtime;
+  // BYPASSRLS app_auth for Better-Auth — same principals as production.
+  process.env.DATABASE_URL_MIGRATIONS = ownerUrl;
+  process.env.DATABASE_URL = roleUrl("app_user");
+  process.env.DATABASE_URL_AUTH = roleUrl("app_auth");
   process.env.REDIS_URL = redis.getConnectionUrl();
   process.env.BETTER_AUTH_SECRET = "integration-test-secret-0123456789abcdef";
   process.env.MICROSOFT_CLIENT_ID = "test-client-id";
@@ -69,8 +88,12 @@ beforeAll(async () => {
   process.env.LOG_FILE_ENABLED = "false";
   process.env.LOG_DIR = "./logs";
 
-  const { db, pool } = createDb(process.env.DATABASE_URL);
+  const { db, pool } = createDb(ownerUrl);
   await migrate(db, { migrationsFolder: MIGRATIONS });
+  // The grants migration creates the roles NOLOGIN (no init script inside
+  // Testcontainers) — enable them exactly like an operator would.
+  await pool.query("ALTER ROLE app_user LOGIN PASSWORD 'app_user'");
+  await pool.query("ALTER ROLE app_auth LOGIN PASSWORD 'app_auth'");
   await db.insert(rolePermission).values(
     Object.entries(defaultRolePermissions).flatMap(([role, rules]) =>
       rules.map((rule) => ({
@@ -137,7 +160,7 @@ async function addMemberByEmail(
   organizationId: string,
   email: string
 ): Promise<void> {
-  const { db, pool } = createDb(process.env.DATABASE_URL as string);
+  const { db, pool } = createDb(process.env.DATABASE_URL_MIGRATIONS as string);
   const [target] = await db
     .select({ id: user.id })
     .from(user)
@@ -313,7 +336,9 @@ describe("api integration", () => {
     expect(noAccess.status).toBe(403);
 
     // Promote via db, as an operator would; permissions cache is per-user.
-    const { db, pool } = createDb(process.env.DATABASE_URL as string);
+    const { db, pool } = createDb(
+      process.env.DATABASE_URL_MIGRATIONS as string
+    );
     await db
       .update(user)
       .set({ role: "admin" })
@@ -474,6 +499,58 @@ describe("api integration", () => {
     expect(logs.body.items[0].entityId).toBe("new-dashboard");
   });
 
+  it("enforces row-level security even on queries with no WHERE clause", async () => {
+    // Simulates a forgotten organization filter: connect as the runtime
+    // role (app_user) and select everything.
+    const { db, pool } = createDb(process.env.DATABASE_URL as string);
+    try {
+      // No tenant context → the policies match nothing.
+      const bare = await db.select().from(project);
+      expect(bare).toHaveLength(0);
+
+      // Tenant context → only that tenant's rows, without any WHERE.
+      const scoped = await withTenant(
+        db,
+        { organizationId: acmeOrgId, userId: null },
+        (tx) => tx.select().from(project)
+      );
+      expect(scoped.length).toBeGreaterThan(0);
+      expect(scoped.every((row) => row.organizationId === acmeOrgId)).toBe(
+        true
+      );
+
+      // Cross-tenant writes violate the WITH CHECK clause.
+      const [foreign] = await withTenant(
+        db,
+        { organizationId: acmeOrgId, userId: null },
+        (tx) => tx.select().from(project).limit(1)
+      );
+      if (!foreign) {
+        throw new Error("expected an acme project to exist");
+      }
+      // Drizzle wraps the pg error — the RLS violation is the cause.
+      await expect(
+        withTenant(
+          db,
+          { organizationId: "some-other-org", userId: null },
+          (tx) =>
+            tx.insert(project).values({
+              name: "smuggled",
+              status: "draft",
+              organizationId: foreign.organizationId,
+              ownerId: foreign.ownerId,
+            })
+        )
+      ).rejects.toMatchObject({
+        cause: expect.objectContaining({
+          message: expect.stringMatching(/row-level security/),
+        }),
+      });
+    } finally {
+      await pool.end();
+    }
+  });
+
   it("exports the requesting user's data as JSON (GDPR portability)", async () => {
     const dana = await signUp("Dana", "dana@example.com");
     const orgId = await createOrganization(dana, "Dana Co", "dana-co");
@@ -530,7 +607,9 @@ describe("api integration", () => {
     expect(signIn.status).not.toBe(200);
 
     // The user row is gone; the erasure left an anonymized audit event.
-    const { db, pool } = createDb(process.env.DATABASE_URL as string);
+    const { db, pool } = createDb(
+      process.env.DATABASE_URL_MIGRATIONS as string
+    );
     const users = await db
       .select({ id: user.id })
       .from(user)

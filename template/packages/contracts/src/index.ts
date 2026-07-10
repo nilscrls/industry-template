@@ -41,11 +41,6 @@ export {
   sortOrders,
 } from "./pagination.js";
 export {
-  type MeExport,
-  meExportSchema,
-  privacyContract,
-} from "./privacy.js";
-export {
   type Action,
   type AppSubject,
   actions,
@@ -57,6 +52,11 @@ export {
   roles,
   subjects,
 } from "./permissions.js";
+export {
+  type MeExport,
+  meExportSchema,
+  privacyContract,
+} from "./privacy.js";
 export {
   createProjectSchema,
   isProjectSortField,

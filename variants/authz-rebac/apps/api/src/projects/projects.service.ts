@@ -12,7 +12,7 @@ import {
   projectStatuses,
   type updateProjectSchema,
 } from "@repo/contracts";
-import { project, projectMember, user } from "@repo/db";
+import { type Database, project, projectMember, user } from "@repo/db";
 import {
   and,
   asc,
@@ -46,6 +46,11 @@ const STATS_WINDOW_DAYS = 30;
 // Scoped through cache.forOrg(orgId), so the full key carries the tenant id.
 const STATS_KEY = "projects:stats";
 
+/**
+ * All queries run through dbService.tenant(...) — the RLS context. The
+ * explicit organizationId filters stay: RLS is the safety net underneath,
+ * not the primary filter (and the filters keep query plans index-friendly).
+ */
 @Injectable()
 export class ProjectsService {
   constructor(
@@ -89,16 +94,18 @@ export class ProjectsService {
     const orderBy =
       query.sortOrder === "asc" ? asc(sortColumn) : desc(sortColumn);
 
-    const [rows, totals] = await Promise.all([
-      this.db
-        .select()
-        .from(project)
-        .where(where)
-        .orderBy(orderBy)
-        .limit(query.pageSize)
-        .offset((query.page - 1) * query.pageSize),
-      this.db.select({ value: count() }).from(project).where(where),
-    ]);
+    const [rows, totals] = await this.dbService.tenant((db) =>
+      Promise.all([
+        db
+          .select()
+          .from(project)
+          .where(where)
+          .orderBy(orderBy)
+          .limit(query.pageSize)
+          .offset((query.page - 1) * query.pageSize),
+        db.select({ value: count() }).from(project).where(where),
+      ])
+    );
 
     const total = totals[0]?.value ?? 0;
     return {
@@ -111,7 +118,7 @@ export class ProjectsService {
   }
 
   async find(id: string): Promise<Project> {
-    const row = await this.findRow(id);
+    const row = await this.dbService.tenant((db) => this.findRow(db, id));
     if (!currentAbility().can("read", asSubject("Project", { ...row }))) {
       throw forbidden("read", "Project");
     }
@@ -125,7 +132,7 @@ export class ProjectsService {
       // Creating requires a tenant to create into.
       throw forbidden("create", "Project");
     }
-    const row = await this.db.transaction(async (tx) => {
+    const row = await this.dbService.tenant(async (tx) => {
       const [created] = await tx
         .insert(project)
         .values({
@@ -155,46 +162,53 @@ export class ProjectsService {
   }
 
   async update(input: UpdateInput): Promise<Project> {
-    const row = await this.findRow(input.id);
-    if (!currentAbility().can("update", asSubject("Project", { ...row }))) {
-      throw forbidden("update", "Project");
-    }
+    const updated = await this.dbService.tenant(async (db) => {
+      const row = await this.findRow(db, input.id);
+      if (!currentAbility().can("update", asSubject("Project", { ...row }))) {
+        throw forbidden("update", "Project");
+      }
 
-    const patch: Partial<Pick<ProjectRow, "name" | "description" | "status">> =
-      {};
-    if (input.name !== undefined) {
-      patch.name = input.name;
-    }
-    if (input.description !== undefined) {
-      patch.description = input.description;
-    }
-    if (input.status !== undefined) {
-      patch.status = input.status;
-    }
-    if (Object.keys(patch).length === 0) {
-      return this.toDto(row);
-    }
+      const patch: Partial<
+        Pick<ProjectRow, "name" | "description" | "status">
+      > = {};
+      if (input.name !== undefined) {
+        patch.name = input.name;
+      }
+      if (input.description !== undefined) {
+        patch.description = input.description;
+      }
+      if (input.status !== undefined) {
+        patch.status = input.status;
+      }
+      if (Object.keys(patch).length === 0) {
+        return row;
+      }
 
-    const [updated] = await this.db
-      .update(project)
-      .set(patch)
-      .where(eq(project.id, input.id))
-      .returning();
-    if (!updated) {
-      throw notFound("Project");
-    }
-    await this.cache.forOrg(row.organizationId).del(STATS_KEY);
+      const [next] = await db
+        .update(project)
+        .set(patch)
+        .where(eq(project.id, input.id))
+        .returning();
+      if (!next) {
+        throw notFound("Project");
+      }
+      return next;
+    });
+    await this.cache.forOrg(updated.organizationId).del(STATS_KEY);
     return this.toDto(updated);
   }
 
   async remove(id: string): Promise<{ id: string }> {
-    const row = await this.findRow(id);
-    if (!currentAbility().can("delete", asSubject("Project", { ...row }))) {
-      throw forbidden("delete", "Project");
-    }
-    const members = await this.memberRows(id);
-    // FK cascade removes the membership rows with the project.
-    await this.db.delete(project).where(eq(project.id, id));
+    const { row, members } = await this.dbService.tenant(async (db) => {
+      const found = await this.findRow(db, id);
+      if (!currentAbility().can("delete", asSubject("Project", { ...found }))) {
+        throw forbidden("delete", "Project");
+      }
+      const memberRows = await this.memberRows(db, id);
+      // FK cascade removes the membership rows with the project.
+      await db.delete(project).where(eq(project.id, id));
+      return { row: found, members: memberRows };
+    });
     await Promise.all([
       this.cache.forOrg(row.organizationId).del(STATS_KEY),
       ...members.map((member) =>
@@ -205,20 +219,22 @@ export class ProjectsService {
   }
 
   async listMembers(projectId: string): Promise<{ members: ProjectMember[] }> {
-    const row = await this.findRow(projectId);
-    if (!currentAbility().can("read", asSubject("Project", { ...row }))) {
-      throw forbidden("read", "Project");
-    }
-    const rows = await this.db
-      .select({
-        userId: projectMember.userId,
-        name: user.name,
-        email: user.email,
-        relation: projectMember.relation,
-      })
-      .from(projectMember)
-      .innerJoin(user, eq(user.id, projectMember.userId))
-      .where(eq(projectMember.projectId, projectId));
+    const rows = await this.dbService.tenant(async (db) => {
+      const row = await this.findRow(db, projectId);
+      if (!currentAbility().can("read", asSubject("Project", { ...row }))) {
+        throw forbidden("read", "Project");
+      }
+      return await db
+        .select({
+          userId: projectMember.userId,
+          name: user.name,
+          email: user.email,
+          relation: projectMember.relation,
+        })
+        .from(projectMember)
+        .innerJoin(user, eq(user.id, projectMember.userId))
+        .where(eq(projectMember.projectId, projectId));
+    });
     return {
       members: rows.map((member) => ({
         ...member,
@@ -232,28 +248,31 @@ export class ProjectsService {
     userId: string;
     relation: ProjectRelation;
   }): Promise<ProjectMember> {
-    const row = await this.requireManage(input.id);
-    const [target] = await this.db
-      .select()
-      .from(user)
-      .where(eq(user.id, input.userId));
-    if (!target) {
-      throw notFound("User");
-    }
-    if (input.relation !== "owner") {
-      await this.assertAnotherOwnerRemains(row.id, input.userId);
-    }
-    await this.db
-      .insert(projectMember)
-      .values({
-        projectId: row.id,
-        userId: input.userId,
-        relation: input.relation,
-      })
-      .onConflictDoUpdate({
-        target: [projectMember.projectId, projectMember.userId],
-        set: { relation: input.relation },
-      });
+    const target = await this.dbService.tenant(async (db) => {
+      const row = await this.requireManage(db, input.id);
+      const [found] = await db
+        .select()
+        .from(user)
+        .where(eq(user.id, input.userId));
+      if (!found) {
+        throw notFound("User");
+      }
+      if (input.relation !== "owner") {
+        await this.assertAnotherOwnerRemains(db, row.id, input.userId);
+      }
+      await db
+        .insert(projectMember)
+        .values({
+          projectId: row.id,
+          userId: input.userId,
+          relation: input.relation,
+        })
+        .onConflictDoUpdate({
+          target: [projectMember.projectId, projectMember.userId],
+          set: { relation: input.relation },
+        });
+      return found;
+    });
     await this.abilityFactory.invalidateUser(input.userId);
     return {
       userId: target.id,
@@ -267,16 +286,18 @@ export class ProjectsService {
     id: string;
     userId: string;
   }): Promise<{ userId: string }> {
-    const row = await this.requireManage(input.id);
-    await this.assertAnotherOwnerRemains(row.id, input.userId);
-    await this.db
-      .delete(projectMember)
-      .where(
-        and(
-          eq(projectMember.projectId, row.id),
-          eq(projectMember.userId, input.userId)
-        )
-      );
+    await this.dbService.tenant(async (db) => {
+      const row = await this.requireManage(db, input.id);
+      await this.assertAnotherOwnerRemains(db, row.id, input.userId);
+      await db
+        .delete(projectMember)
+        .where(
+          and(
+            eq(projectMember.projectId, row.id),
+            eq(projectMember.userId, input.userId)
+          )
+        );
+    });
     await this.abilityFactory.invalidateUser(input.userId);
     return { userId: input.userId };
   }
@@ -298,19 +319,22 @@ export class ProjectsService {
     const dayExpr = sql<string>`to_char(date_trunc('day', ${project.createdAt}), 'YYYY-MM-DD')`;
     const inOrg = eq(project.organizationId, orgId);
 
-    const [totals, byStatusRows, perDayRows] = await Promise.all([
-      this.db.select({ value: count() }).from(project).where(inOrg),
-      this.db
-        .select({ status: project.status, count: count() })
-        .from(project)
-        .where(inOrg)
-        .groupBy(project.status),
-      this.db
-        .select({ date: dayExpr, count: count() })
-        .from(project)
-        .where(and(inOrg, gte(project.createdAt, since)))
-        .groupBy(dayExpr),
-    ]);
+    const [totals, byStatusRows, perDayRows] = await this.dbService.tenant(
+      (db) =>
+        Promise.all([
+          db.select({ value: count() }).from(project).where(inOrg),
+          db
+            .select({ status: project.status, count: count() })
+            .from(project)
+            .where(inOrg)
+            .groupBy(project.status),
+          db
+            .select({ date: dayExpr, count: count() })
+            .from(project)
+            .where(and(inOrg, gte(project.createdAt, since)))
+            .groupBy(dayExpr),
+        ])
+    );
 
     const byStatus = projectStatuses.map((status) => ({
       status,
@@ -332,8 +356,11 @@ export class ProjectsService {
   }
 
   /** Membership writes require `manage` on the project (owner or admin). */
-  private async requireManage(projectId: string): Promise<ProjectRow> {
-    const row = await this.findRow(projectId);
+  private async requireManage(
+    db: Database,
+    projectId: string
+  ): Promise<ProjectRow> {
+    const row = await this.findRow(db, projectId);
     if (!currentAbility().can("manage", asSubject("Project", { ...row }))) {
       throw forbidden("manage", "Project");
     }
@@ -342,10 +369,11 @@ export class ProjectsService {
 
   /** A project must always keep at least one owner. */
   private async assertAnotherOwnerRemains(
+    db: Database,
     projectId: string,
     excludedUserId: string
   ): Promise<void> {
-    const owners = await this.db
+    const owners = await db
       .select({ userId: projectMember.userId })
       .from(projectMember)
       .where(
@@ -360,20 +388,23 @@ export class ProjectsService {
     }
   }
 
-  private async memberRows(projectId: string): Promise<{ userId: string }[]> {
-    return await this.db
+  private async memberRows(
+    db: Database,
+    projectId: string
+  ): Promise<{ userId: string }[]> {
+    return await db
       .select({ userId: projectMember.userId })
       .from(projectMember)
       .where(eq(projectMember.projectId, projectId));
   }
 
   /** Rows outside the active organization do not exist for this request. */
-  private async findRow(id: string): Promise<ProjectRow> {
+  private async findRow(db: Database, id: string): Promise<ProjectRow> {
     const orgId = activeOrganizationId();
     if (!orgId) {
       throw notFound("Project");
     }
-    const [row] = await this.db
+    const [row] = await db
       .select()
       .from(project)
       .where(and(eq(project.id, id), eq(project.organizationId, orgId)));

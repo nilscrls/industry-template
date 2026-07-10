@@ -26,9 +26,14 @@ export const AUTH = "BETTER_AUTH_INSTANCE";
         redis: Redis,
         storage: StorageService
       ): Auth => {
-        const deletion = createUserDeletionHooks(dbService.db, storage);
+        // authDb (BYPASSRLS): the hooks run inside the auth flow, outside
+        // any tenant transaction — the sole-owner check must see every
+        // membership and the blob prefetch every file row.
+        const deletion = createUserDeletionHooks(dbService.authDb, storage);
         return createAuth({
-          db: dbService.db,
+          // BYPASSRLS pool: Better-Auth reads member pre-tenant and owns
+          // the user-scoped auth tables (see DbService.authDb).
+          db: dbService.authDb,
           secret: env.BETTER_AUTH_SECRET,
           baseUrl: `${env.WEB_URL}/api/auth`,
           trustedOrigins: [env.WEB_URL],
