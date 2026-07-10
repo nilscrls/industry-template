@@ -20,7 +20,8 @@ Node >= 22.12) scaffolded by create-industry-app with these choices:
 Layout:
 
 - `apps/api` — NestJS 11 (Express, **CommonJS**), oRPC contract-first API,
-  Drizzle ORM (Postgres 17), Better-Auth, CASL, BullMQ + ioredis, pino.
+  Drizzle ORM (Postgres 17, row-level security), Better-Auth, OpenFGA,
+  BullMQ + ioredis, pino.
 - `apps/web` — Next.js 16 App Router, TanStack Query/Table, next-intl,
   react-hook-form, nuqs.
 - `packages/` — `contracts` (oRPC contracts + Zod schemas), `db` (Drizzle

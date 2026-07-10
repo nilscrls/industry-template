@@ -2,7 +2,7 @@ import { Controller } from "@nestjs/common";
 import { Implement, implement } from "@orpc/nest";
 import { contract } from "@repo/contracts";
 import { AuditService } from "../audit/audit.service";
-import { RequireAbility } from "../auth/decorators";
+import { RequirePermission } from "../auth/decorators";
 import { UsersService } from "./users.service";
 
 @Controller()
@@ -12,7 +12,7 @@ export class UsersController {
     private readonly audit: AuditService
   ) {}
 
-  @RequireAbility({ action: "read", subject: "User" })
+  @RequirePermission({ relation: "can_read_user", scope: "system" })
   @Implement(contract.users.list)
   list() {
     return implement(contract.users.list).handler(({ input }) =>
@@ -20,7 +20,7 @@ export class UsersController {
     );
   }
 
-  @RequireAbility({ action: "update", subject: "User" })
+  @RequirePermission({ relation: "can_manage_user", scope: "system" })
   @Implement(contract.users.setRole)
   setRole() {
     return implement(contract.users.setRole)
@@ -28,11 +28,11 @@ export class UsersController {
       .handler(({ input }) => this.users.setRole(input));
   }
 
-  /** Any authenticated user — powers the web app's ability provider. */
+  /** Any authenticated user — powers the web app's permission provider. */
   @Implement(contract.me.permissions)
   myPermissions() {
-    return implement(contract.me.permissions).handler(async () => ({
-      rules: await this.users.myPermissions(),
-    }));
+    return implement(contract.me.permissions).handler(() =>
+      this.users.myPermissions()
+    );
   }
 }

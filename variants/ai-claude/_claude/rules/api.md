@@ -18,9 +18,12 @@ paths:
 - Endpoints implement contracts from `@repo/contracts` via `@orpc/nest`
   (`@Implement`). New feature? Run `pnpm gen` at the repo root instead of
   hand-writing the module.
-- Authorization is CASL: guard mutating endpoints with the ability
-  decorators; list/read endpoints scope results in the service instead of
-  returning 403 (a fresh user must get an empty list, not an error).
+- Authorization is OpenFGA: guard endpoints with
+  `@RequirePermission({relation, scope})` and check rows in services via
+  `fga.check(...)`; list/read endpoints scope results in the service
+  instead of returning 403 (a fresh user must get an empty list, not an
+  error). Mirror every relevant DB write with its FGA tuple (row first,
+  tuple after commit) — see the authz rule file.
 - Better-Auth mounting is deliberate and fragile: `baseURL` carries the full
   public path (a path in `baseURL` *replaces* `basePath`), and the express
   mount registers **before** `app.init()` so Nest's 404 catch-all doesn't

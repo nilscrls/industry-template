@@ -28,7 +28,7 @@ export type ProdBranch = (typeof PROD_BRANCH_VARIANTS)[number];
 export interface ScaffoldOptions {
   /** AI assistant config (AGENTS.md, CLAUDE.md, .claude/rules). Default: "claude". */
   ai?: AiVariant;
-  /** CASL authorization model. Default: "rbac". */
+  /** OpenFGA authorization model. Default: "rbac". */
   authz?: AuthzVariant;
   /** Default UI language. Default: "en". */
   locale?: LocaleVariant;

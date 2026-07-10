@@ -40,7 +40,7 @@ export const project = pgTable(
     index().on(table.ownerId),
     index().on(table.status),
     index().on(table.createdAt),
-    // Defense in depth under the CASL/service checks: the runtime role only
+    // Defense in depth under the OpenFGA/service checks: the runtime role only
     // sees the transaction's tenant (set by DbService.tenant()) plus the
     // user's own rows (GDPR export spans organizations). Writes are
     // tenant-only.

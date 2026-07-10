@@ -2,17 +2,21 @@ import { Injectable } from "@nestjs/common";
 import {
   type Paginated,
   type PaginationQuery,
-  type PermissionRule,
+  type PermissionSnapshot,
+  orgCapabilities,
+  type OrgCapability,
   type Role,
   roleSchema,
+  type SystemCapability,
+  systemCapabilities,
   type User,
 } from "@repo/contracts";
 import { user } from "@repo/db";
 import { count, desc, eq, ilike, or } from "drizzle-orm";
-import { AbilityFactory } from "../auth/ability.factory";
 import { notFound } from "../common/app-error";
-import { currentUser } from "../common/request-context";
+import { activeOrganizationId } from "../common/request-context";
 import { DbService } from "../db/db.module";
+import { FgaService } from "../fga/fga.service";
 
 type ListQuery = PaginationQuery & { search?: string | undefined };
 type UserRow = typeof user.$inferSelect;
@@ -21,7 +25,7 @@ type UserRow = typeof user.$inferSelect;
 export class UsersService {
   constructor(
     private readonly dbService: DbService,
-    private readonly abilityFactory: AbilityFactory
+    private readonly fga: FgaService
   ) {}
 
   private get db() {
@@ -69,17 +73,40 @@ export class UsersService {
     if (!updated) {
       throw notFound("User");
     }
-    await this.abilityFactory.invalidateUser(input.id);
+    // Mirror the role into FGA system tuples (write after the DB commit;
+    // pnpm fga:sync reconciles if this write is lost).
+    const subject = this.fga.ref.user(input.id);
+    const systemObj = this.fga.ref.system();
+    if (input.role === "admin") {
+      await this.fga.writeTuples([
+        { user: subject, relation: "admin", object: systemObj },
+      ]);
+    } else {
+      await this.fga.deleteTuples([
+        { user: subject, relation: "admin", object: systemObj },
+      ]);
+    }
     return this.toDto(updated);
   }
 
-  myPermissions(): Promise<PermissionRule[]> {
-    const me = currentUser();
-    // Better-Auth's admin plugin types role as optional on the session user.
-    return this.abilityFactory.resolvedRulesFor({
-      id: me.id,
-      role: me.role ?? "member",
-    });
+  /** Capability snapshot for the web app (cosmetic gating; api re-checks). */
+  async myPermissions(): Promise<PermissionSnapshot> {
+    const me = this.fga.me();
+    const orgId = activeOrganizationId();
+    const [org, system] = await Promise.all([
+      orgId
+        ? this.fga.listRelations(me, this.fga.ref.org(orgId), [
+            ...orgCapabilities,
+          ])
+        : Promise.resolve([]),
+      this.fga.listRelations(me, this.fga.ref.system(), [
+        ...systemCapabilities,
+      ]),
+    ]);
+    return {
+      org: org as OrgCapability[],
+      system: system as SystemCapability[],
+    };
   }
 
   private async findRow(id: string): Promise<UserRow> {

@@ -115,7 +115,7 @@ async function promptVariants(flags: CliFlags): Promise<VariantChoices> {
   );
   const authz = await promptVariant(flags.authz, flags.yes, "rbac", () =>
     p.select({
-      message: "Authorization model (CASL)",
+      message: "Authorization model (OpenFGA)",
       options: [
         {
           value: "rbac" as const,

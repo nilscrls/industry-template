@@ -1,10 +1,11 @@
-# Authorization — RBAC (roles + per-user overrides)
+# Authorization — RBAC (roles + per-user grants) on OpenFGA
 
-This project uses the **RBAC** flavor of the CASL setup (chosen at scaffold
-time; the alternative is a relationship-based ReBAC model).
+This project uses the **RBAC** flavor of the OpenFGA setup (chosen at
+scaffold time; the alternative is a relationship-based ReBAC model).
 
-Three roles (`admin`, `manager`, `member`) with editable rules in the DB and
-per-user allow/deny overrides. Deny wins.
+Three global roles (`admin`, `manager`, `member`) defined in the
+authorization model, plus per-user allow/deny **grants** on individual
+resources. Deny wins.
 
 Underneath the application layer, **Postgres row-level security** enforces
 tenant isolation as defense in depth: org-scoped tables (`project`,
@@ -18,39 +19,54 @@ migrations/seeds run as the owner. See `packages/db/src/schema/roles.ts`.
 
 ## How it works
 
-- Rule storage: `role_permission` (seeded from `defaultRolePermissions` in
-  `packages/contracts/src/permissions.ts`) plus per-user
-  `user_permission_override` rows. Overrides support **allow and deny; deny
-  always wins** (`resolveRules` appends inverted rules last).
-- `AbilityFactory` (`apps/api/src/auth/ability.factory.ts`) builds a CASL
-  ability per request; rule rows are cached in Redis for 5 minutes and
-  invalidated on writes (`invalidateUser` / `invalidateRole`).
-- Conditions support the `"${userId}"` placeholder
-  (`{ ownerId: "${userId}" }`), interpolated at build time — this is how
-  members mutate only what they own.
-- Enforcement is two-layered: `@RequireAbility({ action, subject })` for
-  coarse route checks (PoliciesGuard),
-  `ability.can(action, asSubject("Project", row))` in services for row-level
-  checks.
-- The web builds **the same ability** from `GET /me/permissions`
-  (`apps/web/src/lib/ability.tsx`, `<Can>` / `useAbility()`) to show/hide UI.
-  UI gating is cosmetic; the api is the authority.
+- **The model** lives in `packages/fga/model.fga` (OpenFGA DSL). Global
+  roles hang off the singleton `system:global`; each tenant is
+  `org:<organizationId>`; resources (`project:<id>`, `file:<id>`) carry an
+  `org` link and an `owner`. Capability relations (`can_*`) are what gets
+  checked — never raw structural relations.
+- **Tuples** mirror the database (Postgres is the source of truth):
+  Better-Auth `organizationHooks` write org/member tuples, `setRole`
+  rewrites system tuples, services write resource tuples after commit.
+  `pnpm fga:sync` rebuilds every derived tuple from the DB (grants are
+  preserved — they live only in FGA).
+- **Per-user grants** (`granted_read`/`granted_write` allow,
+  `denied_read`/`denied_write` deny) are tuples on specific resources;
+  `but not denied_*` in the model makes **deny beat every allow**,
+  including the owner's.
+- Enforcement is two-layered: `@RequirePermission({relation, scope})` for
+  coarse route checks (PermissionsGuard; `scope: "org"` checks the active
+  organization, `scope: "system"` the cross-tenant admin surface), and
+  `fga.check(fga.me(), "can_update", fga.ref.project(id))` in services for
+  row-level checks.
+- The web consumes the capability snapshot from `GET /me/permissions`
+  (`apps/web/src/lib/permissions.tsx`, `useCan()` / `<Can>`); row-level
+  buttons ride on DTO flags (`project.canUpdate`). UI gating is cosmetic;
+  the api is the authority.
+- **OpenFGA is a hard runtime dependency**: every request checks over the
+  network; the guard fails closed with a 5xx (never a silent allow) when
+  the engine is unreachable. Compose gates api startup on the openfga
+  healthcheck.
 
 ## Management endpoints
 
 - `PATCH /users/:id/role` — change a user's role (admin).
-- `GET|PUT /users/:id/permission-overrides` — per-user grants/denies (admin).
-- `GET /me/permissions` — resolved rules for the signed-in user (any user).
+- `GET|PUT /users/:id/grants` — per-user resource grants/denies (admin).
+- `GET /me/permissions` — capability snapshot for the signed-in user.
 
 ## Add / change permissions
 
-- **New subject**: add it to `subjects` in
-  `packages/contracts/src/permissions.ts` (the feature generator does this).
-- **Role baseline**: edit `defaultRolePermissions`, re-run `pnpm db:seed`
-  (resets the role baseline; per-user overrides are untouched). Runtime edits
-  go straight into the `role_permission` table — remember
-  `AbilityFactory.invalidateRole()` or the 5-minute cache delay applies.
-- **Per-user override**: `PUT /users/:id/permission-overrides` with rules
-  like `{ action: "delete", subject: "File" }` (grant) or
-  `{ ..., inverted: true }` (deny — beats any allow).
-- Owner-scoped rules use conditions: `{ ownerId: "${userId}" }`.
+- **New resource type**: `pnpm gen feature` appends a `type` block to
+  `packages/fga/model.fga` and registers the resource in
+  `packages/contracts/src/permissions.ts`.
+- **Role baselines**: edit the capability definitions in `model.fga`, then
+  `pnpm fga:bootstrap` (models are immutable — a new version is written;
+  unpinned clients pick it up immediately). Role baselines are **not**
+  runtime-editable rows anymore — changing them is a deploy, which also
+  makes them reviewable.
+- **Operational run-book**: `pnpm compose:dev` → `pnpm db:migrate` →
+  `pnpm fga:bootstrap` (copy `FGA_STORE_ID` into `.env` on first run) →
+  `pnpm db:seed` (chains `fga:sync`).
+- **Drift**: post-commit tuple writes can be lost if FGA is down at that
+  exact moment (the request 500s, loudly). `pnpm fga:sync` reconciles the
+  store from the database. Upgrade path for high write volumes: move tuple
+  writes into a transactional outbox.

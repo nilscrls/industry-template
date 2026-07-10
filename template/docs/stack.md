@@ -24,7 +24,7 @@ reasons, not against habits.
 |---|---|---|
 | NestJS 11 (express, CJS) | HTTP framework, DI, guards | the structured-team framework; oRPC implements the contract inside real controllers |
 | Better-Auth | authentication | framework-agnostic, owns its schema, admin plugin, Redis secondary storage |
-| CASL 6 | authorization | serializable rules → DB-stored roles + per-user overrides, same ability object on the client |
+| OpenFGA | authorization | Zanzibar-style relation model (`packages/fga/model.fga`), tuples mirror the DB, deny-wins grants; Postgres RLS underneath for tenant isolation |
 | Drizzle ORM | Postgres access | fully inferred types (the point of this stack), `drizzle-kit` migrations, first-class better-auth adapter. TypeORM was rejected for weak inference and migration DX |
 | ioredis | cache, ability-rule cache, better-auth storage, throttle storage | one Redis, many jobs |
 | BullMQ (`@nestjs/bullmq`) | background jobs (auth emails) | retries + exponential backoff off the request path |

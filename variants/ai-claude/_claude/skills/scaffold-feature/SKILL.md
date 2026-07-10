@@ -16,7 +16,8 @@ It prompts for the entity name (singular, kebab-case, e.g. `invoice`) and its
 plural, then:
 
 - adds `packages/contracts/src/<plural>.ts` and registers it in the contract
-  router, index exports, and the CASL `subjects` list;
+  router, index exports, the contracts `resources` list, and appends a
+  `type` block to `packages/fga/model.fga`;
 - adds `packages/db/src/schema/<plural>.ts` and registers it in the schema
   index;
 - adds `apps/api/src/<plural>/` (service, controller, module), registers the
@@ -29,7 +30,8 @@ Non-interactive: `pnpm gen feature --args <name> <plural>`.
 ## After generating
 
 1. `pnpm db:generate && pnpm db:migrate` — create and apply the migration.
-2. Grant permissions for the new CASL subject (see `docs/authorization.md`).
+2. Review the generated `type` block in `packages/fga/model.fga`, then run
+   `pnpm fga:bootstrap` (see `docs/authorization.md`).
 3. Add i18n keys under the entity's namespace in
    `packages/i18n/messages/en.json` AND `fr.json`.
 4. Add a nav item in `apps/web/src/components/app-shell.tsx`.

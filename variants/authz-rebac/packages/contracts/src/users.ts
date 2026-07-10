@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { base } from "./base.js";
 import { paginatedSchema, paginationQuerySchema } from "./pagination.js";
-import { permissionRuleSchema, roleSchema } from "./permissions.js";
+import { permissionSnapshotSchema, roleSchema } from "./permissions.js";
 
 export const userSchema = z.object({
   id: z.string(),
@@ -39,13 +39,13 @@ export const usersContract = {
 };
 
 export const meContract = {
-  /** Fully resolved rules (baseline ⊕ membership grants, placeholders interpolated). */
+  /** Capability snapshot (FGA ListRelations) — powers web UI gating. */
   permissions: base
     .route({
       method: "GET",
       path: "/me/permissions",
-      summary: "My effective permissions",
+      summary: "My effective capabilities",
       tags: ["me"],
     })
-    .output(z.object({ rules: z.array(permissionRuleSchema) })),
+    .output(permissionSnapshotSchema),
 };

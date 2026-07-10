@@ -19,20 +19,23 @@ Email + password with verification and reset emails, powered by Better-Auth.
 - Dev users after `pnpm db:seed` (password `Password123!`):
   `admin@example.com`, `manager@example.com`, `member@example.com`.
 
-## Authorization — CASL
+## Authorization — OpenFGA
 
-Serializable CASL rules enforced by the api and mirrored in the web UI. The
-rule model (RBAC roles or ReBAC memberships) is chosen at scaffold time —
-`docs/authorization.md` documents this project's setup end to end.
+Zanzibar-style authorization: the model lives in `packages/fga/model.fga`,
+tuples mirror the database, checks run against the OpenFGA service shipped
+in compose. The relation model (RBAC roles + grants or ReBAC per-project
+relations) is chosen at scaffold time — `docs/authorization.md` documents
+this project's setup end to end, including the Postgres row-level-security
+net underneath.
 
-- Definitions: `packages/contracts/src/permissions.ts` (actions, subjects,
-  rule sources).
-- Enforcement (api): `@RequireAbility({ action, subject })` on controller
-  methods; `ability.can(action, asSubject("Project", row))` in services for
-  row-level checks.
-- UI gating (web): `<Can action="update" subject={asSubject("Project", row)}>`
-  and `useAbility()` from `apps/web/src/lib/ability.tsx` — built from the
-  same rules the api enforces (`GET /me/permissions`).
+- Vocabulary: `packages/contracts/src/permissions.ts` (capabilities,
+  resources, snapshot schema).
+- Enforcement (api): `@RequirePermission({ relation, scope })` on
+  controller methods; `fga.check(...)` in services for row-level checks.
+- UI gating (web): `useCan("can_create_project")` / `<Can>` from
+  `apps/web/src/lib/permissions.tsx` (capability snapshot from
+  `GET /me/permissions`); row buttons use DTO flags (`canUpdate`).
+- Ops: `pnpm fga:bootstrap` (store + model), `pnpm fga:sync` (reconcile).
 
 ## Multi-tenancy (organizations)
 

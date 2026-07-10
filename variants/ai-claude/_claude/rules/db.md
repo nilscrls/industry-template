@@ -21,8 +21,10 @@ paths:
   filter. Three DB principals: owner (migrations/seeds), `app_user`
   (runtime, RLS), `app_auth` (Better-Auth only, BYPASSRLS).
 - Contracts (`packages/contracts`) are the single source of truth for API
-  shapes: oRPC contract + Zod schemas + CASL permission definitions. Change
-  the contract first; the api implements it, the web consumes it.
+  shapes: oRPC contract + Zod schemas + the authorization vocabulary
+  (capabilities/resources; the rules themselves live in
+  `packages/fga/model.fga`). Change the contract first; the api implements
+  it, the web consumes it.
 - Zod schemas that parse query params use `z.coerce` — that is why server
   handlers must type inputs from schema **outputs** (see the api rules).
 - These packages compile to CommonJS (no `"type": "module"`); scripts use

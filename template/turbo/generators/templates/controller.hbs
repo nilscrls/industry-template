@@ -1,38 +1,37 @@
 import { Controller } from "@nestjs/common";
 import { Implement, implement } from "@orpc/nest";
 import { contract } from "@repo/contracts";
-import { RequireAbility } from "../auth/decorators";
 import { {{ pascalCase plural }}Service } from "./{{ plural }}.service";
 
+/**
+ * No coarse @RequirePermission: the generated entity is user-scoped, so
+ * the service scopes lists to the owner and row-checks mutations via FGA.
+ * Add an org capability guard here if the entity becomes tenant-shared.
+ */
 @Controller()
 export class {{ pascalCase plural }}Controller {
   constructor(private readonly {{ camelCase plural }}: {{ pascalCase plural }}Service) {}
 
-  @RequireAbility({ action: "read", subject: "{{ pascalCase name }}" })
   @Implement(contract.{{ camelCase plural }}.list)
   list() {
     return implement(contract.{{ camelCase plural }}.list).handler(({ input }) => this.{{ camelCase plural }}.list(input));
   }
 
-  @RequireAbility({ action: "read", subject: "{{ pascalCase name }}" })
   @Implement(contract.{{ camelCase plural }}.find)
   find() {
     return implement(contract.{{ camelCase plural }}.find).handler(({ input }) => this.{{ camelCase plural }}.find(input.id));
   }
 
-  @RequireAbility({ action: "create", subject: "{{ pascalCase name }}" })
   @Implement(contract.{{ camelCase plural }}.create)
   create() {
     return implement(contract.{{ camelCase plural }}.create).handler(({ input }) => this.{{ camelCase plural }}.create(input));
   }
 
-  @RequireAbility({ action: "update", subject: "{{ pascalCase name }}" })
   @Implement(contract.{{ camelCase plural }}.update)
   update() {
     return implement(contract.{{ camelCase plural }}.update).handler(({ input }) => this.{{ camelCase plural }}.update(input));
   }
 
-  @RequireAbility({ action: "delete", subject: "{{ pascalCase name }}" })
   @Implement(contract.{{ camelCase plural }}.remove)
   remove() {
     return implement(contract.{{ camelCase plural }}.remove).handler(({ input }) => this.{{ camelCase plural }}.remove(input.id));

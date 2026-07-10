@@ -1,5 +1,4 @@
 import { Injectable } from "@nestjs/common";
-import { asSubject } from "@repo/auth";
 import {
   type createProjectSchema,
   type listProjectsQuerySchema,
@@ -8,6 +7,7 @@ import {
   type ProjectMember,
   type ProjectRelation,
   projectRelationSchema,
+  projectRelations,
   type projectStatsSchema,
   projectStatuses,
   type updateProjectSchema,
@@ -25,14 +25,13 @@ import {
   sql,
 } from "drizzle-orm";
 import type { z } from "zod";
-import { AbilityFactory } from "../auth/ability.factory";
 import { forbidden, notFound } from "../common/app-error";
 import {
   activeOrganizationId,
-  currentAbility,
   currentUser,
 } from "../common/request-context";
 import { DbService } from "../db/db.module";
+import { FgaService } from "../fga/fga.service";
 import { CacheService } from "../redis/cache.service";
 
 type ListQuery = z.infer<typeof listProjectsQuerySchema>;
@@ -46,22 +45,24 @@ const STATS_WINDOW_DAYS = 30;
 // Scoped through cache.forOrg(orgId), so the full key carries the tenant id.
 const STATS_KEY = "projects:stats";
 
+interface RowFlags {
+  canDelete: boolean;
+  canUpdate: boolean;
+}
+
 /**
- * All queries run through dbService.tenant(...) — the RLS context. The
- * explicit organizationId filters stay: RLS is the safety net underneath,
- * not the primary filter (and the filters keep query plans index-friendly).
+ * ReBAC: the `project_member` table is the DB source of truth for
+ * relations; every write mirrors into an OpenFGA tuple (owner/editor/
+ * viewer on `project:<id>`). Row checks ask FGA; Postgres RLS runs
+ * underneath via dbService.tenant(...).
  */
 @Injectable()
 export class ProjectsService {
   constructor(
     private readonly dbService: DbService,
     private readonly cache: CacheService,
-    private readonly abilityFactory: AbilityFactory
+    private readonly fga: FgaService
   ) {}
-
-  private get db() {
-    return this.dbService.db;
-  }
 
   async list(query: ListQuery): Promise<Paginated<Project>> {
     const me = currentUser();
@@ -70,12 +71,14 @@ export class ProjectsService {
       return this.emptyPage(query);
     }
     // ReBAC: non-admins only ever see projects they hold a relation on.
+    // The DB join stays (pageable, index-friendly); FGA re-answers the
+    // same question per row via the can_* checks.
     const membershipScope =
       (me.role ?? "member") === "admin"
         ? undefined
         : inArray(
             project.id,
-            this.db
+            this.dbService.db
               .select({ id: projectMember.projectId })
               .from(projectMember)
               .where(eq(projectMember.userId, me.id))
@@ -106,10 +109,11 @@ export class ProjectsService {
         db.select({ value: count() }).from(project).where(where),
       ])
     );
+    const flags = await this.flagsFor(rows);
 
     const total = totals[0]?.value ?? 0;
     return {
-      items: rows.map((row) => this.toDto(row)),
+      items: rows.map((row) => this.toDto(row, flags.get(row.id))),
       total,
       page: query.page,
       pageSize: query.pageSize,
@@ -119,10 +123,11 @@ export class ProjectsService {
 
   async find(id: string): Promise<Project> {
     const row = await this.dbService.tenant((db) => this.findRow(db, id));
-    if (!currentAbility().can("read", asSubject("Project", { ...row }))) {
+    if (!(await this.can("can_read", row.id))) {
       throw forbidden("read", "Project");
     }
-    return this.toDto(row);
+    const flags = await this.flagsFor([row]);
+    return this.toDto(row, flags.get(row.id));
   }
 
   async create(input: CreateInput): Promise<Project> {
@@ -154,77 +159,85 @@ export class ProjectsService {
       });
       return created;
     });
-    await Promise.all([
-      this.cache.forOrg(orgId).del(STATS_KEY),
-      this.abilityFactory.invalidateUser(me.id),
+    // Tuples AFTER the DB commit (Postgres is the source of truth). A
+    // failure here surfaces as a 500 — rerun `pnpm fga:sync` to reconcile.
+    await this.fga.writeTuples([
+      {
+        user: this.fga.ref.org(orgId),
+        relation: "org",
+        object: this.fga.ref.project(row.id),
+      },
+      {
+        user: this.fga.ref.user(me.id),
+        relation: "owner",
+        object: this.fga.ref.project(row.id),
+      },
     ]);
-    return this.toDto(row);
+    await this.cache.forOrg(orgId).del(STATS_KEY);
+    return this.toDto(row, { canUpdate: true, canDelete: true });
   }
 
   async update(input: UpdateInput): Promise<Project> {
-    const updated = await this.dbService.tenant(async (db) => {
-      const row = await this.findRow(db, input.id);
-      if (!currentAbility().can("update", asSubject("Project", { ...row }))) {
-        throw forbidden("update", "Project");
-      }
+    const row = await this.dbService.tenant((db) => this.findRow(db, input.id));
+    if (!(await this.can("can_update", row.id))) {
+      throw forbidden("update", "Project");
+    }
 
-      const patch: Partial<
-        Pick<ProjectRow, "name" | "description" | "status">
-      > = {};
-      if (input.name !== undefined) {
-        patch.name = input.name;
-      }
-      if (input.description !== undefined) {
-        patch.description = input.description;
-      }
-      if (input.status !== undefined) {
-        patch.status = input.status;
-      }
-      if (Object.keys(patch).length === 0) {
-        return row;
-      }
-
-      const [next] = await db
-        .update(project)
-        .set(patch)
-        .where(eq(project.id, input.id))
-        .returning();
-      if (!next) {
-        throw notFound("Project");
-      }
-      return next;
-    });
+    const patch: Partial<Pick<ProjectRow, "name" | "description" | "status">> =
+      {};
+    if (input.name !== undefined) {
+      patch.name = input.name;
+    }
+    if (input.description !== undefined) {
+      patch.description = input.description;
+    }
+    if (input.status !== undefined) {
+      patch.status = input.status;
+    }
+    const updated =
+      Object.keys(patch).length === 0
+        ? row
+        : await this.dbService.tenant(async (db) => {
+            const [next] = await db
+              .update(project)
+              .set(patch)
+              .where(eq(project.id, input.id))
+              .returning();
+            if (!next) {
+              throw notFound("Project");
+            }
+            return next;
+          });
     await this.cache.forOrg(updated.organizationId).del(STATS_KEY);
-    return this.toDto(updated);
+    const flags = await this.flagsFor([updated]);
+    return this.toDto(updated, flags.get(updated.id));
   }
 
   async remove(id: string): Promise<{ id: string }> {
-    const { row, members } = await this.dbService.tenant(async (db) => {
-      const found = await this.findRow(db, id);
-      if (!currentAbility().can("delete", asSubject("Project", { ...found }))) {
-        throw forbidden("delete", "Project");
-      }
-      const memberRows = await this.memberRows(db, id);
-      // FK cascade removes the membership rows with the project.
-      await db.delete(project).where(eq(project.id, id));
-      return { row: found, members: memberRows };
-    });
-    await Promise.all([
-      this.cache.forOrg(row.organizationId).del(STATS_KEY),
-      ...members.map((member) =>
-        this.abilityFactory.invalidateUser(member.userId)
-      ),
-    ]);
+    const row = await this.dbService.tenant((db) => this.findRow(db, id));
+    if (!(await this.can("can_delete", row.id))) {
+      throw forbidden("delete", "Project");
+    }
+    // FK cascade removes the membership rows with the project.
+    await this.dbService.tenant((db) =>
+      db.delete(project).where(eq(project.id, id))
+    );
+    // Drop every tuple attached to the deleted resource (org link and all
+    // owner/editor/viewer relations).
+    await this.fga.deleteObjectTuples(this.fga.ref.project(id));
+    await this.cache.forOrg(row.organizationId).del(STATS_KEY);
     return { id };
   }
 
   async listMembers(projectId: string): Promise<{ members: ProjectMember[] }> {
-    const rows = await this.dbService.tenant(async (db) => {
-      const row = await this.findRow(db, projectId);
-      if (!currentAbility().can("read", asSubject("Project", { ...row }))) {
-        throw forbidden("read", "Project");
-      }
-      return await db
+    const row = await this.dbService.tenant((db) =>
+      this.findRow(db, projectId)
+    );
+    if (!(await this.can("can_read", row.id))) {
+      throw forbidden("read", "Project");
+    }
+    const rows = await this.dbService.tenant((db) =>
+      db
         .select({
           userId: projectMember.userId,
           name: user.name,
@@ -233,8 +246,8 @@ export class ProjectsService {
         })
         .from(projectMember)
         .innerJoin(user, eq(user.id, projectMember.userId))
-        .where(eq(projectMember.projectId, projectId));
-    });
+        .where(eq(projectMember.projectId, projectId))
+    );
     return {
       members: rows.map((member) => ({
         ...member,
@@ -273,7 +286,8 @@ export class ProjectsService {
         });
       return found;
     });
-    await this.abilityFactory.invalidateUser(input.userId);
+    // Mirror the row: exactly one relation tuple per (user, project).
+    await this.syncMemberTuples(input.id, input.userId, input.relation);
     return {
       userId: target.id,
       name: target.name,
@@ -298,7 +312,7 @@ export class ProjectsService {
           )
         );
     });
-    await this.abilityFactory.invalidateUser(input.userId);
+    await this.syncMemberTuples(input.id, input.userId, null);
     return { userId: input.userId };
   }
 
@@ -310,6 +324,62 @@ export class ProjectsService {
     return this.cache
       .forOrg(orgId)
       .getOrSet(STATS_KEY, STATS_TTL_SECONDS, () => this.computeStats(orgId));
+  }
+
+  private can(relation: string, projectId: string): Promise<boolean> {
+    return this.fga.check(
+      this.fga.me(),
+      relation,
+      this.fga.ref.project(projectId)
+    );
+  }
+
+  /** Replace the user's relation tuples on a project (null = remove all). */
+  private async syncMemberTuples(
+    projectId: string,
+    userId: string,
+    relation: ProjectRelation | null
+  ): Promise<void> {
+    const object = this.fga.ref.project(projectId);
+    const subject = this.fga.ref.user(userId);
+    await this.fga.deleteTuples(
+      projectRelations
+        .filter((candidate) => candidate !== relation)
+        .map((candidate) => ({ user: subject, relation: candidate, object }))
+    );
+    if (relation) {
+      await this.fga.writeTuples([{ user: subject, relation, object }]);
+    }
+  }
+
+  /** Row-level UI hints, one BatchCheck for the whole page. */
+  private async flagsFor(rows: ProjectRow[]): Promise<Map<string, RowFlags>> {
+    if (rows.length === 0) {
+      return new Map();
+    }
+    const me = this.fga.me();
+    const checks = rows.flatMap((row) => [
+      {
+        user: me,
+        relation: "can_update",
+        object: this.fga.ref.project(row.id),
+      },
+      {
+        user: me,
+        relation: "can_delete",
+        object: this.fga.ref.project(row.id),
+      },
+    ]);
+    const results = await this.fga.batchCheck(checks);
+    return new Map(
+      rows.map((row, index) => [
+        row.id,
+        {
+          canUpdate: results[index * 2] === true,
+          canDelete: results[index * 2 + 1] === true,
+        },
+      ])
+    );
   }
 
   private async computeStats(orgId: string): Promise<Stats> {
@@ -355,13 +425,13 @@ export class ProjectsService {
     return { total: totals[0]?.value ?? 0, byStatus, createdPerDay };
   }
 
-  /** Membership writes require `manage` on the project (owner or admin). */
+  /** Membership writes require manage rights (owner or admin). */
   private async requireManage(
     db: Database,
     projectId: string
   ): Promise<ProjectRow> {
     const row = await this.findRow(db, projectId);
-    if (!currentAbility().can("manage", asSubject("Project", { ...row }))) {
+    if (!(await this.can("can_manage_members", row.id))) {
       throw forbidden("manage", "Project");
     }
     return row;
@@ -386,16 +456,6 @@ export class ProjectsService {
     if (remaining.length === 0) {
       throw forbidden("remove the last owner of", "Project");
     }
-  }
-
-  private async memberRows(
-    db: Database,
-    projectId: string
-  ): Promise<{ userId: string }[]> {
-    return await db
-      .select({ userId: projectMember.userId })
-      .from(projectMember)
-      .where(eq(projectMember.projectId, projectId));
   }
 
   /** Rows outside the active organization do not exist for this request. */
@@ -439,7 +499,7 @@ export class ProjectsService {
     };
   }
 
-  private toDto(row: ProjectRow): Project {
+  private toDto(row: ProjectRow, flags?: RowFlags): Project {
     return {
       id: row.id,
       name: row.name,
@@ -447,6 +507,8 @@ export class ProjectsService {
       status: row.status,
       organizationId: row.organizationId,
       ownerId: row.ownerId,
+      canUpdate: flags?.canUpdate ?? false,
+      canDelete: flags?.canDelete ?? false,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     };

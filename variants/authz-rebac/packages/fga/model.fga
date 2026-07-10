@@ -1,0 +1,52 @@
+model
+  schema 1.1
+
+# ReBAC variant: access to a project is a relation held on that specific
+# project (owner ⊃ editor ⊃ viewer). Two global roles only — `admin`
+# (bypasses relations) and `member`. Tenants are `org:<organizationId>`.
+type user
+
+type system
+  relations
+    define admin: [user]
+    # Cross-tenant admin surfaces hang off the singleton `system:global`.
+    define can_read_user: admin
+    define can_manage_user: admin
+    define can_manage_organization: admin
+
+type org
+  relations
+    define system: [system]
+    define member: [user]
+    define admin: admin from system
+    # Type-level capabilities checked by @RequirePermission on org routes
+    # and snapshotted by GET /me/permissions for UI gating.
+    define can_read_project: member or admin
+    define can_create_project: member or admin
+    define can_read_file: member or admin
+    define can_create_file: member or admin
+    # Admins list every file in the org; members only their own.
+    define can_read_all_files: admin
+    define can_read_audit_log: admin
+    define can_manage_feature_flag: admin
+
+type project
+  relations
+    define org: [org]
+    # The relation ladder: every owner is an editor, every editor a viewer.
+    define owner: [user]
+    define editor: [user] or owner
+    define viewer: [user] or editor
+    define can_read: viewer or admin from org
+    define can_update: editor or admin from org
+    define can_delete: owner or admin from org
+    define can_manage_members: owner or admin from org
+
+type file
+  relations
+    define org: [org]
+    define owner: [user]
+    define can_read: owner or admin from org
+    define can_delete: owner or admin from org
+
+# fga-generator-marker: new resource types are appended below by `pnpm gen feature`

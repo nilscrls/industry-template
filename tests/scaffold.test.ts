@@ -171,7 +171,14 @@ describe("scaffold", () => {
         path.join(targetDir, "packages/contracts/src/permissions.ts"),
         "utf8"
       )
-    ).toContain("defaultRolePermissions");
+    ).toContain('"manager"');
+    // RBAC flavor of the FGA model: global roles + per-user deny grants.
+    const model = readFileSync(
+      path.join(targetDir, "packages/fga/model.fga"),
+      "utf8"
+    );
+    expect(model).toContain("define manager: [user]");
+    expect(model).toContain("but not denied_read");
     expect(
       readFileSync(path.join(targetDir, "packages/i18n/src/config.ts"), "utf8")
     ).toContain('DEFAULT_LOCALE: Locale = "en"');
@@ -215,13 +222,20 @@ describe("scaffold", () => {
       "utf8"
     );
     expect(permissions).toContain("projectRelations");
-    expect(permissions).not.toContain("defaultRolePermissions");
+    expect(permissions).not.toContain('"manager"');
     expect(
       readFileSync(
         path.join(targetDir, "packages/db/src/schema/permissions.ts"),
         "utf8"
       )
     ).toContain("projectMember");
+    // ReBAC flavor of the FGA model: the owner ⊃ editor ⊃ viewer ladder.
+    const model = readFileSync(
+      path.join(targetDir, "packages/fga/model.fga"),
+      "utf8"
+    );
+    expect(model).toContain("define editor: [user] or owner");
+    expect(model).not.toContain("granted_read");
     // The RBAC migrations are replaced wholesale by the manifest.
     expect(
       readFileSync(
@@ -487,7 +501,7 @@ describe("scaffold", () => {
       "utf8"
     );
     expect(permissions).toContain("projectRelations");
-    expect(permissions).not.toContain("defaultRolePermissions");
+    expect(permissions).not.toContain('"manager"');
     expect(
       readFileSync(
         path.join(targetDir, "packages/db/drizzle/0001_init.sql"),
