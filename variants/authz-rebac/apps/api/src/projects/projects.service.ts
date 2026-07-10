@@ -43,10 +43,8 @@ type ProjectRow = typeof project.$inferSelect;
 
 const STATS_TTL_SECONDS = 60;
 const STATS_WINDOW_DAYS = 30;
-
-function statsCacheKey(organizationId: string): string {
-  return `projects:stats:${organizationId}`;
-}
+// Scoped through cache.forOrg(orgId), so the full key carries the tenant id.
+const STATS_KEY = "projects:stats";
 
 @Injectable()
 export class ProjectsService {
@@ -150,7 +148,7 @@ export class ProjectsService {
       return created;
     });
     await Promise.all([
-      this.cache.del(statsCacheKey(orgId)),
+      this.cache.forOrg(orgId).del(STATS_KEY),
       this.abilityFactory.invalidateUser(me.id),
     ]);
     return this.toDto(row);
@@ -185,7 +183,7 @@ export class ProjectsService {
     if (!updated) {
       throw notFound("Project");
     }
-    await this.cache.del(statsCacheKey(row.organizationId));
+    await this.cache.forOrg(row.organizationId).del(STATS_KEY);
     return this.toDto(updated);
   }
 
@@ -198,7 +196,7 @@ export class ProjectsService {
     // FK cascade removes the membership rows with the project.
     await this.db.delete(project).where(eq(project.id, id));
     await Promise.all([
-      this.cache.del(statsCacheKey(row.organizationId)),
+      this.cache.forOrg(row.organizationId).del(STATS_KEY),
       ...members.map((member) =>
         this.abilityFactory.invalidateUser(member.userId)
       ),
@@ -288,9 +286,9 @@ export class ProjectsService {
     if (!orgId) {
       return Promise.resolve(this.emptyStats());
     }
-    return this.cache.getOrSet(statsCacheKey(orgId), STATS_TTL_SECONDS, () =>
-      this.computeStats(orgId)
-    );
+    return this.cache
+      .forOrg(orgId)
+      .getOrSet(STATS_KEY, STATS_TTL_SECONDS, () => this.computeStats(orgId));
   }
 
   private async computeStats(orgId: string): Promise<Stats> {

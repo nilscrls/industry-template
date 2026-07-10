@@ -2,6 +2,7 @@ import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import type { Auth } from "@repo/auth";
 import { toNodeHandler } from "better-auth/node";
+import type { NextFunction, Request, Response } from "express";
 import helmet from "helmet";
 import { Logger } from "nestjs-pino";
 import { AppModule } from "./app.module";
@@ -47,6 +48,15 @@ export async function createApp(): Promise<NestExpressApplication> {
       referrerPolicy: { policy: "no-referrer" },
     })
   );
+  // Authenticated JSON by default: a shared cache (CDN, proxy) must never
+  // store a response — a cached response served to the wrong user is an
+  // IDOR. Public endpoints opt out explicitly with @Header("Cache-Control").
+  // Express-level (not a Nest interceptor) so the Better-Auth handler
+  // mounted below is covered too.
+  app.use((_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader("Cache-Control", "private, no-store");
+    next();
+  });
   // CSRF: SameSite=Lax cookies + Better-Auth trustedOrigins already cover
   // most vectors; this rejects any cross-origin write that slips through.
   app.use(originCheckMiddleware);

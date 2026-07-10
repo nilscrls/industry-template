@@ -162,6 +162,25 @@ describe("api integration", () => {
     expect(response.body.status).toBe("ok");
   });
 
+  it("defaults every response to no-store, with an explicit public opt-in for docs", async () => {
+    // Authenticated JSON must never be stored by a shared cache (IDOR).
+    const authed = await request(server).get("/projects");
+    expect(authed.headers["cache-control"]).toBe("private, no-store");
+
+    // The Express-mounted Better-Auth handler is covered too.
+    const auth = await request(server).post("/auth/sign-in/email").send({});
+    expect(auth.headers["cache-control"]).toBe("private, no-store");
+
+    // Health stays no-store: monitors must see fresh state.
+    const health = await request(server).get("/health/ready");
+    expect(health.headers["cache-control"]).toBe("private, no-store");
+
+    // openapi.json is caller-independent and opts into public caching.
+    const docs = await request(server).get("/openapi.json");
+    expect(docs.status).toBe(200);
+    expect(docs.headers["cache-control"]).toBe("public, max-age=300");
+  });
+
   it("serializes unauthenticated access with a typed error code", async () => {
     const response = await request(server).get("/projects");
     expect(response.status).toBe(401);

@@ -27,7 +27,18 @@ const nextConfig: NextConfig = {
   // Workspace packages ship TypeScript source — Next compiles them in-place.
   transpilePackages: ["@repo/i18n", "@repo/ui"],
   async headers() {
-    return [{ source: "/(.*)", headers: securityHeaders }];
+    return [
+      { source: "/(.*)", headers: securityHeaders },
+      // Defense in depth: /api/* proxies authenticated JSON to the API,
+      // which already sends no-store — pin it here too so a shared cache
+      // can never store a response even if the API header regresses. In
+      // production the reverse proxy routes /api directly to the API,
+      // where per-endpoint opt-ins (e.g. openapi.json) still apply.
+      {
+        source: "/api/:path*",
+        headers: [{ key: "Cache-Control", value: "private, no-store" }],
+      },
+    ];
   },
   async rewrites() {
     // Same-origin API: the browser only ever talks to /api/* on this host.

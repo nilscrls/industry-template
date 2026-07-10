@@ -18,6 +18,8 @@ import { DbService } from "../db/db.module";
 import { CacheService } from "../redis/cache.service";
 
 const RULES_TTL_SECONDS = 300;
+// Scoped through cache.forUser(userId), so the full key carries the user id.
+const MEMBERSHIP_RULES_KEY = "perm:memberships";
 
 interface PermissionSource {
   id: string;
@@ -52,18 +54,18 @@ export class AbilityFactory {
 
   /** Call after any membership write — the user's grants changed. */
   invalidateUser(userId: string): Promise<void> {
-    return this.cache.del(this.userKey(userId));
+    return this.cache.forUser(userId).del(MEMBERSHIP_RULES_KEY);
   }
 
   private async rulesFor(user: PermissionSource): Promise<PermissionRule[]> {
     if (user.role === "admin") {
       return adminPermissions;
     }
-    const membershipRules = await this.cache.getOrSet(
-      this.userKey(user.id),
-      RULES_TTL_SECONDS,
-      () => this.loadMembershipRules(user.id)
-    );
+    const membershipRules = await this.cache
+      .forUser(user.id)
+      .getOrSet(MEMBERSHIP_RULES_KEY, RULES_TTL_SECONDS, () =>
+        this.loadMembershipRules(user.id)
+      );
     return resolveRules(baselinePermissions, membershipRules);
   }
 
@@ -83,7 +85,4 @@ export class AbilityFactory {
     );
   }
 
-  private userKey(userId: string): string {
-    return `perm:user:${userId}`;
-  }
 }

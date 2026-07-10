@@ -10,26 +10,36 @@ let getOrSet: ReturnType<typeof vi.fn>;
 let del: ReturnType<typeof vi.fn>;
 let factory: AbilityFactory;
 
+/**
+ * Fake scoped cache: every call is recorded as `<scope>|<key>` so the tests
+ * assert both the scope and the key. The cache always "hits", so the
+ * DbService loaders are never touched.
+ */
+function mockCache() {
+  getOrSet = vi.fn((scopedKey: string) =>
+    Promise.resolve(scopedKey.includes("perm:role:") ? roleRules : overrides)
+  );
+  del = vi.fn().mockResolvedValue(undefined);
+  const scoped = (prefix: string) => ({
+    getOrSet: (key: string, ttl: number, factoryFn: () => unknown) =>
+      getOrSet(`${prefix}|${key}`, ttl, factoryFn),
+    del: (key: string) => del(`${prefix}|${key}`),
+  });
+  return {
+    forUser: (id: string) => scoped(`user:${id}`),
+    forOrg: (id: string) => scoped(`org:${id}`),
+    global: () => scoped("global"),
+  } as unknown as CacheService;
+}
+
 beforeEach(() => {
   roleRules = [];
   overrides = [];
-  // The real getOrSet would fall back to the DbService loaders; here the
-  // cache always "hits", so the DB is never touched.
-  getOrSet = vi.fn((key: string) =>
-    Promise.resolve(key.startsWith("perm:role:") ? roleRules : overrides)
-  );
-  del = vi.fn().mockResolvedValue(undefined);
-  factory = new AbilityFactory(
-    {} as unknown as DbService,
-    {
-      getOrSet,
-      del,
-    } as unknown as CacheService
-  );
+  factory = new AbilityFactory({} as unknown as DbService, mockCache());
 });
 
 describe("AbilityFactory.abilityFor", () => {
-  it("builds an ability from the role rules keyed and TTL'd per role and user", async () => {
+  it("builds an ability from role rules (global scope) and overrides (user scope)", async () => {
     roleRules = [{ action: "manage", subject: "all" }];
     const ability = await factory.abilityFor({ id: "user-1", role: "admin" });
 
@@ -37,12 +47,12 @@ describe("AbilityFactory.abilityFor", () => {
     expect(ability.can("delete", "User")).toBe(true);
 
     expect(getOrSet).toHaveBeenCalledWith(
-      "perm:role:admin",
+      "global|perm:role:admin",
       300,
       expect.any(Function)
     );
     expect(getOrSet).toHaveBeenCalledWith(
-      "perm:user:user-1",
+      "user:user-1|perm:overrides",
       300,
       expect.any(Function)
     );
@@ -84,11 +94,11 @@ describe("AbilityFactory.resolvedRulesFor", () => {
 describe("AbilityFactory cache invalidation", () => {
   it("evicts the per-user override cache", async () => {
     await factory.invalidateUser("user-1");
-    expect(del).toHaveBeenCalledWith("perm:user:user-1");
+    expect(del).toHaveBeenCalledWith("user:user-1|perm:overrides");
   });
 
   it("evicts the per-role cache", async () => {
     await factory.invalidateRole("manager");
-    expect(del).toHaveBeenCalledWith("perm:role:manager");
+    expect(del).toHaveBeenCalledWith("global|perm:role:manager");
   });
 });

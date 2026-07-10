@@ -12,6 +12,11 @@ import { DbService } from "../db/db.module";
 import { CacheService } from "../redis/cache.service";
 
 const RULES_TTL_SECONDS = 300;
+const PERM_OVERRIDES_KEY = "perm:overrides";
+
+function roleRulesKey(role: string): string {
+  return `perm:role:${role}`;
+}
 
 interface PermissionSource {
   id: string;
@@ -45,21 +50,27 @@ export class AbilityFactory {
   }
 
   invalidateUser(userId: string): Promise<void> {
-    return this.cache.del(this.userKey(userId));
+    return this.cache.forUser(userId).del(PERM_OVERRIDES_KEY);
   }
 
   invalidateRole(role: string): Promise<void> {
-    return this.cache.del(this.roleKey(role));
+    return this.cache.global().del(roleRulesKey(role));
   }
 
   private async rulesFor(user: PermissionSource): Promise<PermissionRule[]> {
     const [roleRules, overrides] = await Promise.all([
-      this.cache.getOrSet(this.roleKey(user.role), RULES_TTL_SECONDS, () =>
-        this.loadRoleRules(user.role)
-      ),
-      this.cache.getOrSet(this.userKey(user.id), RULES_TTL_SECONDS, () =>
-        this.loadOverrides(user.id)
-      ),
+      // Role rule sets are identical for every user with the role — the one
+      // legitimate use of the global cache scope.
+      this.cache
+        .global()
+        .getOrSet(roleRulesKey(user.role), RULES_TTL_SECONDS, () =>
+          this.loadRoleRules(user.role)
+        ),
+      this.cache
+        .forUser(user.id)
+        .getOrSet(PERM_OVERRIDES_KEY, RULES_TTL_SECONDS, () =>
+          this.loadOverrides(user.id)
+        ),
     ]);
     return resolveRules(roleRules, overrides);
   }
@@ -94,11 +105,4 @@ export class AbilityFactory {
     });
   }
 
-  private roleKey(role: string): string {
-    return `perm:role:${role}`;
-  }
-
-  private userKey(userId: string): string {
-    return `perm:user:${userId}`;
-  }
 }

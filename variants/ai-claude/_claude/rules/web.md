@@ -31,3 +31,7 @@ paths:
   against the api.
 - Toasts: sonner. Icons: lucide-react. Theming: next-themes — style both
   light and dark.
+- Never cache per-user or per-tenant data in Next (`"use cache"`,
+  `unstable_cache`, fetch cache, ISR): all authed data flows through
+  TanStack Query client-side. If you add a server-side cache for public
+  data, its key must include every input that changes the output.
