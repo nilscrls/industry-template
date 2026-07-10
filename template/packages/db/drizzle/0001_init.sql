@@ -119,26 +119,6 @@ CREATE TABLE "organization" (
 	CONSTRAINT "organization_slug_unique" UNIQUE("slug")
 );
 --> statement-breakpoint
-CREATE TABLE "role_permission" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"role" text NOT NULL,
-	"action" text NOT NULL,
-	"subject" text NOT NULL,
-	"conditions" jsonb,
-	"inverted" boolean DEFAULT false NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE "user_permission_override" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"user_id" text NOT NULL,
-	"action" text NOT NULL,
-	"subject" text NOT NULL,
-	"conditions" jsonb,
-	"inverted" boolean DEFAULT false NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
-);
---> statement-breakpoint
 CREATE TABLE "project" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"name" varchar(120) NOT NULL,
@@ -162,7 +142,6 @@ ALTER TABLE "invitation" ADD CONSTRAINT "invitation_organization_id_organization
 ALTER TABLE "invitation" ADD CONSTRAINT "invitation_inviter_id_user_id_fk" FOREIGN KEY ("inviter_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "member" ADD CONSTRAINT "member_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "member" ADD CONSTRAINT "member_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "user_permission_override" ADD CONSTRAINT "user_permission_override_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "project" ADD CONSTRAINT "project_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "project" ADD CONSTRAINT "project_owner_id_user_id_fk" FOREIGN KEY ("owner_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "audit_log_organization_id_index" ON "audit_log" USING btree ("organization_id");--> statement-breakpoint
@@ -179,8 +158,6 @@ CREATE INDEX "invitation_organization_id_index" ON "invitation" USING btree ("or
 CREATE INDEX "invitation_email_index" ON "invitation" USING btree ("email");--> statement-breakpoint
 CREATE INDEX "member_organization_id_index" ON "member" USING btree ("organization_id");--> statement-breakpoint
 CREATE INDEX "member_user_id_index" ON "member" USING btree ("user_id");--> statement-breakpoint
-CREATE INDEX "role_permission_role_index" ON "role_permission" USING btree ("role");--> statement-breakpoint
-CREATE INDEX "user_permission_override_user_id_index" ON "user_permission_override" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "project_organization_id_index" ON "project" USING btree ("organization_id");--> statement-breakpoint
 CREATE INDEX "project_owner_id_index" ON "project" USING btree ("owner_id");--> statement-breakpoint
 CREATE INDEX "project_status_index" ON "project" USING btree ("status");--> statement-breakpoint

@@ -11,6 +11,11 @@ export interface DeletedUser {
   id: string;
 }
 
+export interface MembershipEvent {
+  organizationId: string;
+  userId: string;
+}
+
 export interface AuthEmail {
   to: string;
   type: "verify-email" | "reset-password";
@@ -57,6 +62,14 @@ export interface CreateAuthOptions {
    * organizations first").
    */
   onBeforeUserDelete?: (user: DeletedUser) => Promise<void>;
+  /**
+   * Membership lifecycle callbacks — the api mirrors them into OpenFGA
+   * tuples. Seeds pass nothing and run `pnpm fga:sync` instead.
+   */
+  onMemberAdded?: (event: MembershipEvent) => Promise<void>;
+  onMemberRemoved?: (event: MembershipEvent) => Promise<void>;
+  onOrganizationCreated?: (event: MembershipEvent) => Promise<void>;
+  onOrganizationDeleted?: (event: { organizationId: string }) => Promise<void>;
   requireEmailVerification?: boolean;
   /** Redis-backed session/rate-limit storage — recommended in production. */
   secondaryStorage?: SecondaryStorage;
@@ -172,7 +185,33 @@ export function createAuth(options: CreateAuthOptions) {
     },
     plugins: [
       admin({ defaultRole: "member", adminRoles: ["admin"] }),
-      organization(),
+      organization({
+        organizationHooks: {
+          afterCreateOrganization: async ({ organization, user }) => {
+            await options.onOrganizationCreated?.({
+              organizationId: organization.id,
+              userId: user.id,
+            });
+          },
+          afterDeleteOrganization: async ({ organization }) => {
+            await options.onOrganizationDeleted?.({
+              organizationId: organization.id,
+            });
+          },
+          afterAddMember: async ({ member }) => {
+            await options.onMemberAdded?.({
+              organizationId: member.organizationId,
+              userId: member.userId,
+            });
+          },
+          afterRemoveMember: async ({ member }) => {
+            await options.onMemberRemoved?.({
+              organizationId: member.organizationId,
+              userId: member.userId,
+            });
+          },
+        },
+      }),
       // Opt-in per user (TOTP + backup codes); nothing is gated on it.
       twoFactor(),
     ],

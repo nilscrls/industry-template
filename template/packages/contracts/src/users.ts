@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { base } from "./base.js";
 import { paginatedSchema, paginationQuerySchema } from "./pagination.js";
-import { permissionRuleSchema, roleSchema } from "./permissions.js";
+import {
+  grantSchema,
+  permissionSnapshotSchema,
+  roleSchema,
+} from "./permissions.js";
 
 export const userSchema = z.object({
   id: z.string(),
@@ -37,37 +41,35 @@ export const usersContract = {
     .input(z.object({ id: z.string(), role: roleSchema }))
     .output(userSchema),
 
-  getPermissionOverrides: base
+  getGrants: base
     .route({
       method: "GET",
-      path: "/users/{id}/permission-overrides",
-      summary: "Read per-user permission overrides",
+      path: "/users/{id}/grants",
+      summary: "Read per-user resource grants",
       tags: ["users"],
     })
     .input(z.object({ id: z.string() }))
-    .output(z.object({ overrides: z.array(permissionRuleSchema) })),
+    .output(z.object({ grants: z.array(grantSchema) })),
 
-  setPermissionOverrides: base
+  setGrants: base
     .route({
       method: "PUT",
-      path: "/users/{id}/permission-overrides",
-      summary: "Replace per-user permission overrides",
+      path: "/users/{id}/grants",
+      summary: "Replace per-user resource grants",
       tags: ["users"],
     })
-    .input(
-      z.object({ id: z.string(), overrides: z.array(permissionRuleSchema) })
-    )
-    .output(z.object({ overrides: z.array(permissionRuleSchema) })),
+    .input(z.object({ id: z.string(), grants: z.array(grantSchema).max(200) }))
+    .output(z.object({ grants: z.array(grantSchema) })),
 };
 
 export const meContract = {
-  /** Fully resolved rules (role defaults ⊕ overrides, placeholders interpolated). */
+  /** Capability snapshot (FGA ListRelations) — powers web UI gating. */
   permissions: base
     .route({
       method: "GET",
       path: "/me/permissions",
-      summary: "My effective permissions",
+      summary: "My effective capabilities",
       tags: ["me"],
     })
-    .output(z.object({ rules: z.array(permissionRuleSchema) })),
+    .output(permissionSnapshotSchema),
 };

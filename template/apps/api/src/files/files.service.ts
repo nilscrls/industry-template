@@ -1,16 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { Injectable } from "@nestjs/common";
-import { asSubject } from "@repo/auth";
 import type { FileObject, Paginated, PaginationQuery } from "@repo/contracts";
 import { fileObject } from "@repo/db";
 import { and, count, desc, eq, ilike } from "drizzle-orm";
 import { forbidden, notFound } from "../common/app-error";
-import {
-  activeOrganizationId,
-  currentAbility,
-  currentUser,
-} from "../common/request-context";
+import { activeOrganizationId, currentUser } from "../common/request-context";
 import { DbService } from "../db/db.module";
+import { FgaService } from "../fga/fga.service";
 import {
   PRESIGN_TTL_SECONDS,
   StorageService,
@@ -24,7 +20,8 @@ type FileRow = typeof fileObject.$inferSelect;
 export class FilesService {
   constructor(
     private readonly dbService: DbService,
-    private readonly storage: StorageService
+    private readonly storage: StorageService,
+    private readonly fga: FgaService
   ) {}
 
   async list(query: ListQuery): Promise<Paginated<FileObject>> {
@@ -39,11 +36,12 @@ export class FilesService {
         totalPages: 0,
       };
     }
-    // Probe with a foreign owner: true only for unconditional read rules
-    // (admin/manager). Owner-conditioned roles get scoped to their own rows.
-    const readsAll = currentAbility().can(
-      "read",
-      asSubject("File", { ownerId: `__not__${user.id}` })
+    // Managers/admins list every file in the org; members only their own
+    // (see can_read_all_files in packages/fga/model.fga).
+    const readsAll = await this.fga.check(
+      this.fga.me(),
+      "can_read_all_files",
+      this.fga.ref.org(orgId)
     );
     const where = and(
       eq(fileObject.organizationId, orgId),
@@ -104,6 +102,21 @@ export class FilesService {
       return created;
     });
 
+    // Tuples AFTER the DB commit (Postgres is the source of truth). A
+    // failure here surfaces as a 500 — rerun `pnpm fga:sync` to reconcile.
+    await this.fga.writeTuples([
+      {
+        user: this.fga.ref.org(orgId),
+        relation: "org",
+        object: this.fga.ref.file(row.id),
+      },
+      {
+        user: this.fga.ref.user(user.id),
+        relation: "owner",
+        object: this.fga.ref.file(row.id),
+      },
+    ]);
+
     const uploadUrl = await this.storage.presignUpload(
       storageKey,
       input.contentType
@@ -118,7 +131,12 @@ export class FilesService {
 
   async presignDownload(id: string) {
     const row = await this.findRow(id);
-    if (!currentAbility().can("read", asSubject("File", { ...row }))) {
+    const canRead = await this.fga.check(
+      this.fga.me(),
+      "can_read",
+      this.fga.ref.file(row.id)
+    );
+    if (!canRead) {
       throw forbidden("read", "File");
     }
     const downloadUrl = await this.storage.presignDownload(
@@ -130,13 +148,19 @@ export class FilesService {
 
   async remove(id: string): Promise<{ id: string }> {
     const row = await this.findRow(id);
-    if (!currentAbility().can("delete", asSubject("File", { ...row }))) {
+    const canDelete = await this.fga.check(
+      this.fga.me(),
+      "can_delete",
+      this.fga.ref.file(row.id)
+    );
+    if (!canDelete) {
       throw forbidden("delete", "File");
     }
     await this.storage.deleteObject(row.storageKey);
     await this.dbService.tenant((db) =>
       db.delete(fileObject).where(eq(fileObject.id, id))
     );
+    await this.fga.deleteObjectTuples(this.fga.ref.file(id));
     return { id };
   }
 

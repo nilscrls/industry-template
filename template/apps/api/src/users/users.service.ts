@@ -1,28 +1,36 @@
 import { Injectable } from "@nestjs/common";
 import {
+  type Grant,
+  type GrantRelation,
+  grantRelations,
+  type OrgCapability,
+  orgCapabilities,
   type Paginated,
   type PaginationQuery,
-  type PermissionRule,
-  permissionRuleSchema,
+  type PermissionSnapshot,
   type Role,
   roleSchema,
+  type SystemCapability,
+  systemCapabilities,
   type User,
 } from "@repo/contracts";
-import { user, userPermissionOverride } from "@repo/db";
+import { user } from "@repo/db";
 import { count, desc, eq, ilike, or } from "drizzle-orm";
-import { AbilityFactory } from "../auth/ability.factory";
 import { notFound } from "../common/app-error";
-import { currentUser } from "../common/request-context";
+import { activeOrganizationId } from "../common/request-context";
 import { DbService } from "../db/db.module";
+import { FgaService } from "../fga/fga.service";
 
 type ListQuery = PaginationQuery & { search?: string | undefined };
 type UserRow = typeof user.$inferSelect;
+
+const GRANT_RELATIONS = new Set<string>(grantRelations);
 
 @Injectable()
 export class UsersService {
   constructor(
     private readonly dbService: DbService,
-    private readonly abilityFactory: AbilityFactory
+    private readonly fga: FgaService
   ) {}
 
   private get db() {
@@ -70,62 +78,90 @@ export class UsersService {
     if (!updated) {
       throw notFound("User");
     }
-    await this.abilityFactory.invalidateUser(input.id);
+    // Mirror the role into FGA system tuples (write after the DB commit;
+    // pnpm fga:sync reconciles if this write is lost).
+    const subject = this.fga.ref.user(input.id);
+    const systemObj = this.fga.ref.system();
+    const current = await this.fga.readUserTuples(
+      subject,
+      new Set(["admin", "manager"])
+    );
+    await this.fga.deleteTuples(
+      current.filter(
+        (tuple) => tuple.object === systemObj && tuple.relation !== input.role
+      )
+    );
+    if (
+      (input.role === "admin" || input.role === "manager") &&
+      !current.some(
+        (tuple) => tuple.object === systemObj && tuple.relation === input.role
+      )
+    ) {
+      await this.fga.writeTuples([
+        { user: subject, relation: input.role, object: systemObj },
+      ]);
+    }
     return this.toDto(updated);
   }
 
-  async getPermissionOverrides(
-    id: string
-  ): Promise<{ overrides: PermissionRule[] }> {
+  /** Per-user resource grants — stored as FGA tuples, nothing in the DB. */
+  async getGrants(id: string): Promise<{ grants: Grant[] }> {
     await this.findRow(id);
-    const rows = await this.db
-      .select()
-      .from(userPermissionOverride)
-      .where(eq(userPermissionOverride.userId, id));
+    const tuples = await this.fga.readUserTuples(
+      this.fga.ref.user(id),
+      GRANT_RELATIONS
+    );
     return {
-      overrides: rows.map((row) =>
-        permissionRuleSchema.parse({
-          action: row.action,
-          subject: row.subject,
-          conditions: row.conditions ?? undefined,
-          inverted: row.inverted,
-        })
-      ),
+      grants: tuples.map((tuple) => ({
+        object: tuple.object,
+        relation: tuple.relation as GrantRelation,
+      })),
     };
   }
 
-  async setPermissionOverrides(input: {
+  async setGrants(input: {
     id: string;
-    overrides: PermissionRule[];
-  }): Promise<{ overrides: PermissionRule[] }> {
+    grants: Grant[];
+  }): Promise<{ grants: Grant[] }> {
     await this.findRow(input.id);
-    await this.db.transaction(async (tx) => {
-      await tx
-        .delete(userPermissionOverride)
-        .where(eq(userPermissionOverride.userId, input.id));
-      if (input.overrides.length > 0) {
-        await tx.insert(userPermissionOverride).values(
-          input.overrides.map((rule) => ({
-            userId: input.id,
-            action: rule.action,
-            subject: rule.subject,
-            conditions: rule.conditions ?? null,
-            inverted: rule.inverted ?? false,
-          }))
-        );
-      }
-    });
-    await this.abilityFactory.invalidateUser(input.id);
-    return { overrides: input.overrides };
+    const subject = this.fga.ref.user(input.id);
+    const current = await this.fga.readUserTuples(subject, GRANT_RELATIONS);
+    const desired = input.grants.map((grant) => ({
+      user: subject,
+      relation: grant.relation,
+      object: grant.object,
+    }));
+    const key = (tuple: { object: string; relation: string }) =>
+      `${tuple.relation}|${tuple.object}`;
+    const desiredKeys = new Set(desired.map(key));
+    const currentKeys = new Set(current.map(key));
+    await this.fga.deleteTuples(
+      current.filter((tuple) => !desiredKeys.has(key(tuple)))
+    );
+    await this.fga.writeTuples(
+      desired.filter((tuple) => !currentKeys.has(key(tuple)))
+    );
+    return { grants: input.grants };
   }
 
-  myPermissions(): Promise<PermissionRule[]> {
-    const me = currentUser();
-    // Better-Auth's admin plugin types role as optional on the session user.
-    return this.abilityFactory.resolvedRulesFor({
-      id: me.id,
-      role: me.role ?? "member",
-    });
+  /** Capability snapshot for the web app (cosmetic gating; api re-checks). */
+  async myPermissions(): Promise<PermissionSnapshot> {
+    const me = this.fga.me();
+    const orgId = activeOrganizationId();
+    const [org, system] = await Promise.all([
+      orgId
+        ? this.fga.listRelations(me, this.fga.ref.org(orgId), [
+            ...orgCapabilities,
+          ])
+        : Promise.resolve([]),
+      this.fga.listRelations(me, this.fga.ref.system(), [
+        ...systemCapabilities,
+      ]),
+    ]);
+    return {
+      org: org as OrgCapability[],
+      system: system as SystemCapability[],
+    };
   }
 
   private async findRow(id: string): Promise<UserRow> {

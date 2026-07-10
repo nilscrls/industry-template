@@ -1,5 +1,4 @@
 import { Injectable } from "@nestjs/common";
-import { asSubject } from "@repo/auth";
 import {
   type createProjectSchema,
   type listProjectsQuerySchema,
@@ -13,12 +12,9 @@ import { type Database, project } from "@repo/db";
 import { and, asc, count, desc, eq, gte, ilike, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { forbidden, notFound } from "../common/app-error";
-import {
-  activeOrganizationId,
-  currentAbility,
-  currentUser,
-} from "../common/request-context";
+import { activeOrganizationId, currentUser } from "../common/request-context";
 import { DbService } from "../db/db.module";
+import { FgaService } from "../fga/fga.service";
 import { CacheService } from "../redis/cache.service";
 
 type ListQuery = z.infer<typeof listProjectsQuerySchema>;
@@ -32,16 +28,23 @@ const STATS_WINDOW_DAYS = 30;
 // Scoped through cache.forOrg(orgId), so the full key carries the tenant id.
 const STATS_KEY = "projects:stats";
 
+interface RowFlags {
+  canDelete: boolean;
+  canUpdate: boolean;
+}
+
 /**
- * All queries run through dbService.tenant(...) — the RLS context. The
- * explicit organizationId filters stay: RLS is the safety net underneath,
- * not the primary filter (and the filters keep query plans index-friendly).
+ * Authorization is two-layered: OpenFGA row checks here (can_update /
+ * can_delete on `project:<id>`), Postgres RLS underneath via
+ * dbService.tenant(...). The explicit organizationId filters stay — RLS is
+ * the safety net, not the primary filter.
  */
 @Injectable()
 export class ProjectsService {
   constructor(
     private readonly dbService: DbService,
-    private readonly cache: CacheService
+    private readonly cache: CacheService,
+    private readonly fga: FgaService
   ) {}
 
   async list(query: ListQuery): Promise<Paginated<Project>> {
@@ -74,10 +77,11 @@ export class ProjectsService {
         db.select({ value: count() }).from(project).where(where),
       ])
     );
+    const flags = await this.flagsFor(rows);
 
     const total = totals[0]?.value ?? 0;
     return {
-      items: rows.map((row) => this.toDto(row)),
+      items: rows.map((row) => this.toDto(row, flags.get(row.id))),
       total,
       page: query.page,
       pageSize: query.pageSize,
@@ -87,10 +91,18 @@ export class ProjectsService {
 
   async find(id: string): Promise<Project> {
     const row = await this.dbService.tenant((db) => this.findRow(db, id));
-    if (!currentAbility().can("read", asSubject("Project", { ...row }))) {
+    const [canRead] = await this.fga.batchCheck([
+      {
+        user: this.fga.me(),
+        relation: "can_read",
+        object: this.fga.ref.project(row.id),
+      },
+    ]);
+    if (!canRead) {
       throw forbidden("read", "Project");
     }
-    return this.toDto(row);
+    const flags = await this.flagsFor([row]);
+    return this.toDto(row, flags.get(row.id));
   }
 
   async create(input: CreateInput): Promise<Project> {
@@ -99,6 +111,7 @@ export class ProjectsService {
       // Creating requires a tenant to create into.
       throw forbidden("create", "Project");
     }
+    const me = currentUser();
     const row = await this.dbService.tenant(async (db) => {
       const [created] = await db
         .insert(project)
@@ -107,7 +120,7 @@ export class ProjectsService {
           description: input.description ?? null,
           status: input.status,
           organizationId: orgId,
-          ownerId: currentUser().id,
+          ownerId: me.id,
         })
         .returning();
       if (!created) {
@@ -115,56 +128,72 @@ export class ProjectsService {
       }
       return created;
     });
+    // Tuples AFTER the DB commit (Postgres is the source of truth). A
+    // failure here surfaces as a 500 — rerun `pnpm fga:sync` to reconcile.
+    await this.fga.writeTuples([
+      {
+        user: this.fga.ref.org(orgId),
+        relation: "org",
+        object: this.fga.ref.project(row.id),
+      },
+      {
+        user: this.fga.ref.user(me.id),
+        relation: "owner",
+        object: this.fga.ref.project(row.id),
+      },
+    ]);
     await this.cache.forOrg(orgId).del(STATS_KEY);
-    return this.toDto(row);
+    // The creator owns the project — no need to re-ask FGA.
+    return this.toDto(row, { canUpdate: true, canDelete: true });
   }
 
   async update(input: UpdateInput): Promise<Project> {
-    const updated = await this.dbService.tenant(async (db) => {
-      const row = await this.findRow(db, input.id);
-      if (!currentAbility().can("update", asSubject("Project", { ...row }))) {
-        throw forbidden("update", "Project");
-      }
+    const row = await this.dbService.tenant((db) => this.findRow(db, input.id));
+    if (!(await this.can("can_update", row.id))) {
+      throw forbidden("update", "Project");
+    }
 
-      const patch: Partial<
-        Pick<ProjectRow, "name" | "description" | "status">
-      > = {};
-      if (input.name !== undefined) {
-        patch.name = input.name;
-      }
-      if (input.description !== undefined) {
-        patch.description = input.description;
-      }
-      if (input.status !== undefined) {
-        patch.status = input.status;
-      }
-      if (Object.keys(patch).length === 0) {
-        return row;
-      }
-
-      const [next] = await db
-        .update(project)
-        .set(patch)
-        .where(eq(project.id, input.id))
-        .returning();
-      if (!next) {
-        throw notFound("Project");
-      }
-      return next;
-    });
+    const patch: Partial<Pick<ProjectRow, "name" | "description" | "status">> =
+      {};
+    if (input.name !== undefined) {
+      patch.name = input.name;
+    }
+    if (input.description !== undefined) {
+      patch.description = input.description;
+    }
+    if (input.status !== undefined) {
+      patch.status = input.status;
+    }
+    const updated =
+      Object.keys(patch).length === 0
+        ? row
+        : await this.dbService.tenant(async (db) => {
+            const [next] = await db
+              .update(project)
+              .set(patch)
+              .where(eq(project.id, input.id))
+              .returning();
+            if (!next) {
+              throw notFound("Project");
+            }
+            return next;
+          });
     await this.cache.forOrg(updated.organizationId).del(STATS_KEY);
-    return this.toDto(updated);
+    const flags = await this.flagsFor([updated]);
+    return this.toDto(updated, flags.get(updated.id));
   }
 
   async remove(id: string): Promise<{ id: string }> {
-    const row = await this.dbService.tenant(async (db) => {
-      const found = await this.findRow(db, id);
-      if (!currentAbility().can("delete", asSubject("Project", { ...found }))) {
-        throw forbidden("delete", "Project");
-      }
-      await db.delete(project).where(eq(project.id, id));
-      return found;
-    });
+    const row = await this.dbService.tenant((db) => this.findRow(db, id));
+    if (!(await this.can("can_delete", row.id))) {
+      throw forbidden("delete", "Project");
+    }
+    await this.dbService.tenant((db) =>
+      db.delete(project).where(eq(project.id, id))
+    );
+    // Drop every tuple attached to the deleted resource (org link, owner,
+    // any per-user grants).
+    await this.fga.deleteObjectTuples(this.fga.ref.project(id));
     await this.cache.forOrg(row.organizationId).del(STATS_KEY);
     return { id };
   }
@@ -177,6 +206,44 @@ export class ProjectsService {
     return this.cache
       .forOrg(orgId)
       .getOrSet(STATS_KEY, STATS_TTL_SECONDS, () => this.computeStats(orgId));
+  }
+
+  private can(relation: string, projectId: string): Promise<boolean> {
+    return this.fga.check(
+      this.fga.me(),
+      relation,
+      this.fga.ref.project(projectId)
+    );
+  }
+
+  /** Row-level UI hints, one BatchCheck for the whole page. */
+  private async flagsFor(rows: ProjectRow[]): Promise<Map<string, RowFlags>> {
+    if (rows.length === 0) {
+      return new Map();
+    }
+    const me = this.fga.me();
+    const checks = rows.flatMap((row) => [
+      {
+        user: me,
+        relation: "can_update",
+        object: this.fga.ref.project(row.id),
+      },
+      {
+        user: me,
+        relation: "can_delete",
+        object: this.fga.ref.project(row.id),
+      },
+    ]);
+    const results = await this.fga.batchCheck(checks);
+    return new Map(
+      rows.map((row, index) => [
+        row.id,
+        {
+          canUpdate: results[index * 2] === true,
+          canDelete: results[index * 2 + 1] === true,
+        },
+      ])
+    );
   }
 
   private async computeStats(orgId: string): Promise<Stats> {
@@ -263,7 +330,7 @@ export class ProjectsService {
     };
   }
 
-  private toDto(row: ProjectRow): Project {
+  private toDto(row: ProjectRow, flags?: RowFlags): Project {
     return {
       id: row.id,
       name: row.name,
@@ -271,6 +338,8 @@ export class ProjectsService {
       status: row.status,
       organizationId: row.organizationId,
       ownerId: row.ownerId,
+      canUpdate: flags?.canUpdate ?? false,
+      canDelete: flags?.canDelete ?? false,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     };

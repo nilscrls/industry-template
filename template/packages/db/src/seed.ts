@@ -1,45 +1,11 @@
-import { defaultRolePermissions } from "@repo/contracts";
-import { createDb } from "./client.js";
-import { rolePermission } from "./schema/index.js";
-
 /**
- * Baseline seed — safe to run in every environment (idempotent: resets the
- * role baseline to @repo/contracts). Dev fixtures live in @repo/auth
- * (`seed:dev`) because creating users requires Better-Auth's password hasher.
+ * Baseline seed — intentionally a no-op: role baselines live in the OpenFGA
+ * model (`packages/fga/model.fga`), not in database rows. Dev fixtures live
+ * in @repo/auth (`seed:dev`); run `pnpm fga:sync` afterwards so the FGA
+ * store mirrors the database (the root `pnpm db:seed` chains all three).
  */
-async function main(): Promise<void> {
-  // Seeds run as the owner (bypasses RLS) — they legitimately touch every
-  // tenant's rows.
-  const connectionString =
-    process.env.DATABASE_URL_MIGRATIONS ?? process.env.DATABASE_URL;
-  if (!connectionString) {
-    console.error("DATABASE_URL_MIGRATIONS (or DATABASE_URL) is not set");
-    process.exit(1);
-  }
-
-  const { db, pool } = createDb(connectionString);
-  try {
-    await db.transaction(async (tx) => {
-      await tx.delete(rolePermission);
-      const values = Object.entries(defaultRolePermissions).flatMap(
-        ([role, rules]) =>
-          rules.map((rule) => ({
-            role,
-            action: rule.action,
-            subject: rule.subject,
-            conditions: rule.conditions ?? null,
-            inverted: rule.inverted ?? false,
-          }))
-      );
-      await tx.insert(rolePermission).values(values);
-    });
-    console.log("Role permission baseline seeded");
-  } finally {
-    await pool.end();
-  }
+function main(): void {
+  console.log("No database-side permission baseline to seed (OpenFGA owns it)");
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+main();

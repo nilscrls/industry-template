@@ -66,6 +66,40 @@ services:
       "
     restart: "no"
 
+  # OpenFGA — the authorization engine. Its datastore is a dedicated
+  # `openfga` database on the shared postgres (created by init-roles.sh).
+  openfga-migrate:
+    image: openfga/openfga:v1
+    profiles: [dev, all]
+    command: migrate
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgresql://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@postgres:5432/openfga?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  openfga:
+    image: openfga/openfga:v1
+    profiles: [dev, all]
+    restart: unless-stopped
+    command: run
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgresql://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@postgres:5432/openfga?sslmode=disable
+      OPENFGA_AUTHN_METHOD: preshared
+      OPENFGA_AUTHN_PRESHARED_KEYS: ${FGA_API_TOKEN:?declare FGA_API_TOKEN in .env}
+      OPENFGA_PLAYGROUND_ENABLED: "false"
+    depends_on:
+      openfga-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/grpc_health_probe", "-addr=localhost:8081"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   maildev:
     image: maildev/maildev:latest
     profiles: [dev]
@@ -115,6 +149,7 @@ services:
       DATABASE_URL: postgresql://app_user:${APP_USER_PASSWORD:?}@postgres:5432/${POSTGRES_DB:?}
       DATABASE_URL_AUTH: postgresql://app_auth:${APP_AUTH_PASSWORD:?}@postgres:5432/${POSTGRES_DB:?}
       REDIS_URL: redis://redis:6379
+      FGA_API_URL: http://openfga:8080
       S3_ENDPOINT: http://minio:9000
       SMTP_HOST: maildev
       SMTP_PORT: "1025"
@@ -124,6 +159,8 @@ services:
       redis:
         condition: service_healthy
       minio:
+        condition: service_healthy
+      openfga:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully

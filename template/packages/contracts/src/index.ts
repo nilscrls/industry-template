@@ -41,16 +41,21 @@ export {
   sortOrders,
 } from "./pagination.js";
 export {
-  type Action,
-  type AppSubject,
-  actions,
-  defaultRolePermissions,
-  type PermissionRule,
-  permissionRuleSchema,
+  type Grant,
+  type GrantRelation,
+  grantRelations,
+  grantSchema,
+  type OrgCapability,
+  orgCapabilities,
+  type PermissionSnapshot,
+  permissionSnapshotSchema,
+  type Resource,
   type Role,
+  resources,
   roleSchema,
   roles,
-  subjects,
+  type SystemCapability,
+  systemCapabilities,
 } from "./permissions.js";
 export {
   type MeExport,

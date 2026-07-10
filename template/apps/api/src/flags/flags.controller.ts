@@ -2,7 +2,7 @@ import { Controller } from "@nestjs/common";
 import { Implement, implement } from "@orpc/nest";
 import { contract } from "@repo/contracts";
 import { AuditService } from "../audit/audit.service";
-import { RequireAbility } from "../auth/decorators";
+import { RequirePermission } from "../auth/decorators";
 import { FlagsService } from "./flags.service";
 
 @Controller()
@@ -12,14 +12,14 @@ export class FlagsController {
     private readonly audit: AuditService
   ) {}
 
-  /** Admin-only (only `manage all` grants FeatureFlag access by default). */
-  @RequireAbility({ action: "read", subject: "FeatureFlag" })
+  /** Admin-only (see `can_manage_feature_flag` in packages/fga/model.fga). */
+  @RequirePermission({ relation: "can_manage_feature_flag", scope: "org" })
   @Implement(contract.flags.list)
   list() {
     return implement(contract.flags.list).handler(() => this.flags.list());
   }
 
-  @RequireAbility({ action: "update", subject: "FeatureFlag" })
+  @RequirePermission({ relation: "can_manage_feature_flag", scope: "org" })
   @Implement(contract.flags.setOverride)
   setOverride() {
     return implement(contract.flags.setOverride)

@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
 import { type ReactNode, useState } from "react";
 import { ConsentProvider } from "@/components/consent";
-import { AbilityProvider } from "@/lib/ability";
+import { PermissionsProvider } from "@/lib/permissions";
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
@@ -30,10 +30,10 @@ export function Providers({ children }: { children: ReactNode }) {
         enableSystem
       >
         <ConsentProvider>
-          <AbilityProvider>
+          <PermissionsProvider>
             {children}
             <Toaster position="top-center" />
-          </AbilityProvider>
+          </PermissionsProvider>
         </ConsentProvider>
       </ThemeProvider>
     </QueryClientProvider>

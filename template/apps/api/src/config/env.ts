@@ -20,6 +20,13 @@ export const env = createEnv({
     REDIS_URL: z.string().min(1),
     BETTER_AUTH_SECRET: z.string().min(32),
 
+    /** OpenFGA — the authorization engine (hard runtime dependency). */
+    FGA_API_URL: z.url(),
+    FGA_STORE_ID: z.string().min(1),
+    FGA_API_TOKEN: z.string().min(1),
+    /** Pin a model id in production; empty string = latest model. */
+    FGA_MODEL_ID: z.string().optional(),
+
     /** Microsoft Entra ID SSO (OIDC). */
     MICROSOFT_CLIENT_ID: z.string().min(1),
     MICROSOFT_CLIENT_SECRET: z.string().min(1),

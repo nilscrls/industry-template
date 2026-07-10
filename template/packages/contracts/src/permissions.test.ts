@@ -1,54 +1,49 @@
 import { describe, expect, it } from "vitest";
 import {
-  defaultRolePermissions,
-  permissionRuleSchema,
-  roles,
+  grantSchema,
+  orgCapabilities,
+  permissionSnapshotSchema,
+  systemCapabilities,
 } from "./permissions";
 
-describe("defaultRolePermissions", () => {
-  it("defines a baseline for every role", () => {
-    expect(Object.keys(defaultRolePermissions).sort()).toEqual(
-      [...roles].sort()
-    );
-  });
-
-  it("only contains rules that satisfy the serializable rule schema", () => {
-    for (const [role, rules] of Object.entries(defaultRolePermissions)) {
-      for (const rule of rules) {
-        expect(
-          permissionRuleSchema.safeParse(rule).success,
-          `${role}: ${JSON.stringify(rule)}`
-        ).toBe(true);
-      }
-    }
-  });
-
-  it("gives admins blanket manage-all", () => {
-    expect(defaultRolePermissions.admin).toContainEqual({
-      action: "manage",
-      subject: "all",
-    });
-  });
-
-  it("scopes member project mutations to the owner via the ${userId} placeholder", () => {
-    const update = defaultRolePermissions.member.find(
-      (rule) => rule.action === "update" && rule.subject === "Project"
-    );
-    expect(update?.conditions).toEqual({ ownerId: "${userId}" });
-  });
-});
-
-describe("permissionRuleSchema", () => {
-  it("rejects an unknown action", () => {
+describe("grantSchema", () => {
+  it("accepts an FGA object ref with a known relation", () => {
     expect(
-      permissionRuleSchema.safeParse({ action: "yolo", subject: "Project" })
+      grantSchema.safeParse({
+        object: "project:abc-123",
+        relation: "denied_write",
+      }).success
+    ).toBe(true);
+  });
+
+  it("rejects unknown relations", () => {
+    expect(
+      grantSchema.safeParse({ object: "project:abc", relation: "owner" })
         .success
     ).toBe(false);
   });
 
-  it("rejects an unknown subject", () => {
+  it("rejects malformed object refs", () => {
     expect(
-      permissionRuleSchema.safeParse({ action: "read", subject: "Robot" })
+      grantSchema.safeParse({ object: "not a ref", relation: "granted_read" })
+        .success
+    ).toBe(false);
+  });
+});
+
+describe("permissionSnapshotSchema", () => {
+  it("accepts full capability snapshots", () => {
+    expect(
+      permissionSnapshotSchema.safeParse({
+        org: [...orgCapabilities],
+        system: [...systemCapabilities],
+      }).success
+    ).toBe(true);
+  });
+
+  it("rejects capabilities outside the model vocabulary", () => {
+    expect(
+      permissionSnapshotSchema.safeParse({ org: ["can_fly"], system: [] })
         .success
     ).toBe(false);
   });

@@ -23,6 +23,10 @@ export const projectSchema = z.object({
   status: z.enum(projectStatuses),
   organizationId: z.string(),
   ownerId: z.string(),
+  // Row-level UI hints computed server-side (FGA BatchCheck) — cosmetic;
+  // the api re-checks every mutation.
+  canUpdate: z.boolean(),
+  canDelete: z.boolean(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });

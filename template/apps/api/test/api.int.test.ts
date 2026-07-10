@@ -1,15 +1,14 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { defaultRolePermissions } from "@repo/contracts";
 import {
   auditLog,
   createDb,
   member,
   project,
-  rolePermission,
   user,
   withTenant,
 } from "@repo/db";
+import { createFgaClient, loadModelJson, ref } from "@repo/fga";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
@@ -21,16 +20,32 @@ import {
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import request from "supertest";
+import {
+  GenericContainer,
+  type StartedTestContainer,
+  Wait,
+} from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
- * Full-stack integration suite: real Postgres + Redis (Testcontainers), the
- * exact production middleware stack (createApp), HTTP in via supertest.
+ * Full-stack integration suite: real Postgres + Redis + OpenFGA
+ * (Testcontainers), the exact production middleware stack (createApp),
+ * HTTP in via supertest.
  */
 let postgres: StartedPostgreSqlContainer;
 let redis: StartedRedisContainer;
+let openfga: StartedTestContainer;
 let app: Awaited<ReturnType<typeof import("../src/app.setup.js")["createApp"]>>;
 let server: Parameters<typeof request>[0];
+
+/** Operator-style FGA access for test fixtures (mirrors `pnpm fga:sync`). */
+function fgaClient() {
+  return createFgaClient({
+    apiUrl: process.env.FGA_API_URL as string,
+    storeId: process.env.FGA_STORE_ID as string,
+    apiToken: process.env.FGA_API_TOKEN as string,
+  });
+}
 
 // vitest runs with cwd = apps/api
 const MIGRATIONS = path.resolve(process.cwd(), "../../packages/db/drizzle");
@@ -39,9 +54,15 @@ const MIGRATIONS = path.resolve(process.cwd(), "../../packages/db/drizzle");
 let acmeOrgId: string;
 
 beforeAll(async () => {
-  [postgres, redis] = await Promise.all([
+  [postgres, redis, openfga] = await Promise.all([
     new PostgreSqlContainer("postgres:17-alpine").start(),
     new RedisContainer("redis:7-alpine").start(),
+    // In-memory datastore: fast, throwaway, no auth (tests only).
+    new GenericContainer("openfga/openfga:v1")
+      .withCommand(["run"])
+      .withExposedPorts(8080)
+      .withWaitStrategy(Wait.forHttp("/healthz", 8080).forStatusCode(200))
+      .start(),
   ]);
 
   // env.ts reads process.env at import time — set everything first.
@@ -61,6 +82,9 @@ beforeAll(async () => {
   process.env.DATABASE_URL = roleUrl("app_user");
   process.env.DATABASE_URL_AUTH = roleUrl("app_auth");
   process.env.REDIS_URL = redis.getConnectionUrl();
+  process.env.FGA_API_URL = `http://${openfga.getHost()}:${openfga.getMappedPort(8080)}`;
+  process.env.FGA_API_TOKEN = "test-token";
+  process.env.FGA_MODEL_ID = "";
   process.env.BETTER_AUTH_SECRET = "integration-test-secret-0123456789abcdef";
   process.env.MICROSOFT_CLIENT_ID = "test-client-id";
   process.env.MICROSOFT_CLIENT_SECRET = "test-client-secret";
@@ -88,24 +112,26 @@ beforeAll(async () => {
   process.env.LOG_FILE_ENABLED = "false";
   process.env.LOG_DIR = "./logs";
 
-  const { db, pool } = createDb(ownerUrl);
+  const { pool, db } = createDb(ownerUrl);
   await migrate(db, { migrationsFolder: MIGRATIONS });
-  // The grants migration creates the roles NOLOGIN (no init script inside
+  // The roles migration creates them NOLOGIN (no init script inside
   // Testcontainers) — enable them exactly like an operator would.
   await pool.query("ALTER ROLE app_user LOGIN PASSWORD 'app_user'");
   await pool.query("ALTER ROLE app_auth LOGIN PASSWORD 'app_auth'");
-  await db.insert(rolePermission).values(
-    Object.entries(defaultRolePermissions).flatMap(([role, rules]) =>
-      rules.map((rule) => ({
-        role,
-        action: rule.action,
-        subject: rule.subject,
-        conditions: rule.conditions ?? null,
-        inverted: rule.inverted ?? false,
-      }))
-    )
-  );
   await pool.end();
+
+  // Same as `pnpm fga:bootstrap`: create the store + write the model.
+  const admin = createFgaClient({
+    apiUrl: process.env.FGA_API_URL,
+    apiToken: process.env.FGA_API_TOKEN,
+  });
+  const store = await admin.createStore({ name: "integration-tests" });
+  process.env.FGA_STORE_ID = store.id;
+  await createFgaClient({
+    apiUrl: process.env.FGA_API_URL,
+    apiToken: process.env.FGA_API_TOKEN,
+    storeId: store.id,
+  }).writeAuthorizationModel(loadModelJson());
 
   const { createApp } = await import("../src/app.setup.js");
   app = await createApp();
@@ -114,7 +140,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app?.close();
-  await Promise.all([postgres?.stop(), redis?.stop()]);
+  await Promise.all([postgres?.stop(), redis?.stop(), openfga?.stop()]);
 });
 
 async function signUp(name: string, email: string) {
@@ -176,6 +202,15 @@ async function addMemberByEmail(
     role: "member",
   });
   await pool.end();
+  // Direct inserts bypass the Better-Auth hooks — mirror the tuple by hand
+  // (operators would run `pnpm fga:sync`).
+  await fgaClient().writeTuples([
+    {
+      user: ref.user(target.id),
+      relation: "member",
+      object: ref.org(organizationId),
+    },
+  ]);
 }
 
 describe("api integration", () => {
@@ -335,15 +370,23 @@ describe("api integration", () => {
     const noAccess = await eve.get("/users");
     expect(noAccess.status).toBe(403);
 
-    // Promote via db, as an operator would; permissions cache is per-user.
+    // Promote via db + tuple, as an operator would (db row is the source
+    // of truth; the tuple is what fga:sync would derive from it).
     const { db, pool } = createDb(
       process.env.DATABASE_URL_MIGRATIONS as string
     );
-    await db
+    const [eveRow] = await db
       .update(user)
       .set({ role: "admin" })
-      .where(eq(user.email, "eve@example.com"));
+      .where(eq(user.email, "eve@example.com"))
+      .returning({ id: user.id });
     await pool.end();
+    if (!eveRow) {
+      throw new Error("expected eve to exist");
+    }
+    await fgaClient().writeTuples([
+      { user: ref.user(eveRow.id), relation: "admin", object: ref.system() },
+    ]);
 
     // The signed cookie cache still carries the old role — a fresh sign-in
     // picks up the promotion (same as a real user re-logging in).
@@ -357,9 +400,50 @@ describe("api integration", () => {
     expect(access.status).toBe(200);
     expect(access.body.total).toBeGreaterThanOrEqual(5);
 
+    // Capability snapshot straight from FGA — no cache lag on role changes.
     const me = await eveAdmin.get("/me/permissions");
     expect(me.status).toBe(200);
-    expect(me.body.rules.length).toBeGreaterThan(0);
+    expect(me.body.system).toContain("can_manage_user");
+    expect(me.body.system).toContain("can_manage_organization");
+  });
+
+  it("lets admins deny a member's access to a single project", async () => {
+    // Bob is an acme member and can read Alice's project (earlier test).
+    const bob = request.agent(server);
+    await bob
+      .post("/auth/sign-in/email")
+      .send({ email: "bob@example.com", password: "Password123!" });
+    const eveAdmin = request.agent(server);
+    await eveAdmin
+      .post("/auth/sign-in/email")
+      .send({ email: "eve@example.com", password: "Password123!" });
+
+    const projects = await bob.get("/projects");
+    const target = projects.body.items[0];
+    expect(target).toBeTruthy();
+    const before = await bob.get(`/projects/${target.id}`);
+    expect(before.status).toBe(200);
+
+    // Look bob up, then deny him that one project. Deny beats every allow.
+    const users = await eveAdmin.get("/users").query({ search: "bob" });
+    const bobId = users.body.items[0].id;
+    const denied = await eveAdmin.put(`/users/${bobId}/grants`).send({
+      grants: [{ object: `project:${target.id}`, relation: "denied_read" }],
+    });
+    expect(denied.status).toBe(200);
+
+    const after = await bob.get(`/projects/${target.id}`);
+    expect(after.status).toBe(403);
+
+    // Grants are readable and replaceable; clearing restores access.
+    const read = await eveAdmin.get(`/users/${bobId}/grants`);
+    expect(read.body.grants).toContainEqual({
+      object: `project:${target.id}`,
+      relation: "denied_read",
+    });
+    await eveAdmin.put(`/users/${bobId}/grants`).send({ grants: [] });
+    const restored = await bob.get(`/projects/${target.id}`);
+    expect(restored.status).toBe(200);
   });
 
   it("captures mutations in the audit log, visible to admins per tenant", async () => {

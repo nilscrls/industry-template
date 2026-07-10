@@ -1,6 +1,5 @@
 "use client";
 
-import { asSubject } from "@repo/auth/ability";
 import { type Paginated, type Project, projectStatuses } from "@repo/contracts";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
@@ -49,8 +48,8 @@ import { useFormatter, useTranslations } from "next-intl";
 import { useQueryStates } from "nuqs";
 import { type ReactNode, useMemo, useState } from "react";
 import { ProjectFormDialog } from "@/components/projects/project-form-dialog";
-import { useAbility } from "@/lib/ability";
 import { client, orpc } from "@/lib/api";
+import { useCan } from "@/lib/permissions";
 import { useApiErrorMessage, useAppMutation } from "@/lib/use-app-mutation";
 import {
   columnFiltersToParams,
@@ -101,7 +100,7 @@ export default function ProjectsPage() {
   const t = useTranslations("projects");
   const tStatus = useTranslations("projects.status");
   const format = useFormatter();
-  const ability = useAbility();
+  const canCreate = useCan("can_create_project");
   const errorMessage = useApiErrorMessage();
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -207,9 +206,10 @@ export default function ProjectsPage() {
         id: "actions",
         header: "",
         cell: ({ row }) => {
-          const subject = asSubject("Project", { ...row.original });
-          const canUpdate = ability?.can("update", subject) ?? false;
-          const canDelete = ability?.can("delete", subject) ?? false;
+          // Row-level hints computed server-side via OpenFGA (cosmetic; the
+          // api re-checks every mutation).
+          const canUpdate = row.original.canUpdate;
+          const canDelete = row.original.canDelete;
           if (!(canUpdate || canDelete)) {
             return null;
           }
@@ -249,7 +249,7 @@ export default function ProjectsPage() {
         },
       },
     ],
-    [ability, format, removeMutation, t, tStatus]
+    [format, removeMutation, t, tStatus]
   );
 
   // Server-driven table: filtering/sorting/pagination all happen in the API,
@@ -301,7 +301,7 @@ export default function ProjectsPage() {
               ))}
             </SelectContent>
           </Select>
-          {ability?.can("create", "Project") ? (
+          {canCreate ? (
             <Button
               onClick={() => {
                 setEditing(null);

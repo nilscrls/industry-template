@@ -12,7 +12,11 @@ import type { StorageService } from "../storage/storage.service";
  * the user's blob keys — after the deletion the fileObject rows are gone
  * (FK cascade), so the keys must be captured up front.
  */
-export function createUserDeletionHooks(db: Database, storage: StorageService) {
+export function createUserDeletionHooks(
+  db: Database,
+  storage: StorageService,
+  cleanupAuthorization?: (userId: string) => Promise<void>
+) {
   // Keyed by user id: beforeDelete and afterDelete are separate callbacks
   // within one deleteUser call; the map hands the prefetched keys across.
   const pendingBlobKeys = new Map<string, string[]>();
@@ -63,6 +67,8 @@ export function createUserDeletionHooks(db: Database, storage: StorageService) {
       for (const key of keys) {
         await storage.deleteObject(key);
       }
+      // Erasure includes the authorization store (memberships, roles, grants).
+      await cleanupAuthorization?.(user.id);
       // Direct insert (not AuditService.audited): the request context is a
       // Better-Auth route, and the actor no longer exists. Store no personal
       // data — the row documents that an erasure happened, nothing else.

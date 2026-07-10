@@ -2,7 +2,7 @@ import { Controller } from "@nestjs/common";
 import { Implement, implement } from "@orpc/nest";
 import { contract } from "@repo/contracts";
 import { AuditService } from "../audit/audit.service";
-import { RequireAbility } from "../auth/decorators";
+import { RequirePermission } from "../auth/decorators";
 import { ProjectsService } from "./projects.service";
 
 @Controller()
@@ -12,7 +12,7 @@ export class ProjectsController {
     private readonly audit: AuditService
   ) {}
 
-  @RequireAbility({ action: "read", subject: "Project" })
+  @RequirePermission({ relation: "can_read_project", scope: "org" })
   @Implement(contract.projects.list)
   list() {
     return implement(contract.projects.list).handler(({ input }) =>
@@ -20,7 +20,7 @@ export class ProjectsController {
     );
   }
 
-  @RequireAbility({ action: "read", subject: "Project" })
+  @RequirePermission({ relation: "can_read_project", scope: "org" })
   @Implement(contract.projects.stats)
   stats() {
     return implement(contract.projects.stats).handler(() =>
@@ -28,7 +28,7 @@ export class ProjectsController {
     );
   }
 
-  @RequireAbility({ action: "read", subject: "Project" })
+  @RequirePermission({ relation: "can_read_project", scope: "org" })
   @Implement(contract.projects.find)
   find() {
     return implement(contract.projects.find).handler(({ input }) =>
@@ -36,7 +36,7 @@ export class ProjectsController {
     );
   }
 
-  @RequireAbility({ action: "create", subject: "Project" })
+  @RequirePermission({ relation: "can_create_project", scope: "org" })
   @Implement(contract.projects.create)
   create() {
     return implement(contract.projects.create)
@@ -46,8 +46,8 @@ export class ProjectsController {
       .handler(({ input }) => this.projects.create(input));
   }
 
-  // Row-level ownership is enforced in the service (conditions need the row).
-  @RequireAbility({ action: "update", subject: "Project" })
+  // Row-level checks (can_update / can_delete) run in the service via FGA.
+  @RequirePermission({ relation: "can_read_project", scope: "org" })
   @Implement(contract.projects.update)
   update() {
     return implement(contract.projects.update)
@@ -57,7 +57,7 @@ export class ProjectsController {
       .handler(({ input }) => this.projects.update(input));
   }
 
-  @RequireAbility({ action: "delete", subject: "Project" })
+  @RequirePermission({ relation: "can_read_project", scope: "org" })
   @Implement(contract.projects.remove)
   remove() {
     return implement(contract.projects.remove)
