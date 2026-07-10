@@ -191,6 +191,12 @@
     "RATE_LIMITED": "Trop de requêtes — réessayez dans {retryAfterSeconds}s.",
     "INTERNAL": "Une erreur est survenue. Veuillez réessayer."
   },
+  "publicPages": {
+    "backToApp": "Retour à l'application",
+    "changelog": {
+      "title": "Notes de version"
+    }
+  },
   "errorPages": {
     "errorTitle": "Une erreur est survenue",
     "errorDescription": "Une erreur inattendue s'est produite. Notre équipe est notifiée via la trace de requête.",

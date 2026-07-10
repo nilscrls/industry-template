@@ -135,6 +135,12 @@ describe("scaffold", () => {
       "packages/i18n/messages/fr.json",
       "packages/ui/package.json",
       "packages/ui/src/components/button.tsx",
+      "release-please-config.json",
+      ".release-please-manifest.json",
+      ".github/workflows/release-please.yml",
+      "CHANGELOG.md",
+      "apps/web/content/changelog.md",
+      "apps/web/src/app/(public)/changelog/page.tsx",
     ]) {
       expect(existsSync(path.join(targetDir, file)), `missing ${file}`).toBe(
         true
@@ -222,10 +228,18 @@ describe("scaffold", () => {
     expect(
       readFileSync(path.join(targetDir, ".github/workflows/ci.yml"), "utf8")
     ).toContain("branches: [main, develop]");
+    expect(
+      readFileSync(
+        path.join(targetDir, ".github/workflows/release-please.yml"),
+        "utf8"
+      )
+    ).toContain("branches: [main]");
     for (const file of [
       ".github/workflows/ci.yml",
+      ".github/workflows/release-please.yml",
       "README.md",
       "docs/guides.md",
+      "docs/releases.md",
       "CONTRIBUTING.md",
       "AGENTS.md",
     ]) {

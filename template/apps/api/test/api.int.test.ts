@@ -171,9 +171,9 @@ describe("api integration", () => {
     const auth = await request(server).post("/auth/sign-in/email").send({});
     expect(auth.headers["cache-control"]).toBe("private, no-store");
 
-    // Health stays no-store: monitors must see fresh state.
+    // Health stays no-store (Terminus sets its own equivalent header).
     const health = await request(server).get("/health/ready");
-    expect(health.headers["cache-control"]).toBe("private, no-store");
+    expect(health.headers["cache-control"]).toContain("no-store");
 
     // openapi.json is caller-independent and opts into public caching.
     const docs = await request(server).get("/openapi.json");

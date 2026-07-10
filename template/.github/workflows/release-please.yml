@@ -1,0 +1,23 @@
+name: Release Please
+
+# Runs on every push to the production branch (release merges and hotfixes)
+# and maintains a release PR: version bump + changelog from conventional
+# commits. Merging the release PR tags the release.
+on:
+  push:
+    branches: [__PROD_BRANCH__]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      # Note: releases created with GITHUB_TOKEN do not retrigger workflows
+      # on the tag. CI already ran on the release PR, so nothing is lost.
+      - uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

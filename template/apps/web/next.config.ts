@@ -26,6 +26,12 @@ const nextConfig: NextConfig = {
   output: "standalone",
   // Workspace packages ship TypeScript source — Next compiles them in-place.
   transpilePackages: ["@repo/i18n", "@repo/ui"],
+  // Markdown content (changelog, legal pages) is read with fs at request
+  // time — trace it into the standalone output.
+  outputFileTracingIncludes: {
+    "/changelog": ["./content/**"],
+    "/legal/:path*": ["./content/**"],
+  },
   async headers() {
     return [
       { source: "/(.*)", headers: securityHeaders },

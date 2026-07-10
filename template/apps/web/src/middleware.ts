@@ -1,6 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/register", "/two-factor"];
+/** Auth pages: public, but a signed-in user is bounced to the app. */
+const AUTH_PATHS = ["/login", "/register", "/two-factor"];
+/** Truly public pages: reachable signed-in or signed-out. */
+const PUBLIC_PATHS = ["/changelog", "/legal"];
 const SESSION_COOKIES = [
   "better-auth.session_token",
   "__Secure-better-auth.session_token",
@@ -16,15 +19,19 @@ export function middleware(request: NextRequest): NextResponse {
     request.cookies.has(name)
   );
   const isPublic = PUBLIC_PATHS.some((path) => pathname.startsWith(path));
+  const isAuthPage = AUTH_PATHS.some((path) => pathname.startsWith(path));
 
-  if (!(hasSessionCookie || isPublic)) {
+  if (isPublic) {
+    return NextResponse.next();
+  }
+  if (!(hasSessionCookie || isAuthPage)) {
     const login = new URL("/login", request.url);
     if (pathname !== "/") {
       login.searchParams.set("next", pathname);
     }
     return NextResponse.redirect(login);
   }
-  if (hasSessionCookie && isPublic) {
+  if (hasSessionCookie && isAuthPage) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
   return NextResponse.next();

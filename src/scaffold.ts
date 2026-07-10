@@ -169,8 +169,10 @@ const LOCALE_LABELS: Record<LocaleVariant, string> = {
  */
 const PROD_BRANCH_FILES = [
   ".github/workflows/ci.yml",
+  ".github/workflows/release-please.yml",
   "README.md",
   "docs/guides.md",
+  "docs/releases.md",
   "CONTRIBUTING.md",
 ];
 

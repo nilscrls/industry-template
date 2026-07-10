@@ -129,10 +129,23 @@ string; `useAppMutation` already toasts it. Translations live under
 
 ## Caching (Redis)
 
-`CacheService` (`apps/api/src/redis/cache.service.ts`): JSON `get/set/del`
-and `getOrSet(key, ttl, factory)`. Used for dashboard stats (60 s, invalidated
-on project writes) and permission rules (5 min, invalidated on
-role/override changes). Redis also backs sessions, queues and rate limits.
+`CacheService` (`apps/api/src/redis/cache.service.ts`) is scope-first:
+`forOrg(orgId)` / `forUser(userId)` / `global()` return a `ScopedCache`
+(JSON `get/set/del/getOrSet`) whose keys carry the authorization scope —
+unscoped keys (the cache-poisoning / cross-tenant IDOR vector) are
+impossible. Used for dashboard stats (60 s, org-scoped, invalidated on
+project writes) and permission rules (5 min, invalidated on role/override
+changes). HTTP responses default to `Cache-Control: private, no-store`
+(`app.setup.ts`). Redis also backs sessions, queues and rate limits. See
+`docs/guides.md` for the rules.
+
+## Changelog & releases
+
+release-please maintains the version and `apps/web/content/changelog.md`
+from conventional commits (workflow: `.github/workflows/release-please.yml`);
+the app renders it at the public `/changelog` route
+(`apps/web/src/app/(public)/changelog/page.tsx`, react-markdown, server-side).
+Flow and hotfix back-merges: `docs/releases.md`.
 
 ## Logging & tracing
 

@@ -191,6 +191,12 @@
     "RATE_LIMITED": "Too many requests — try again in {retryAfterSeconds}s.",
     "INTERNAL": "Something went wrong. Please try again."
   },
+  "publicPages": {
+    "backToApp": "Back to the app",
+    "changelog": {
+      "title": "Changelog"
+    }
+  },
   "errorPages": {
     "errorTitle": "Something went wrong",
     "errorDescription": "An unexpected error occurred. Our team has been notified via the request trace.",
