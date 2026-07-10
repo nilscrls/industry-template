@@ -303,6 +303,9 @@ export default function ProjectsPage() {
           </Select>
           {canCreate ? (
             <Button
+              // Icon-only below `sm` — the aria-label keeps the accessible
+              // name on every viewport.
+              aria-label={t("createAction")}
               onClick={() => {
                 setEditing(null);
                 setDialogOpen(true);

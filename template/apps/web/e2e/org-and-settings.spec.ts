@@ -24,7 +24,7 @@ test.describe
       await page.goto("/login");
       await page.getByLabel("Email").fill(EMAIL);
       await page.getByLabel("Password").fill(PASSWORD);
-      await page.getByRole("button", { name: "Sign in" }).click();
+      await page.getByRole("button", { name: "Sign in", exact: true }).click();
       await expect(page).toHaveURL(/\/dashboard/);
 
       // The switcher trigger carries an aria-label of the section title.
@@ -44,7 +44,7 @@ test.describe
       await page.goto("/login");
       await page.getByLabel("Email").fill(EMAIL);
       await page.getByLabel("Password").fill(PASSWORD);
-      await page.getByRole("button", { name: "Sign in" }).click();
+      await page.getByRole("button", { name: "Sign in", exact: true }).click();
       await expect(page).toHaveURL(/\/dashboard/);
 
       await page.goto("/settings");
