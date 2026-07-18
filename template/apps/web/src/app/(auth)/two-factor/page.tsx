@@ -18,13 +18,13 @@ import {
   FormMessage,
 } from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
-import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { authClient } from "@/lib/auth-client";
+import { useRouter } from "@/lib/navigation";
 
 const codeSchema = z.object({ code: z.string().min(6).max(32) });
 type CodeValues = z.infer<typeof codeSchema>;

@@ -1,6 +1,6 @@
 import { Button } from "@repo/ui/components/button";
-import Link from "next/link";
 import { useTranslations } from "next-intl";
+import { Link } from "@/lib/navigation";
 
 export default function NotFoundPage() {
   const t = useTranslations("errorPages");
