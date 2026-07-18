@@ -8,8 +8,10 @@ import { type CliFlags, parseArgs } from "./args.js";
 import {
   type AiVariant,
   type AuthzVariant,
+  CI_RELEASE_TOOLS,
   type CiVariant,
   DEFAULT_FEATURE_FLAGS,
+  defaultRelease,
   type FeatureFlag,
   type I18nVariant,
   isDirEmpty,
@@ -18,6 +20,7 @@ import {
   type ObservabilityTool,
   type OrgVariant,
   type ProdBranch,
+  type ReleaseVariant,
   scaffold,
   type UiVariant,
   validateProjectName,
@@ -85,6 +88,7 @@ interface VariantChoices {
   observability: readonly ObservabilityTool[];
   org: OrgVariant;
   prodBranch: ProdBranch;
+  release: ReleaseVariant;
   ui: UiVariant;
 }
 
@@ -113,6 +117,12 @@ async function promptOrFallback<TValue>(
   }
   return answer;
 }
+
+const RELEASE_HINTS: Record<ReleaseVariant, string> = {
+  "release-please": "bot maintains a release PR; merging it tags",
+  "release-it": "run `pnpm release` locally; CI publishes the tag",
+  "commit-and-tag-version": "npx, no devDependencies; CI publishes the tag",
+};
 
 async function promptVariants(flags: CliFlags): Promise<VariantChoices> {
   const ui = await promptOrFallback(flags.ui, flags.yes, "radix", () =>
@@ -273,16 +283,42 @@ async function promptVariants(flags: CliFlags): Promise<VariantChoices> {
         {
           value: "github" as const,
           label: "GitHub Actions",
-          hint: "+ release-please releases",
+          hint: ".github/workflows/",
         },
         {
           value: "gitlab" as const,
           label: "GitLab CI",
-          hint: ".gitlab-ci.yml, manual releases",
+          hint: ".gitlab-ci.yml",
         },
       ],
       initialValue: "github" as const,
     })
+  );
+  // The valid release tools (and the default) depend on the CI provider, so
+  // an explicit --release flag is validated here rather than in parseArgs.
+  if (
+    flags.release !== undefined &&
+    !CI_RELEASE_TOOLS[ci].includes(flags.release)
+  ) {
+    p.cancel(
+      `--release=${flags.release} is not available with ci=${ci} (expected one of: ${CI_RELEASE_TOOLS[ci].join(", ")})`
+    );
+    process.exit(1);
+  }
+  const release = await promptOrFallback(
+    flags.release,
+    flags.yes,
+    defaultRelease(ci),
+    () =>
+      p.select({
+        message: "Release tooling",
+        options: CI_RELEASE_TOOLS[ci].map((tool) => ({
+          value: tool,
+          label: tool,
+          hint: RELEASE_HINTS[tool],
+        })),
+        initialValue: defaultRelease(ci),
+      })
   );
   const backup = await promptOrFallback(flags.backup, flags.yes, true, () =>
     p.confirm({
@@ -332,6 +368,7 @@ async function promptVariants(flags: CliFlags): Promise<VariantChoices> {
     featureFlags,
     logging,
     ci,
+    release,
     backup,
     ai,
     prodBranch,

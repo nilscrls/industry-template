@@ -32,6 +32,7 @@ Maildev UI: <http://localhost:1080> · Minio console: <http://localhost:9001>.
 | [docs/stack.md](docs/stack.md) | every technology, its role, and why it was chosen |
 | [docs/features.md](docs/features.md) | feature-by-feature: where the code lives, how to use it |
 | [docs/guides.md](docs/guides.md) | recipes: add a feature/endpoint/permission/error code/locale/env var/email, conventions |
+| [docs/git-flow.md](docs/git-flow.md) | branching model: production/develop, feature/release/hotfix branches, back-merge rules |
 | [docs/testing.md](docs/testing.md) | test pyramid, TDD loop, integration-test pattern, sharp edges |
 | [docs/deployment.md](docs/deployment.md) | compose profiles, reverse proxy, env matrix, scaling, day-2 ops |
 | [docs/backup.md](docs/backup.md) | db + file backup/restore: pnpm backup:db / backup:files, restore runbook, cron |
@@ -85,7 +86,8 @@ pnpm backup:db / backup:files    # pg_dump + bucket mirror (docs/backup.md)
 git-flow-next branches: `__PROD_BRANCH__` (production), `develop` (integration), `feature/*`,
 `release/*`, `hotfix/*`. Commits follow Conventional Commits — use `pnpm commit`.
 Hooks (lefthook): biome on staged files, commitlint on messages, typecheck on push.
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full branching model.
+See [docs/git-flow.md](docs/git-flow.md) for the full branching model and
+[docs/releases.md](docs/releases.md) for how releases are cut.
 
 ## Deployment
 

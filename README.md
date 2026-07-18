@@ -21,7 +21,8 @@ Prompts (or flags): UI primitives `--ui=radix|base`, authorization model
 language `--locale=en|fr`, locale routing `--i18n=cookie|url`, observability
 `--observability=sentry,posthog,otel`, behavior flags
 `--flags=require-email-verification,emails-enabled`, logger
-`--logging=pino|winston`, CI `--ci=github|gitlab`, backup
+`--logging=pino|winston`, CI `--ci=github|gitlab`, release tooling
+`--release=release-please|release-it|commit-and-tag-version`, backup
 `--backup`/`--no-backup`, plus `--yes` accept defaults, `--no-git`,
 `--no-install`. Full reference: [docs/cli.md](docs/cli.md).
 

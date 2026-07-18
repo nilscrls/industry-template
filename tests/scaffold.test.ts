@@ -737,6 +737,152 @@ describe("scaffold", () => {
     });
   });
 
+  describe("release variant", () => {
+    it("defaults gitlab to release-it: config, tooling, docs", () => {
+      const targetDir = path.join(workDir, "real-gitlab-release-it");
+      scaffold({
+        templateDir: REAL_TEMPLATE,
+        variantsDir: REAL_VARIANTS,
+        targetDir,
+        projectName: "real-app",
+        ci: "gitlab",
+      });
+
+      // release-it-gitlab replaced the commit-and-tag-version files.
+      expect(existsSync(path.join(targetDir, ".versionrc.json"))).toBe(false);
+      const releaseIt = readFileSync(
+        path.join(targetDir, ".release-it.json"),
+        "utf8"
+      );
+      expect(releaseIt).toContain('"requireBranch": "main"');
+      expect(releaseIt).not.toContain("__PROD_BRANCH__");
+      expect(releaseIt).toContain("apps/web/content/changelog.md");
+      const releases = readFileSync(
+        path.join(targetDir, "docs/releases.md"),
+        "utf8"
+      );
+      expect(releases).toContain("release-it");
+      expect(releases).not.toContain("commit-and-tag-version");
+      // The local runner needs the script + devDependencies.
+      const pkg = JSON.parse(
+        readFileSync(path.join(targetDir, "package.json"), "utf8")
+      );
+      expect(pkg.scripts.release).toBe("release-it");
+      expect(pkg.devDependencies["release-it"]).toBeDefined();
+      expect(
+        pkg.devDependencies["@release-it/conventional-changelog"]
+      ).toBeDefined();
+      // AGENTS.md CI bullet names the release tool.
+      expect(readFileSync(path.join(targetDir, "AGENTS.md"), "utf8")).toContain(
+        "release-it"
+      );
+    });
+
+    it("keeps commit-and-tag-version on gitlab when chosen explicitly", () => {
+      const targetDir = path.join(workDir, "real-gitlab-catv");
+      scaffold({
+        templateDir: REAL_TEMPLATE,
+        variantsDir: REAL_VARIANTS,
+        targetDir,
+        projectName: "real-app",
+        ci: "gitlab",
+        release: "commit-and-tag-version",
+      });
+
+      expect(existsSync(path.join(targetDir, ".versionrc.json"))).toBe(true);
+      expect(existsSync(path.join(targetDir, ".release-it.json"))).toBe(false);
+      expect(
+        readFileSync(path.join(targetDir, "docs/releases.md"), "utf8")
+      ).toContain("commit-and-tag-version");
+      const pkg = JSON.parse(
+        readFileSync(path.join(targetDir, "package.json"), "utf8")
+      );
+      expect(pkg.scripts.release).toBeUndefined();
+      expect(pkg.devDependencies["release-it"]).toBeUndefined();
+    });
+
+    it("swaps release-please for release-it on github when chosen", () => {
+      const targetDir = path.join(workDir, "real-github-release-it");
+      scaffold({
+        templateDir: REAL_TEMPLATE,
+        variantsDir: REAL_VARIANTS,
+        targetDir,
+        projectName: "real-app",
+        release: "release-it",
+        prodBranch: "master",
+      });
+
+      // release-please files removed by _delete.json.
+      expect(
+        existsSync(path.join(targetDir, "release-please-config.json"))
+      ).toBe(false);
+      expect(
+        existsSync(path.join(targetDir, ".release-please-manifest.json"))
+      ).toBe(false);
+      expect(
+        existsSync(path.join(targetDir, ".github/workflows/release-please.yml"))
+      ).toBe(false);
+      // CI stays; the tag-triggered release workflow is stamped.
+      expect(existsSync(path.join(targetDir, ".github/workflows/ci.yml"))).toBe(
+        true
+      );
+      const releaseWorkflow = readFileSync(
+        path.join(targetDir, ".github/workflows/release.yml"),
+        "utf8"
+      );
+      expect(releaseWorkflow).toContain("gh release create");
+      expect(releaseWorkflow).toContain("master");
+      expect(releaseWorkflow).not.toContain("__PROD_BRANCH__");
+      expect(
+        readFileSync(path.join(targetDir, ".release-it.json"), "utf8")
+      ).toContain('"requireBranch": "master"');
+      expect(
+        readFileSync(path.join(targetDir, "docs/releases.md"), "utf8")
+      ).toContain("release-it");
+      expect(
+        JSON.parse(readFileSync(path.join(targetDir, "package.json"), "utf8"))
+          .scripts.release
+      ).toBe("release-it");
+    });
+
+    it("keeps release-please as the github default", () => {
+      const targetDir = path.join(workDir, "real-github-default-release");
+      scaffold({
+        templateDir: REAL_TEMPLATE,
+        variantsDir: REAL_VARIANTS,
+        targetDir,
+        projectName: "real-app",
+      });
+
+      expect(
+        existsSync(path.join(targetDir, ".github/workflows/release-please.yml"))
+      ).toBe(true);
+      expect(existsSync(path.join(targetDir, ".release-it.json"))).toBe(false);
+      const pkg = JSON.parse(
+        readFileSync(path.join(targetDir, "package.json"), "utf8")
+      );
+      expect(pkg.scripts.release).toBeUndefined();
+    });
+
+    it("rejects release tools that don't fit the CI provider", () => {
+      for (const [ci, release] of [
+        ["github", "commit-and-tag-version"],
+        ["gitlab", "release-please"],
+      ] as const) {
+        expect(() =>
+          scaffold({
+            templateDir: REAL_TEMPLATE,
+            variantsDir: REAL_VARIANTS,
+            targetDir: path.join(workDir, `invalid-${ci}-${release}`),
+            projectName: "real-app",
+            ci,
+            release,
+          })
+        ).toThrow(/not available with ci=/);
+      }
+    });
+  });
+
   describe("observability stamping", () => {
     it("stamps chosen collectors to true in .env.example AND .env", () => {
       const targetDir = path.join(workDir, "real-obs");

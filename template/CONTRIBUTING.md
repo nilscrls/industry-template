@@ -2,6 +2,10 @@
 
 ## Branching model (git-flow)
 
+The full walkthrough (commands, release steps, back-merge rationale) is in
+[docs/git-flow.md](docs/git-flow.md); the release tooling is documented in
+[docs/releases.md](docs/releases.md).
+
 - `__PROD_BRANCH__` — production. Every commit on it is releasable; releases
   are tagged here.
 - `develop` — integration. Day-to-day work lands here.

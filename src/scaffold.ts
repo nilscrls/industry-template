@@ -37,6 +37,30 @@ export type CiVariant = (typeof CI_VARIANTS)[number];
 export const LOGGING_VARIANTS = ["pino", "winston"] as const;
 export type LoggingVariant = (typeof LOGGING_VARIANTS)[number];
 
+export const RELEASE_VARIANTS = [
+  "release-please",
+  "release-it",
+  "commit-and-tag-version",
+] as const;
+export type ReleaseVariant = (typeof RELEASE_VARIANTS)[number];
+
+/**
+ * Release tools valid per CI provider (first entry = the default).
+ * release-please is a GitHub bot; commit-and-tag-version ships with a
+ * GitLab-only tag→release job.
+ */
+export const CI_RELEASE_TOOLS: Record<
+  CiVariant,
+  readonly [ReleaseVariant, ...ReleaseVariant[]]
+> = {
+  github: ["release-please", "release-it"],
+  gitlab: ["release-it", "commit-and-tag-version"],
+};
+
+export function defaultRelease(ci: CiVariant): ReleaseVariant {
+  return CI_RELEASE_TOOLS[ci][0];
+}
+
 /** Observability collectors togglable at scaffold time (env stamping, no overlay). */
 export const OBSERVABILITY_TOOLS = ["sentry", "posthog", "otel"] as const;
 export type ObservabilityTool = (typeof OBSERVABILITY_TOOLS)[number];
@@ -76,6 +100,12 @@ export interface ScaffoldOptions {
   /** Git-flow production branch name stamped into CI/docs. Default: "main". */
   prodBranch?: ProdBranch;
   projectName: string;
+  /**
+   * Release tooling. Default: the CI provider's first entry in
+   * CI_RELEASE_TOOLS (github → "release-please", gitlab → "release-it").
+   * "release-it" applies variants/release-it-<ci>.
+   */
+  release?: ReleaseVariant;
   targetDir: string;
   templateDir: string;
   /** shadcn/ui primitive library. Default: "radix". */
@@ -222,6 +252,12 @@ const CI_LABELS: Record<CiVariant, string> = {
   gitlab: "GitLab CI (`.gitlab-ci.yml`)",
 };
 
+const RELEASE_LABELS: Record<ReleaseVariant, string> = {
+  "release-please": "release-please (release PR bot)",
+  "release-it": "release-it (run `pnpm release` locally)",
+  "commit-and-tag-version": "commit-and-tag-version (run locally via npx)",
+};
+
 function observabilityLabel(tools: readonly ObservabilityTool[]): string {
   return tools.length === 0
     ? "none (all collectors ship disabled; flip *_ENABLED in .env to opt in)"
@@ -237,8 +273,11 @@ function observabilityLabel(tools: readonly ObservabilityTool[]): string {
 const PROD_BRANCH_FILES = [
   ".github/workflows/ci.yml",
   ".github/workflows/release-please.yml",
+  ".github/workflows/release.yml",
   ".gitlab-ci.yml",
+  ".release-it.json",
   "README.md",
+  "docs/git-flow.md",
   "docs/guides.md",
   "docs/releases.md",
   "CONTRIBUTING.md",
@@ -271,6 +310,7 @@ function stampAgentsVariants(
     observability: readonly ObservabilityTool[];
     org: OrgVariant;
     prodBranch: ProdBranch;
+    release: ReleaseVariant;
     ui: UiVariant;
   }
 ): void {
@@ -283,7 +323,10 @@ function stampAgentsVariants(
     ["__LOCALE_VARIANT__", LOCALE_LABELS[choices.locale]],
     ["__I18N_VARIANT__", I18N_LABELS[choices.i18n]],
     ["__LOGGING_VARIANT__", LOGGING_LABELS[choices.logging]],
-    ["__CI_VARIANT__", CI_LABELS[choices.ci]],
+    [
+      "__CI_VARIANT__",
+      `${CI_LABELS[choices.ci]}, releases via ${RELEASE_LABELS[choices.release]}`,
+    ],
     ["__OBSERVABILITY_VARIANT__", observabilityLabel(choices.observability)],
     ["__PROD_BRANCH__", choices.prodBranch],
   ];
@@ -456,6 +499,30 @@ function stampEnvChoices(
   writeFileSync(examplePath, lines.join("\n"));
 }
 
+const RELEASE_IT_DEV_DEPS: Record<string, string> = {
+  "@release-it/conventional-changelog": "^11.0.1",
+  "release-it": "^20.2.1",
+};
+
+/**
+ * release-it runs locally (`pnpm release`), so unlike the bot-driven
+ * release-please it needs devDependencies and a script in the root
+ * package.json — added here because overlays copy whole files and cannot
+ * patch JSON.
+ */
+function addReleaseItTooling(targetDir: string): void {
+  const packageJsonPath = path.join(targetDir, "package.json");
+  const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+  packageJson.scripts = { ...packageJson.scripts, release: "release-it" };
+  packageJson.devDependencies = Object.fromEntries(
+    Object.entries({
+      ...packageJson.devDependencies,
+      ...RELEASE_IT_DEV_DEPS,
+    }).sort(([a], [b]) => a.localeCompare(b))
+  );
+  writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
+}
+
 /** Whole paths removed by --backup=false. */
 const BACKUP_PRUNE_PATHS = ["scripts/backup", "docs/backup.md"];
 
@@ -549,9 +616,15 @@ export function scaffold(options: ScaffoldOptions): void {
     featureFlags = DEFAULT_FEATURE_FLAGS,
     backup = true,
   } = options;
+  const release = options.release ?? defaultRelease(ci);
   const nameError = validateProjectName(projectName);
   if (nameError) {
     throw new Error(nameError);
+  }
+  if (!CI_RELEASE_TOOLS[ci].includes(release)) {
+    throw new Error(
+      `Release tool "${release}" is not available with ci=${ci} (expected one of: ${CI_RELEASE_TOOLS[ci].join(", ")})`
+    );
   }
   if (!existsSync(path.join(templateDir, "package.json"))) {
     throw new Error(`Template not found at ${templateDir}`);
@@ -562,8 +635,9 @@ export function scaffold(options: ScaffoldOptions): void {
 
   copyTemplate(templateDir, targetDir);
   // Overlay order is load-bearing (last write wins): ui-base → authz-rebac →
-  // org-single → i18n-url → logging-winston → ci-gitlab → ai-claude (always
-  // last). org-single/i18n-url land after ui-base so their UI-neutral files win.
+  // org-single → i18n-url → logging-winston → ci-gitlab → release-it-<ci> →
+  // ai-claude (always last). org-single/i18n-url land after ui-base so their
+  // UI-neutral files win.
   if (ui === "base") {
     applyVariantOverlay(variantsDir, "ui-base", targetDir);
   }
@@ -582,6 +656,12 @@ export function scaffold(options: ScaffoldOptions): void {
   if (ci === "gitlab") {
     applyVariantOverlay(variantsDir, "ci-gitlab", targetDir);
   }
+  // After ci-gitlab: on GitLab the overlay replaces the commit-and-tag-version
+  // release files the CI overlay ships; on GitHub it replaces release-please.
+  if (release === "release-it") {
+    applyVariantOverlay(variantsDir, `release-it-${ci}`, targetDir);
+    addReleaseItTooling(targetDir);
+  }
   if (ai === "claude") {
     applyVariantOverlay(variantsDir, "ai-claude", targetDir);
     stampAgentsVariants(targetDir, {
@@ -593,6 +673,7 @@ export function scaffold(options: ScaffoldOptions): void {
       i18n,
       logging,
       ci,
+      release,
       observability,
     });
     selectVariantRules(targetDir, { ui, authz, logging });

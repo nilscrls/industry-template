@@ -10,8 +10,9 @@ npx create-industry-app my-app
 
 Interactive prompts: project name (also the target directory), UI primitives,
 authorization model, organization model, default language, locale routing,
-observability, behavior flags, API logger, CI provider, backup tooling, AI
-assistant config, then optional setup steps (git init, pnpm install).
+observability, behavior flags, API logger, CI provider, release tooling,
+backup tooling, AI assistant config, then optional setup steps (git init,
+pnpm install).
 Non-interactive:
 
 ```sh
@@ -30,7 +31,8 @@ npx create-industry-app my-app -- --yes --ui=base --authz=rebac --org=single --i
 | `--observability=sentry,posthog,otel\|none` | comma-separated collectors to enable (default `none`); everything ships wired but disabled — this stamps the matching `*_ENABLED` vars to `true` in `.env.example`/`.env` |
 | `--flags=require-email-verification,emails-enabled\|none` | env-driven behavior flags (default `emails-enabled`); stamps `REQUIRE_EMAIL_VERIFICATION` / `EMAILS_ENABLED` into `.env.example`/`.env` |
 | `--logging=pino\|winston` | API logger (default `pino`) |
-| `--ci=github\|gitlab` | CI provider (default `github`): GitHub Actions + release-please, or `.gitlab-ci.yml` |
+| `--ci=github\|gitlab` | CI provider (default `github`): GitHub Actions, or `.gitlab-ci.yml` |
+| `--release=release-please\|release-it\|commit-and-tag-version` | release tooling, validated against `--ci`. GitHub: `release-please` (default — bot maintains a release PR) or `release-it` (run `pnpm release` locally; a tag-triggered workflow publishes the GitHub Release). GitLab: `release-it` (default) or `commit-and-tag-version` (npx, no devDependencies) — both rely on the tag-triggered `release` job in `.gitlab-ci.yml` |
 | `--backup` / `--no-backup` | keep or prune the Postgres backup/restore tooling (default keep; interactive confirm) |
 | `--ai=claude\|none` | AI assistant config (default `claude`): `AGENTS.md` (agent instructions, stamped with the chosen variants), `CLAUDE.md` (imports it), path-scoped `.claude/rules/` (incl. authz/ui rules matching the chosen variants), `.claude/skills/` (the `scaffold-feature` generator workflow + vendored Vercel/Anthropic skills, provenance in `vendored.lock.json`) and a `code-reviewer` agent |
 | `--yes`, `-y` | skip all prompts, take defaults/flags |
@@ -54,11 +56,15 @@ npx create-industry-app my-app -- --yes --ui=base --authz=rebac --org=single --i
    model; `--org=single` swaps the org switcher + auth config for
    single-organization mode; `--i18n=url` swaps the middleware/navigation for
    URL-prefixed locales; `--logging=winston` swaps the api logger stack;
-   `--ci=gitlab` replaces `.github/` + release-please with a `.gitlab-ci.yml`.
+   `--ci=gitlab` replaces `.github/` + release-please with a `.gitlab-ci.yml`;
+   `--release=release-it` swaps the CI provider's default release files for
+   `.release-it.json` + a release-it-flavored `docs/releases.md` (on GitHub
+   also a tag-triggered `release.yml`) and adds the `release` script and
+   `release-it` devDependencies to the root `package.json`.
 3. Unless `--ai=none`, applies the `ai-claude` overlay — `AGENTS.md`,
    `CLAUDE.md` (a one-line `@AGENTS.md` import) and `.claude/rules/` — and
    stamps the chosen variants (ui, authz, org, locale, i18n, logging, ci,
-   observability) into `AGENTS.md`. The managed
+   release, observability) into `AGENTS.md`. The managed
    content sits between `BEGIN:create-industry-app` markers; edits outside
    them survive template upgrades.
 4. Sets `DEFAULT_LOCALE` in `packages/i18n/src/config.ts` from `--locale`.

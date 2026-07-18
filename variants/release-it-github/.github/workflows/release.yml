@@ -1,0 +1,24 @@
+name: Release
+
+# Turns a pushed v* tag (created locally by `pnpm release` / release-it on
+# __PROD_BRANCH__, see docs/releases.md) into a GitHub Release. The tag
+# doesn't retrigger the test workflows — CI already validated the release
+# commit on __PROD_BRANCH__; this job only publishes the release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - run: >-
+          gh release create "$GITHUB_REF_NAME"
+          --repo "$GITHUB_REPOSITORY"
+          --title "$GITHUB_REF_NAME"
+          --notes "Changelog: apps/web/content/changelog.md (rendered at /changelog)."
+        env:
+          GH_TOKEN: ${{ github.token }}
