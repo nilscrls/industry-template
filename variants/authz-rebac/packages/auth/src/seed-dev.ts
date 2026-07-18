@@ -68,6 +68,15 @@ async function ensureOrganization(db: Db): Promise<string> {
     .from(organization)
     .where(eq(organization.slug, ORG.slug));
   if (!org) {
+    // Adopt the earliest organization if one already exists — the
+    // single-org variant bootstraps the workspace on first signup.
+    [org] = await db
+      .select({ id: organization.id })
+      .from(organization)
+      .orderBy(organization.createdAt)
+      .limit(1);
+  }
+  if (!org) {
     [org] = await db
       .insert(organization)
       .values({ id: randomUUID(), name: ORG.name, slug: ORG.slug })
