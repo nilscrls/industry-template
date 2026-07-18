@@ -1,12 +1,10 @@
-// MIRRORED FILE: variants/logging-winston/apps/api/src/app.module.ts overlays
-// this file — mirror any change there (see docs/maintaining-the-template.md).
 import { ThrottlerStorageRedisService } from "@nest-lab/throttler-storage-redis";
 import { BullModule } from "@nestjs/bullmq";
 import { Module } from "@nestjs/common";
 import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import type { Redis } from "ioredis";
-import { LoggerModule } from "nestjs-pino";
+import { WinstonModule } from "nest-winston";
 import { AnalyticsModule } from "./analytics/analytics.module";
 import { AuditModule } from "./audit/audit.module";
 import { AuthGuard } from "./auth/auth.guard";
@@ -44,9 +42,13 @@ function redisConnectionOptions(url: string) {
   };
 }
 
+// MIRRORED FILE: this is the winston copy of template/apps/api/src/app.module.ts
+// — it differs only by LoggerModule(nestjs-pino) → WinstonModule(nest-winston).
+// Any change to the template file MUST be replayed here (overlays copy whole
+// files).
 @Module({
   imports: [
-    LoggerModule.forRoot(loggerOptions),
+    WinstonModule.forRoot(loggerOptions),
     DbModule,
     RedisModule,
     ThrottlerModule.forRootAsync({

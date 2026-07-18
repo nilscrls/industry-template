@@ -9,7 +9,7 @@ import { env } from "./config/env";
  * import so the instrumentations patch http/express/pg/ioredis/bullmq before
  * those modules load. Never active under NODE_ENV=test: the SDK starts
  * exporters and background timers that have no place inside vitest workers
- * (same rule as pino's transport).
+ * (same rule as the logger's transport).
  *
  * The OTLP exporter reads OTEL_EXPORTER_OTLP_ENDPOINT itself (validated in
  * env.ts) — point it at any collector; no vendor is hardcoded.

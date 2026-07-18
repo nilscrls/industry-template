@@ -1,21 +1,29 @@
-// MIRRORED FILE: variants/logging-winston/apps/api/src/app.setup.ts overlays
-// this file — mirror any change there (see docs/maintaining-the-template.md).
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import type { Auth } from "@repo/auth";
 import { toNodeHandler } from "better-auth/node";
 import type { NextFunction, Request, Response } from "express";
 import helmet from "helmet";
-import { Logger } from "nestjs-pino";
+import {
+  WINSTON_MODULE_NEST_PROVIDER,
+  WINSTON_MODULE_PROVIDER,
+} from "nest-winston";
+import type { Logger as WinstonLogger } from "winston";
 import { AppModule } from "./app.module";
 import { AUTH } from "./auth/auth.module";
 import { originCheckMiddleware } from "./common/origin-check.middleware";
 import { requestContextMiddleware } from "./common/request-context.middleware";
+import { createRequestLoggerMiddleware } from "./common/request-logger.middleware";
 import { env } from "./config/env";
 
 /**
  * Shared by main.ts and the integration tests so both run the exact same
  * middleware stack.
+ *
+ * MIRRORED FILE: this is the winston copy of template/apps/api/src/app.setup.ts
+ * — it differs only by the logger lines (nest-winston providers + the request
+ * logger middleware that replaces pino-http). Any change to the template file
+ * MUST be replayed here (overlays copy whole files).
  */
 export async function createApp(): Promise<NestExpressApplication> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -24,7 +32,7 @@ export async function createApp(): Promise<NestExpressApplication> {
     bodyParser: false,
   });
 
-  app.useLogger(app.get(Logger));
+  app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
   app.flushLogs();
 
   const express = app.getHttpAdapter().getInstance();
@@ -79,6 +87,14 @@ export async function createApp(): Promise<NestExpressApplication> {
     req.url = `/api${req.url}`;
     return authHandler(req, res);
   });
+
+  // Request access-logging (winston has no pino-http): registered after the
+  // Better-Auth mount and before app.init(), so /auth requests are handled
+  // first (never logged — their URLs can carry one-time tokens) while every
+  // Nest route, registered at init, is.
+  express.use(
+    createRequestLoggerMiddleware(app.get<WinstonLogger>(WINSTON_MODULE_PROVIDER))
+  );
 
   await app.init();
 
