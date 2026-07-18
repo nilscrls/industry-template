@@ -703,6 +703,106 @@ describe("scaffold", () => {
     });
   });
 
+  describe("api access variant", () => {
+    it("keeps the same-origin proxy by default", () => {
+      const targetDir = path.join(workDir, "real-api-proxy");
+      scaffold({
+        templateDir: REAL_TEMPLATE,
+        variantsDir: REAL_VARIANTS,
+        targetDir,
+        projectName: "real-app",
+      });
+
+      expect(
+        readFileSync(path.join(targetDir, "apps/web/next.config.ts"), "utf8")
+      ).toContain("async rewrites()");
+      expect(
+        readFileSync(path.join(targetDir, ".env.example"), "utf8")
+      ).not.toContain("API_PUBLIC_URL");
+    });
+
+    it("rewires web, api, env and docs for api=direct", () => {
+      const targetDir = path.join(workDir, "real-api-direct");
+      scaffold({
+        templateDir: REAL_TEMPLATE,
+        variantsDir: REAL_VARIANTS,
+        targetDir,
+        projectName: "real-app",
+        apiAccess: "direct",
+      });
+
+      // Web: no rewrite, no unused env import; auth client hits the API origin.
+      const nextConfig = readFileSync(
+        path.join(targetDir, "apps/web/next.config.ts"),
+        "utf8"
+      );
+      expect(nextConfig).not.toContain("rewrites");
+      expect(nextConfig).not.toContain("import { env }");
+      const authClient = readFileSync(
+        path.join(targetDir, "apps/web/src/lib/auth-client.ts"),
+        "utf8"
+      );
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal source-code anchor
+      expect(authClient).toContain("`${env.NEXT_PUBLIC_API_URL}/auth`");
+      expect(authClient).not.toContain("window.location.origin");
+
+      // Api: no /api re-prefix; Better-Auth base on the API origin with a
+      // parent-domain cookie; both new env vars declared and inventoried.
+      const appSetup = readFileSync(
+        path.join(targetDir, "apps/api/src/app.setup.ts"),
+        "utf8"
+      );
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal source-code anchor
+      expect(appSetup).not.toContain("req.url = `/api${req.url}`");
+      const authModule = readFileSync(
+        path.join(targetDir, "apps/api/src/auth/auth.module.ts"),
+        "utf8"
+      );
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal source-code anchor
+      expect(authModule).toContain("baseUrl: `${env.API_PUBLIC_URL}/auth`");
+      expect(authModule).toContain("cookieDomain: env.COOKIE_DOMAIN");
+      expect(
+        readFileSync(path.join(targetDir, "apps/api/src/config/env.ts"), "utf8")
+      ).toContain("API_PUBLIC_URL: z.url()");
+      const dotEnv = readFileSync(path.join(targetDir, ".env"), "utf8");
+      expect(dotEnv).toContain("NEXT_PUBLIC_API_URL=http://localhost:3001");
+      expect(dotEnv).toContain("API_PUBLIC_URL=http://localhost:3001");
+      expect(dotEnv).toContain("COOKIE_DOMAIN=localhost");
+
+      // Docs + prod compose tell the subdomain story.
+      expect(
+        readFileSync(path.join(targetDir, "docs/deployment.md"), "utf8")
+      ).toContain("api.example.com");
+      expect(
+        readFileSync(path.join(targetDir, "docker-compose.prod.yml"), "utf8")
+      ).not.toContain("stripprefix");
+    });
+
+    it("composes api=direct with the winston app.setup overlay", () => {
+      const targetDir = path.join(workDir, "real-api-direct-winston");
+      scaffold({
+        templateDir: REAL_TEMPLATE,
+        variantsDir: REAL_VARIANTS,
+        targetDir,
+        projectName: "real-app",
+        apiAccess: "direct",
+        logging: "winston",
+      });
+
+      const appSetup = readFileSync(
+        path.join(targetDir, "apps/api/src/app.setup.ts"),
+        "utf8"
+      );
+      // Winston overlay won (nest-winston), then the direct edit applied.
+      expect(appSetup).toContain("nest-winston");
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal source-code anchor
+      expect(appSetup).not.toContain("req.url = `/api${req.url}`");
+      expect(
+        readFileSync(path.join(targetDir, "docs/stack.md"), "utf8")
+      ).toContain("no API proxy");
+    });
+  });
+
   describe("ci variant", () => {
     it("applies the gitlab overlay and stamps the prod branch into .gitlab-ci.yml", () => {
       const targetDir = path.join(workDir, "real-gitlab");

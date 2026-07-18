@@ -19,6 +19,7 @@ Node >= 22.12) scaffolded by create-industry-app with these choices:
 - Default locale: __LOCALE_VARIANT__
 - Locale routing: __I18N_VARIANT__
 - API logger: __LOGGING_VARIANT__
+- API access from the browser: __API_ACCESS_VARIANT__
 - CI provider: __CI_VARIANT__
 - Observability enabled at scaffold time: __OBSERVABILITY_VARIANT__
 

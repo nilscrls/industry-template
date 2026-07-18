@@ -61,6 +61,12 @@ export interface CreateAuthOptions {
    * e.g. https://app.example.com/api/auth.
    */
   baseUrl: string;
+  /**
+   * Scope auth cookies to a parent domain (e.g. "example.com") so sibling
+   * subdomains share the session — set when the browser talks to the api on
+   * its own subdomain instead of through the web app's /api proxy.
+   */
+  cookieDomain?: string;
   db: Database;
   /**
    * Microsoft Entra ID OIDC connection. Adding another provider later is a
@@ -111,6 +117,18 @@ export function createAuth(options: CreateAuthOptions) {
     // the base for generated links (verification emails, redirects).
     baseURL: options.baseUrl,
     trustedOrigins: options.trustedOrigins,
+    // Parent-domain cookie (Domain=<cookieDomain>): app.<domain> and
+    // api.<domain> are same-site, so SameSite=Lax keeps working.
+    ...(options.cookieDomain
+      ? {
+          advanced: {
+            crossSubDomainCookies: {
+              enabled: true,
+              domain: options.cookieDomain,
+            },
+          },
+        }
+      : {}),
     // The /auth/* express mount bypasses the Nest ThrottlerGuard, so this
     // built-in limiter is the only rate limit on auth endpoints. Counters
     // are keyed per IP+path (x-forwarded-for; localhost fallback in

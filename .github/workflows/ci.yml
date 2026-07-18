@@ -85,6 +85,12 @@ jobs:
           - name: single-org-url-i18n
             flags: --org=single --i18n=url
             integration: false
+          - name: api-direct
+            # Direct-to-API mode: the anchored edits (no Next rewrite,
+            # API_PUBLIC_URL/COOKIE_DOMAIN env, Better-Auth on the API
+            # origin) must survive lint/build/check-types/test.
+            flags: --api=direct
+            integration: false
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
