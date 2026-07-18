@@ -19,6 +19,8 @@ import {
   type OrgVariant,
   PROD_BRANCH_VARIANTS,
   type ProdBranch,
+  RELEASE_VARIANTS,
+  type ReleaseVariant,
   UI_VARIANTS,
   type UiVariant,
 } from "./scaffold.js";
@@ -39,6 +41,7 @@ export interface CliFlags {
   logging: LoggingVariant | undefined;
   observability: ObservabilityTool[] | undefined;
   org: OrgVariant | undefined;
+  release: ReleaseVariant | undefined;
   ui: UiVariant | undefined;
   yes: boolean;
 }
@@ -138,6 +141,7 @@ export function parseArgs(argv: string[]): CliFlags {
     i18n: enumFlag(argv, "i18n", I18N_VARIANTS),
     logging: enumFlag(argv, "logging", LOGGING_VARIANTS),
     ci: enumFlag(argv, "ci", CI_VARIANTS),
+    release: enumFlag(argv, "release", RELEASE_VARIANTS),
     ai: enumFlag(argv, "ai", AI_VARIANTS),
     branch: enumFlag(argv, "branch", PROD_BRANCH_VARIANTS),
     observability: listFlag(argv, "observability", OBSERVABILITY_TOOLS),

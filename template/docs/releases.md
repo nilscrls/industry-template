@@ -8,6 +8,8 @@ pointer).
 
 ## Release flow
 
+The branching model itself is documented in `docs/git-flow.md`.
+
 1. Features land on `develop` via `feature/*` PRs (conventional commits).
 2. To release, merge `develop` into `__PROD_BRANCH__` (directly or via a
    `release/*` branch).

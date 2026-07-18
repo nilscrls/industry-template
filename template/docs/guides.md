@@ -131,6 +131,7 @@ against `auth.ts`, merge, then `pnpm db:generate`.
 
 - **Branches** (git-flow-next): `__PROD_BRANCH__` = production, `develop` = integration,
   `feature/*` → develop, `release/*` and `hotfix/*` → __PROD_BRANCH__ + develop.
+  Full model + release walkthrough: `docs/git-flow.md` and `docs/releases.md`.
 - **Commits**: Conventional Commits, guided by `pnpm commit`; commitlint
   enforces on `commit-msg`.
 - **Hooks** (lefthook): biome on staged files (pre-commit), commitlint

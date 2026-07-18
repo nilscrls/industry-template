@@ -53,6 +53,7 @@ describe("parseArgs", () => {
       i18n: undefined,
       logging: undefined,
       ci: undefined,
+      release: undefined,
       ai: undefined,
       branch: undefined,
       observability: undefined,
@@ -90,6 +91,7 @@ describe("parseArgs", () => {
       "--i18n=url",
       "--logging=winston",
       "--ci=gitlab",
+      "--release=commit-and-tag-version",
       "--ai=none",
       "--branch=master",
     ]);
@@ -102,6 +104,7 @@ describe("parseArgs", () => {
       i18n: "url",
       logging: "winston",
       ci: "gitlab",
+      release: "commit-and-tag-version",
       ai: "none",
       branch: "master",
     });

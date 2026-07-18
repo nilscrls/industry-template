@@ -46,8 +46,21 @@ docs/         this documentation
   plus the winston copies of `docs/stack.md`/`features.md`/`testing.md`.
 - `variants/ci-gitlab/` — `.gitlab-ci.yml` (carries the `__PROD_BRANCH__`
   marker — it is listed in `PROD_BRANCH_FILES`), a `.versionrc.json`, and a
-  GitLab-flavored `docs/releases.md`; its `_delete.json` removes `.github/`,
-  `release-please-config.json` and `.release-please-manifest.json`.
+  commit-and-tag-version-flavored `docs/releases.md`; its `_delete.json`
+  removes `.github/`, `release-please-config.json` and
+  `.release-please-manifest.json`. The release axis overlays on top (GitLab's
+  default is release-it, which replaces these release files).
+- `variants/release-it-github/` and `variants/release-it-gitlab/` — the
+  release axis (`--release`, validated against the CI provider via
+  `CI_RELEASE_TOOLS`): `.release-it.json` (conventional-changelog plugin
+  writing `apps/web/content/changelog.md`; carries `__PROD_BRANCH__` in
+  `git.requireBranch`) and a release-it-flavored `docs/releases.md`. The
+  github overlay's `_delete.json` removes the release-please files and adds a
+  tag-triggered `.github/workflows/release.yml`; the gitlab overlay applies
+  after ci-gitlab and deletes its `.versionrc.json` (the tag-triggered
+  `release` job in `.gitlab-ci.yml` is shared by both gitlab release tools).
+  The `release` script + `release-it` devDependencies are not overlay files —
+  `addReleaseItTooling` patches the root `package.json` in `scaffold.ts`.
 
 **UI-neutral** (for the post-ui-base overlays org-single and i18n-url) means
 no variant-divergent primitives — no `DropdownMenu`, no Radix/Base-specific

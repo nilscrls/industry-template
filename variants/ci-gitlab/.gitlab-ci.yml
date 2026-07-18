@@ -105,8 +105,9 @@ e2e:
         echo "── web ──"; cat /tmp/web.log || true
       fi
 
-# Turns a pushed v* tag (created locally by commit-and-tag-version, see
-# docs/releases.md) into a GitLab Release.
+# Turns a pushed v* tag (created locally by the chosen release tool —
+# release-it or commit-and-tag-version, see docs/releases.md) into a
+# GitLab Release.
 release:
   stage: release
   image: registry.gitlab.com/gitlab-org/release-cli:latest
