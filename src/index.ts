@@ -7,6 +7,7 @@ import pc from "picocolors";
 import { type CliFlags, parseArgs } from "./args.js";
 import {
   type AiVariant,
+  type ApiAccessVariant,
   type AuthzVariant,
   CI_RELEASE_TOOLS,
   type CiVariant,
@@ -78,6 +79,7 @@ async function promptProjectName(flags: CliFlags): Promise<string> {
 
 interface VariantChoices {
   ai: AiVariant;
+  apiAccess: ApiAccessVariant;
   authz: AuthzVariant;
   backup: boolean;
   ci: CiVariant;
@@ -206,6 +208,28 @@ async function promptVariants(flags: CliFlags): Promise<VariantChoices> {
       ],
       initialValue: "cookie" as const,
     })
+  );
+  const apiAccess = await promptOrFallback(
+    flags.apiAccess,
+    flags.yes,
+    "proxy",
+    () =>
+      p.select({
+        message: "API access from the browser",
+        options: [
+          {
+            value: "proxy" as const,
+            label: "Proxied",
+            hint: "same-origin /api via a Next.js rewrite — no CORS",
+          },
+          {
+            value: "direct" as const,
+            label: "Direct",
+            hint: "api.<domain> next to app.<domain>; CORS + parent-domain cookie",
+          },
+        ],
+        initialValue: "proxy" as const,
+      })
   );
   const observability = await promptOrFallback<readonly ObservabilityTool[]>(
     flags.observability,
@@ -364,6 +388,7 @@ async function promptVariants(flags: CliFlags): Promise<VariantChoices> {
     org,
     locale,
     i18n,
+    apiAccess,
     observability,
     featureFlags,
     logging,

@@ -18,7 +18,8 @@ npx create-industry-app my-app -- --yes --no-install
 
 Prompts (or flags): UI primitives `--ui=radix|base`, authorization model
 `--authz=rbac|rebac`, organization model `--org=multi|single`, default
-language `--locale=en|fr`, locale routing `--i18n=cookie|url`, observability
+language `--locale=en|fr`, locale routing `--i18n=cookie|url`,
+API access `--api=proxy|direct`, observability
 `--observability=sentry,posthog,otel`, behavior flags
 `--flags=require-email-verification,emails-enabled`, logger
 `--logging=pino|winston`, CI `--ci=github|gitlab`, release tooling

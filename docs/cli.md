@@ -10,7 +10,7 @@ npx create-industry-app my-app
 
 Interactive prompts: project name (also the target directory), UI primitives,
 authorization model, organization model, default language, locale routing,
-observability, behavior flags, API logger, CI provider, release tooling,
+API access, observability, behavior flags, API logger, CI provider, release tooling,
 backup tooling, AI assistant config, then optional setup steps (git init,
 pnpm install).
 Non-interactive:
@@ -28,6 +28,7 @@ npx create-industry-app my-app -- --yes --ui=base --authz=rebac --org=single --i
 | `--org=multi\|single` | organization model (default `multi`): org switcher + invitations, or one implicit organization |
 | `--locale=en\|fr` | default UI language (default `en`); both catalogs always ship |
 | `--i18n=cookie\|url` | locale routing (default `cookie`): cookie-stored locale, or URL-prefixed paths (`/fr/...`) via middleware rewrite |
+| `--api=proxy\|direct` | how the browser reaches the API (default `proxy`): same-origin `/api` via the Next.js rewrite (no CORS), or direct-to-API on its own origin — e.g. `api.example.com` next to `app.example.com`. `direct` drops the rewrite, points the web app + Better-Auth at `API_PUBLIC_URL`, and scopes the session cookie to the shared parent domain (`COOKIE_DOMAIN`) so cookies work across the subdomains (same-site, `SameSite=Lax` unchanged) |
 | `--observability=sentry,posthog,otel\|none` | comma-separated collectors to enable (default `none`); everything ships wired but disabled — this stamps the matching `*_ENABLED` vars to `true` in `.env.example`/`.env` |
 | `--flags=require-email-verification,emails-enabled\|none` | env-driven behavior flags (default `emails-enabled`); stamps `REQUIRE_EMAIL_VERIFICATION` / `EMAILS_ENABLED` into `.env.example`/`.env` |
 | `--logging=pino\|winston` | API logger (default `pino`) |
@@ -68,6 +69,12 @@ npx create-industry-app my-app -- --yes --ui=base --authz=rebac --org=single --i
    content sits between `BEGIN:create-industry-app` markers; edits outside
    them survive template upgrades.
 4. Sets `DEFAULT_LOCALE` in `packages/i18n/src/config.ts` from `--locale`.
+   With `--api=direct`, rewires API access by anchored text edits (no
+   overlay): removes the Next.js `/api` rewrite, points the web api/auth
+   clients at the API origin, moves Better-Auth's public base to
+   `${API_PUBLIC_URL}/auth` with a parent-domain (`COOKIE_DOMAIN`) session
+   cookie, adds both env vars, and updates the docs/compose examples to
+   subdomain routing.
 5. Renames every `_gitignore` → `.gitignore` and `_claude/` → `.claude/`
    (npm strips or mangles dot-entries in published packages, so the template
    and overlays store them prefixed).

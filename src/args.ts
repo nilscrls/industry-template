@@ -1,6 +1,8 @@
 import {
   AI_VARIANTS,
   type AiVariant,
+  API_ACCESS_VARIANTS,
+  type ApiAccessVariant,
   AUTHZ_VARIANTS,
   type AuthzVariant,
   CI_VARIANTS,
@@ -27,6 +29,7 @@ import {
 
 export interface CliFlags {
   ai: AiVariant | undefined;
+  apiAccess: ApiAccessVariant | undefined;
   authz: AuthzVariant | undefined;
   /** Tri-state: --backup → true, --no-backup → false, absent → undefined (prompt). */
   backup: boolean | undefined;
@@ -143,6 +146,7 @@ export function parseArgs(argv: string[]): CliFlags {
     ci: enumFlag(argv, "ci", CI_VARIANTS),
     release: enumFlag(argv, "release", RELEASE_VARIANTS),
     ai: enumFlag(argv, "ai", AI_VARIANTS),
+    apiAccess: enumFlag(argv, "api", API_ACCESS_VARIANTS),
     branch: enumFlag(argv, "branch", PROD_BRANCH_VARIANTS),
     observability: listFlag(argv, "observability", OBSERVABILITY_TOOLS),
     featureFlags: listFlag(argv, "flags", FEATURE_FLAGS),

@@ -31,6 +31,9 @@ export type OrgVariant = (typeof ORG_VARIANTS)[number];
 export const I18N_VARIANTS = ["cookie", "url"] as const;
 export type I18nVariant = (typeof I18N_VARIANTS)[number];
 
+export const API_ACCESS_VARIANTS = ["proxy", "direct"] as const;
+export type ApiAccessVariant = (typeof API_ACCESS_VARIANTS)[number];
+
 export const CI_VARIANTS = ["github", "gitlab"] as const;
 export type CiVariant = (typeof CI_VARIANTS)[number];
 
@@ -79,6 +82,14 @@ export const DEFAULT_FEATURE_FLAGS: readonly FeatureFlag[] = ["emails-enabled"];
 export interface ScaffoldOptions {
   /** AI assistant config (AGENTS.md, CLAUDE.md, .claude/rules). Default: "claude". */
   ai?: AiVariant;
+  /**
+   * How the browser reaches the API. Default: "proxy" (same-origin /api via
+   * the Next.js rewrite). "direct" drops the proxy: the browser calls the API
+   * on its own origin (e.g. api.example.com next to app.example.com) with
+   * CORS + a parent-domain session cookie. Applied by anchored text edits,
+   * not an overlay (the touched files vary with other axes).
+   */
+  apiAccess?: ApiAccessVariant;
   /** OpenFGA authorization model. Default: "rbac". */
   authz?: AuthzVariant;
   /** Ship db+files backup tooling (scripts/backup, compose `backup` profile). Default: true. */
@@ -237,6 +248,12 @@ const ORG_LABELS: Record<OrgVariant, string> = {
   single: "single-organization (one implicit org, switcher UI removed)",
 };
 
+const API_ACCESS_LABELS: Record<ApiAccessVariant, string> = {
+  proxy: "same-origin `/api` (Next.js rewrite in dev, reverse proxy in prod)",
+  direct:
+    "direct — the browser calls the API origin (e.g. api.<domain>); CORS + parent-domain session cookie",
+};
+
 const I18N_LABELS: Record<I18nVariant, string> = {
   cookie: "cookie-based locale, no URL prefix",
   url: "URL-prefixed locales (`/fr/...`) via middleware rewrite",
@@ -302,6 +319,7 @@ function stampProdBranch(targetDir: string, branch: ProdBranch): void {
 function stampAgentsVariants(
   targetDir: string,
   choices: {
+    apiAccess: ApiAccessVariant;
     authz: AuthzVariant;
     ci: CiVariant;
     i18n: I18nVariant;
@@ -323,6 +341,7 @@ function stampAgentsVariants(
     ["__LOCALE_VARIANT__", LOCALE_LABELS[choices.locale]],
     ["__I18N_VARIANT__", I18N_LABELS[choices.i18n]],
     ["__LOGGING_VARIANT__", LOGGING_LABELS[choices.logging]],
+    ["__API_ACCESS_VARIANT__", API_ACCESS_LABELS[choices.apiAccess]],
     [
       "__CI_VARIANT__",
       `${CI_LABELS[choices.ci]}, releases via ${RELEASE_LABELS[choices.release]}`,
@@ -523,6 +542,266 @@ function addReleaseItTooling(targetDir: string): void {
   writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
 }
 
+/**
+ * Anchored single replacement inside one scaffolded file. Throws when the
+ * file exists without the anchor, so template drift is caught by the
+ * scaffold tests — same contract as stampProdBranch. Missing files are
+ * skipped (test fixtures use minimal templates).
+ */
+function replaceAnchored(
+  targetDir: string,
+  relative: string,
+  anchor: string,
+  replacement: string
+): void {
+  const filePath = path.join(targetDir, relative);
+  if (!existsSync(filePath)) {
+    return;
+  }
+  const source = readFileSync(filePath, "utf8");
+  if (!source.includes(anchor)) {
+    throw new Error(
+      `--api=direct anchor not found in ${filePath}: ${JSON.stringify(anchor.slice(0, 60))}…`
+    );
+  }
+  writeFileSync(filePath, source.replace(anchor, replacement));
+}
+
+/**
+ * --api=direct: drop the Next.js /api proxy — the browser calls the API on
+ * its own origin (api.<domain> next to app.<domain>). Same-site subdomains
+ * keep SameSite=Lax cookies working; the session cookie is scoped to the
+ * parent domain (COOKIE_DOMAIN) so the web app (SSR) sees it too. Applied as
+ * anchored edits after all overlays: the anchors are identical across the
+ * variants that overlay the same files (e.g. logging-winston's
+ * app.setup.ts), so the edits compose with every axis.
+ */
+function applyDirectApi(targetDir: string): void {
+  // Web: remove the rewrite (and its now-unused env import + /api headers).
+  replaceAnchored(
+    targetDir,
+    "apps/web/next.config.ts",
+    '\nimport { env } from "./src/env";',
+    ""
+  );
+  replaceAnchored(
+    targetDir,
+    "apps/web/next.config.ts",
+    `    return [
+      { source: "/(.*)", headers: securityHeaders },
+      // Defense in depth: /api/* proxies authenticated JSON to the API,
+      // which already sends no-store — pin it here too so a shared cache
+      // can never store a response even if the API header regresses. In
+      // production the reverse proxy routes /api directly to the API,
+      // where per-endpoint opt-ins (e.g. openapi.json) still apply.
+      {
+        source: "/api/:path*",
+        headers: [{ key: "Cache-Control", value: "private, no-store" }],
+      },
+    ];`,
+    '    return [{ source: "/(.*)", headers: securityHeaders }];'
+  );
+  replaceAnchored(
+    targetDir,
+    "apps/web/next.config.ts",
+    `
+  async rewrites() {
+    // Same-origin API: the browser only ever talks to /api/* on this host.
+    // In production the reverse proxy routes /api instead (see compose prod).
+    return [
+      {
+        source: "/api/:path*",
+        destination: \`\${env.API_URL}/:path*\`,
+      },
+    ];
+  },`,
+    ""
+  );
+
+  // Web: auth client talks to the API origin, not the local /api proxy.
+  replaceAnchored(
+    targetDir,
+    "apps/web/src/lib/auth-client.ts",
+    'import { createAuthClient } from "better-auth/react";',
+    'import { createAuthClient } from "better-auth/react";\nimport { env } from "../env";'
+  );
+  replaceAnchored(
+    targetDir,
+    "apps/web/src/lib/auth-client.ts",
+    `baseURL:
+    typeof window === "undefined"
+      ? "http://localhost:3000/api/auth"
+      : \`\${window.location.origin}/api/auth\`,`,
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal source-code anchor
+    "baseURL: `${env.NEXT_PUBLIC_API_URL}/auth`,"
+  );
+
+  // Api: no proxy strips /api anymore — the request path already matches
+  // Better-Auth's public base (<API_PUBLIC_URL>/auth). Anchor text is
+  // identical in the pino and winston app.setup.ts.
+  replaceAnchored(
+    targetDir,
+    "apps/api/src/app.setup.ts",
+    `express.all("/auth/*splat", (req, res) => {
+    // Better-Auth matches against its public base (<WEB_URL>/api/auth), but
+    // the /api prefix is stripped by the Next rewrite / reverse proxy before
+    // the request reaches us — restore it so the router matches.
+    req.url = \`/api\${req.url}\`;
+    return authHandler(req, res);
+  });`,
+    `// Direct mode: the browser reaches this host at <API_PUBLIC_URL>/auth/*,
+  // so the path already matches Better-Auth's public base — no prefix fixup.
+  express.all("/auth/*splat", (req, res) => authHandler(req, res));`
+  );
+
+  // Api: auth endpoints live on the API's own public origin; scope the
+  // session cookie to the parent domain so app.<domain> (SSR) sees it.
+  replaceAnchored(
+    targetDir,
+    "apps/api/src/auth/auth.module.ts",
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal source-code anchor
+    "baseUrl: `${env.WEB_URL}/api/auth`,",
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal source-code anchor
+    "baseUrl: `${env.API_PUBLIC_URL}/auth`,"
+  );
+  replaceAnchored(
+    targetDir,
+    "apps/api/src/auth/auth.module.ts",
+    "trustedOrigins: [env.WEB_URL],",
+    "trustedOrigins: [env.WEB_URL],\n          // Parent-domain session cookie — the web subdomain (SSR) must see it.\n          cookieDomain: env.COOKIE_DOMAIN,"
+  );
+  replaceAnchored(
+    targetDir,
+    "apps/api/src/config/env.ts",
+    `    /** Public origin of the web app — trusted origin + base for auth URLs. */
+    WEB_URL: z.url(),`,
+    `    /** Public origin of the web app — trusted origin + base for auth URLs. */
+    WEB_URL: z.url(),
+    /** Public origin of the API as the browser reaches it, e.g. https://api.example.com */
+    API_PUBLIC_URL: z.url(),
+    /** Parent domain the session cookie is scoped to, e.g. "example.com". */
+    COOKIE_DOMAIN: z.string().min(1),`
+  );
+
+  // Env inventory: the browser calls the API origin; two new variables.
+  replaceAnchored(
+    targetDir,
+    ".env.example",
+    `# What the browser calls. Same-origin via the Next.js /api rewrite — no CORS.
+NEXT_PUBLIC_API_URL=http://localhost:3000/api`,
+    `# What the browser calls — the API's own origin (CORS allows WEB_URL).
+NEXT_PUBLIC_API_URL=http://localhost:3001
+# Public origin of the API as the browser reaches it — Better-Auth's base.
+# Prod: a sibling subdomain of WEB_URL, e.g. https://api.example.com.
+API_PUBLIC_URL=http://localhost:3001
+# Parent domain the session cookie is scoped to, so app.<domain> and
+# api.<domain> both see it (prod: example.com — no leading dot needed).
+COOKIE_DOMAIN=localhost`
+  );
+  replaceAnchored(
+    targetDir,
+    ".env.example",
+    "<WEB_URL>/api/auth/callback/microsoft",
+    "<API_PUBLIC_URL>/auth/callback/microsoft"
+  );
+
+  // Prod compose example: route the api on its own subdomain, no strip.
+  replaceAnchored(
+    targetDir,
+    "docker-compose.prod.yml",
+    "#   - traefik.http.routers.app-api.rule=Host(`app.example.com`) && PathPrefix(`/api`)\n    #   - traefik.http.middlewares.app-api-strip.stripprefix.prefixes=/api\n    #   - traefik.http.routers.app-api.middlewares=app-api-strip",
+    "#   - traefik.http.routers.app-api.rule=Host(`api.example.com`)"
+  );
+
+  // Docs: replace the same-origin story with the split-subdomain one.
+  replaceAnchored(
+    targetDir,
+    "README.md",
+    `- **Same-origin API.** The browser only calls \`/api/*\` on the web origin; Next rewrites to
+  the api in dev, the reverse proxy routes it in prod. No CORS, no cookie domain pain.`,
+    `- **Direct API.** The browser calls the API on its own origin (\`api.<domain>\` next to
+  \`app.<domain>\`): CORS allows the web origin and the session cookie is scoped to the
+  parent domain (\`COOKIE_DOMAIN\`), so same-site cookies keep working.`
+  );
+  replaceAnchored(
+    targetDir,
+    "docs/architecture.md",
+    "web/                  Next.js 16 — UI, same-origin /api proxy, no business logic",
+    "web/                  Next.js 16 — UI only, no API proxy, no business logic"
+  );
+  replaceAnchored(
+    targetDir,
+    "docs/architecture.md",
+    `  B->>W: /api/projects (cookie)
+  W->>A: rewrite → /projects`,
+    "  B->>A: /projects (cookie; CORS)"
+  );
+  replaceAnchored(
+    targetDir,
+    "docs/architecture.md",
+    `Everything is **same-origin**: the browser only ever talks to the web origin.
+In dev, \`next.config.ts\` rewrites \`/api/:path*\` to the api; in production the
+reverse proxy routes the \`/api\` prefix instead (see \`docs/deployment.md\`).
+CORS and cookie domains are therefore non-issues by construction.`,
+    `The browser talks to the API **directly** on its own origin
+(\`API_PUBLIC_URL\`, e.g. \`https://api.example.com\` next to
+\`https://app.example.com\`). Both origins share a parent domain, so they are
+**same-site**: SameSite=Lax cookies still flow, CORS is enabled for
+\`WEB_URL\`, and the session cookie is scoped to the parent domain
+(\`COOKIE_DOMAIN\`) so the web app's SSR sees it too (see
+\`docs/deployment.md\`).`
+  );
+  replaceAnchored(
+    targetDir,
+    "docs/architecture.md",
+    `3. **better-auth handler** — mounted *before* \`app.init()\` because Nest
+   registers its 404 catch-all during init. The mount re-prefixes the URL
+   (\`/auth/x\` → \`/api/auth/x\`) because better-auth matches requests against
+   the path of its public \`baseURL\` and the proxy strips \`/api\`.`,
+    `3. **better-auth handler** — mounted *before* \`app.init()\` because Nest
+   registers its 404 catch-all during init. Requests arrive at \`/auth/*\`
+   exactly as better-auth's public \`baseURL\` path expects — no rewriting.`
+  );
+  replaceAnchored(
+    targetDir,
+    "docs/stack.md",
+    "`/api` rewrite makes the whole app same-origin",
+    "no API proxy — the browser calls the API origin directly"
+  );
+  replaceAnchored(
+    targetDir,
+    "docs/deployment.md",
+    `Create the shared network once: \`docker network create proxy\`. Route
+path-based on one hostname (keeps everything same-origin):
+
+- \`app.example.com/*\` → \`web:3000\`
+- \`app.example.com/api/*\` → \`api:3001\`, **stripping the \`/api\` prefix**
+
+Traefik labels for exactly this are commented in \`docker-compose.prod.yml\`.
+nginx equivalent: \`location /api/ { proxy_pass http://api:3001/; }\` (note
+both trailing slashes — that's what strips the prefix). The api re-adds
+\`/api\` internally for the Better-Auth router; nothing else cares.`,
+    `Create the shared network once: \`docker network create proxy\`. Route each
+app on its own subdomain of one parent domain (same-site, so cookies work):
+
+- \`app.example.com/*\` → \`web:3000\`
+- \`api.example.com/*\` → \`api:3001\` (no path prefix, nothing to strip)
+
+Traefik labels for exactly this are commented in \`docker-compose.prod.yml\`.
+nginx equivalent: a second \`server\` block for \`api.example.com\` with
+\`location / { proxy_pass http://api:3001; }\`. Set \`COOKIE_DOMAIN\` to the
+parent domain (\`example.com\`) so both subdomains see the session cookie.`
+  );
+  replaceAnchored(
+    targetDir,
+    "docs/deployment.md",
+    "| `NEXT_PUBLIC_API_URL` | `http://localhost:3000/api` | `https://app.example.com/api` (build arg) |",
+    `| \`NEXT_PUBLIC_API_URL\` | \`http://localhost:3001\` | \`https://api.example.com\` (build arg) |
+| \`API_PUBLIC_URL\` | \`http://localhost:3001\` | \`https://api.example.com\` |
+| \`COOKIE_DOMAIN\` | \`localhost\` | \`example.com\` (the shared parent domain) |`
+  );
+}
+
 /** Whole paths removed by --backup=false. */
 const BACKUP_PRUNE_PATHS = ["scripts/backup", "docs/backup.md"];
 
@@ -611,6 +890,7 @@ export function scaffold(options: ScaffoldOptions): void {
     ci = "github",
     locale = "en",
     ai = "claude",
+    apiAccess = "proxy",
     prodBranch = "main",
     observability = [],
     featureFlags = DEFAULT_FEATURE_FLAGS,
@@ -666,6 +946,7 @@ export function scaffold(options: ScaffoldOptions): void {
     applyVariantOverlay(variantsDir, "ai-claude", targetDir);
     stampAgentsVariants(targetDir, {
       ui,
+      apiAccess,
       authz,
       locale,
       prodBranch,
@@ -682,6 +963,11 @@ export function scaffold(options: ScaffoldOptions): void {
   stampProdBranch(targetDir, prodBranch);
   setDefaultLocale(targetDir, locale);
   stampEnvChoices(targetDir, { observability, featureFlags });
+  // After every overlay (the anchors live in files some overlays replace)
+  // and before writeDotEnv (.env inherits the patched .env.example).
+  if (apiAccess === "direct") {
+    applyDirectApi(targetDir);
+  }
   if (!backup) {
     pruneBackup(targetDir);
   }

@@ -73,8 +73,8 @@ tests' different strictness intact.
   (`--ai=none` opts out): `AGENTS.md` (agent instructions inside
   `BEGIN/END:create-industry-app` markers; the `__UI_VARIANT__` /
   `__AUTHZ_VARIANT__` / `__ORG_VARIANT__` / `__LOCALE_VARIANT__` /
-  `__I18N_VARIANT__` / `__LOGGING_VARIANT__` / `__CI_VARIANT__` /
-  `__OBSERVABILITY_VARIANT__` tokens are stamped at scaffold time by
+  `__I18N_VARIANT__` / `__LOGGING_VARIANT__` / `__API_ACCESS_VARIANT__` /
+  `__CI_VARIANT__` / `__OBSERVABILITY_VARIANT__` tokens are stamped at scaffold time by
   `stampAgentsVariants`), a one-line `CLAUDE.md` importing it, and path-scoped
   `.claude/rules/*.md` — stored as `_claude/` in the overlay (same
   npm-publish concern as `_gitignore`; the scaffold renames it). Rules with
@@ -133,6 +133,24 @@ when the markers/lines are missing), so keep every backup reference inside one
 of those shapes — a backup mention added outside a marker block or on a
 non-matching line will be missed by the prune and break the scaffold test.
 
+**API access (`--api=direct`) is an anchored-edit transform, not an overlay**
+(`applyDirectApi` in `src/scaffold.ts`). It runs AFTER all overlays and
+rewrites exact text anchors in `apps/web/next.config.ts` (drops the `/api`
+rewrite), `apps/web/src/lib/auth-client.ts`, `apps/api/src/app.setup.ts` (no
+`/api` re-prefix), `apps/api/src/auth/auth.module.ts` (Better-Auth base =
+`${API_PUBLIC_URL}/auth` + `cookieDomain`), `apps/api/src/config/env.ts`,
+`.env.example`, `docker-compose.prod.yml` and the docs that describe the
+same-origin story (`README.md`, `docs/architecture.md`, `docs/stack.md`,
+`docs/deployment.md`). Each edit is fail-loud, and the anchors must stay
+**byte-identical across every overlay copy of the same file** — that is why
+it is a transform: `app.setup.ts` (logging-winston) and `docs/stack.md`
+(logging-winston) each exist in two flavors that share the anchored text.
+When you touch any of those anchor sites (template or overlay copy), update
+`applyDirectApi` in the same change; the scaffold tests run it against the
+real template and will throw on drift. `createAuth`'s optional `cookieDomain`
+(→ Better-Auth `advanced.crossSubDomainCookies`) ships in both auth.ts copies
+and is simply unused in proxy mode.
+
 ## Development workflow
 
 ```sh
@@ -180,7 +198,7 @@ Each of these broke once; the integration suite guards most of them.
 | `style/useImportType` stays **off** for `apps/api` | biome converts DI-injected classes to `import type`, silently erasing the metadata Nest resolves constructors from |
 | `apps/api/vitest.swc.ts` keeps explicit `legacyDecorator + decoratorMetadata` | unplugin-swc does not read tsconfig; without it `@Inject()` metadata vanishes under vitest |
 | No pino `transport` when `NODE_ENV === "test"` | transports spawn worker threads that crash vitest's forked workers |
-| Better-Auth `baseUrl` = full public base (`${WEB_URL}/api/auth`); express mount re-prefixes `/api` and registers **before** `app.init()` | a path in `baseURL` *replaces* `basePath` as the router mount; Nest's 404 catch-all registers at init and swallows later mounts |
+| Better-Auth `baseUrl` = full public base (`${WEB_URL}/api/auth`); express mount re-prefixes `/api` and registers **before** `app.init()` (with `--api=direct`: base is `${API_PUBLIC_URL}/auth`, no re-prefix) | a path in `baseURL` *replaces* `basePath` as the router mount; Nest's 404 catch-all registers at init and swallows later mounts |
 | Server handler inputs typed from schema **outputs**, never `InferContractRouterInputs` | that type is the client input view; `z.coerce` fields become `unknown` |
 | `migrate.ts` uses `__dirname` (with a biome-ignore) | the unsafe autofix rewrites it to `import.meta.dirname`, which breaks CJS |
 | Template dotfiles stored as `_gitignore`; template `biome.jsonc` sets `vcs.useIgnoreFile: false` | npm strips `.gitignore` from packages; biome would otherwise demand the missing ignore file |
@@ -218,6 +236,7 @@ Renovate updates both workspaces. The scaffold-time axes are:
 - **Observability** — sentry/posthog/otel multiselect (env stamp, no overlay)
 - **Behavior flags** — require-email-verification/emails-enabled (env stamp)
 - **API logger** — pino/winston (overlay)
+- **API access** — proxy/direct (anchored text edits, no overlay)
 - **CI provider** — github/gitlab (overlay)
 - **Backup tooling** — keep/prune (template content + prune, no overlay)
 - **AI config** — claude/none (additive markdown only)

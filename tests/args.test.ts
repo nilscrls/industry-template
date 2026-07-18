@@ -92,6 +92,7 @@ describe("parseArgs", () => {
       "--logging=winston",
       "--ci=gitlab",
       "--release=commit-and-tag-version",
+      "--api=direct",
       "--ai=none",
       "--branch=master",
     ]);
@@ -105,6 +106,7 @@ describe("parseArgs", () => {
       logging: "winston",
       ci: "gitlab",
       release: "commit-and-tag-version",
+      apiAccess: "direct",
       ai: "none",
       branch: "master",
     });
