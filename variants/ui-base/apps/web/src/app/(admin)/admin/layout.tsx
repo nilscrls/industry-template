@@ -2,12 +2,11 @@
 
 import { Button } from "@repo/ui/components/button";
 import { Skeleton } from "@repo/ui/components/skeleton";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/app-shell";
 import { authClient } from "@/lib/auth-client";
+import { Link, usePathname } from "@/lib/navigation";
 
 const ADMIN_NAV = [
   { href: "/admin/organizations", key: "organizations" },

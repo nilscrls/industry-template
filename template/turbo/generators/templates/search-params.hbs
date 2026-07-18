@@ -1,0 +1,63 @@
+import {
+  is{{ pascalCase name }}SortField,
+  {{ camelCase name }}SortFields,
+  sortOrders,
+} from "@repo/contracts";
+import type { ColumnFiltersState, SortingState } from "@tanstack/react-table";
+import {
+  type inferParserType,
+  parseAsInteger,
+  parseAsString,
+  parseAsStringLiteral,
+} from "nuqs/server";
+
+/**
+ * URL is the source of truth for the {{ plural }} table: pagination, search
+ * and sorting survive reloads and are shareable. Parsers derive from the
+ * contract literals, so an out-of-range value in the URL falls back instead
+ * of leaking an unchecked string into the API input.
+ */
+export const {{ camelCase plural }}SearchParams = {
+  page: parseAsInteger.withDefault(1),
+  search: parseAsString.withDefault(""),
+  sortBy: parseAsStringLiteral({{ camelCase name }}SortFields).withDefault("createdAt"),
+  sortOrder: parseAsStringLiteral(sortOrders).withDefault("desc"),
+};
+
+export type {{ pascalCase plural }}SearchParams = inferParserType<
+  typeof {{ camelCase plural }}SearchParams
+>;
+
+/**
+ * TanStack Table ↔ URL bridge. The `name` column id maps to the `search`
+ * query param, so the toolbar input drives the table's own filter pipeline
+ * while nuqs owns the state.
+ */
+export function paramsToColumnFilters(
+  params: {{ pascalCase plural }}SearchParams
+): ColumnFiltersState {
+  return params.search ? [{ id: "name", value: params.search }] : [];
+}
+
+export function columnFiltersToParams(
+  filters: ColumnFiltersState
+): Pick<{{ pascalCase plural }}SearchParams, "search"> {
+  const search = filters.find((filter) => filter.id === "name")?.value;
+  return { search: typeof search === "string" ? search : "" };
+}
+
+export function paramsToSorting(
+  params: {{ pascalCase plural }}SearchParams
+): SortingState {
+  return [{ id: params.sortBy, desc: params.sortOrder === "desc" }];
+}
+
+export function sortingToParams(
+  sorting: SortingState
+): Pick<{{ pascalCase plural }}SearchParams, "sortBy" | "sortOrder"> {
+  const primary = sorting[0];
+  if (!(primary && is{{ pascalCase name }}SortField(primary.id))) {
+    return { sortBy: "createdAt", sortOrder: "desc" };
+  }
+  return { sortBy: primary.id, sortOrder: primary.desc ? "desc" : "asc" };
+}

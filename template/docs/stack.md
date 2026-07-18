@@ -60,7 +60,7 @@ reasons, not against habits.
 | Minio | S3-compatible object storage (console on :9001) |
 | maildev | dev SMTP + inbox UI on :1080 (dev profile only) |
 | Docker Compose | `dev` profile = infra only; `all` profile = infra + apps; `docker-compose.dev.yml` exposes host ports, `docker-compose.prod.yml` joins the external `proxy` network |
-| GitHub Actions | quality → integration (Testcontainers) → e2e (compose) |
+| CI pipeline | quality → integration (Testcontainers) → e2e (compose) |
 | Renovate | dependency updates with conventional commits |
 
 ## Version policy

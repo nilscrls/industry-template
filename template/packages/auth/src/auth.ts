@@ -28,6 +28,13 @@ export type SendAuthEmail = (email: AuthEmail) => Promise<void>;
 export interface SecondaryStorage {
   delete: (key: string) => Promise<void>;
   get: (key: string) => Promise<string | null>;
+  /**
+   * Atomically increment `key` and return the post-increment count,
+   * creating it with `ttl` (seconds) on first increment. Better-Auth's
+   * rate limiter uses this for strict accounting; without it the limiter
+   * falls back to best-effort read-then-write and warns at runtime.
+   */
+  increment?: (key: string, ttl: number) => Promise<number>;
   set: (key: string, value: string, ttl?: number) => Promise<void>;
 }
 
@@ -70,6 +77,12 @@ export interface CreateAuthOptions {
   onMemberRemoved?: (event: MembershipEvent) => Promise<void>;
   onOrganizationCreated?: (event: MembershipEvent) => Promise<void>;
   onOrganizationDeleted?: (event: { organizationId: string }) => Promise<void>;
+  /**
+   * Turn on Better-Auth's built-in rate limiter (the api wires this to
+   * AUTH_RATE_LIMIT_ENABLED). Off by default so seeds and scripts that
+   * call createAuth() directly never trip it.
+   */
+  rateLimitEnabled?: boolean;
   requireEmailVerification?: boolean;
   /** Redis-backed session/rate-limit storage — recommended in production. */
   secondaryStorage?: SecondaryStorage;
@@ -89,6 +102,30 @@ export function createAuth(options: CreateAuthOptions) {
     // the base for generated links (verification emails, redirects).
     baseURL: options.baseUrl,
     trustedOrigins: options.trustedOrigins,
+    // The /auth/* express mount bypasses the Nest ThrottlerGuard, so this
+    // built-in limiter is the only rate limit on auth endpoints. Counters
+    // are keyed per IP+path (x-forwarded-for; localhost fallback in
+    // dev/test) and live in secondaryStorage (Redis) when provided —
+    // shared across instances, atomic via SecondaryStorage.increment.
+    rateLimit: {
+      enabled: options.rateLimitEnabled ?? false,
+      // Baseline for every auth route (get-session is hot; NATs share IPs).
+      window: 10,
+      max: 100,
+      // Credential endpoints get tight per-minute buckets. Pinned here —
+      // not left to better-auth's built-ins — so the policy survives
+      // library upgrades. Paths are relative to the baseURL path.
+      customRules: {
+        "/sign-in/email": { window: 60, max: 10 },
+        "/sign-up/email": { window: 60, max: 10 },
+        "/forget-password": { window: 60, max: 3 },
+        "/request-password-reset": { window: 60, max: 3 },
+        "/two-factor/*": { window: 10, max: 3 },
+      },
+      ...(options.secondaryStorage
+        ? { storage: "secondary-storage" as const }
+        : {}),
+    },
     ...(options.secondaryStorage
       ? { secondaryStorage: options.secondaryStorage }
       : {}),

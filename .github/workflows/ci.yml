@@ -74,7 +74,16 @@ jobs:
             flags: --authz=rebac --locale=fr
             integration: true
           - name: base-ui-rebac
-            flags: --ui=base --authz=rebac
+            # Also exercises --no-backup: install/lint/build/test must pass
+            # with the backup tooling pruned (nothing may reference it).
+            flags: --ui=base --authz=rebac --no-backup
+            integration: false
+          - name: gitlab-winston
+            # Only row that boots createApp() on the winston stack.
+            flags: --ci=gitlab --logging=winston
+            integration: true
+          - name: single-org-url-i18n
+            flags: --org=single --i18n=url
             integration: false
     steps:
       - uses: actions/checkout@v7
@@ -95,6 +104,13 @@ jobs:
         run: |
           test -f CLAUDE.md && test -f AGENTS.md && test -d .claude/rules
           ! grep -q "__UI_VARIANT__" AGENTS.md
+      # GitLab overlay replaces .github + release-please with .gitlab-ci.yml.
+      - name: Verify GitLab CI overlay
+        if: contains(matrix.flags, '--ci=gitlab')
+        working-directory: ${{ runner.temp }}/variant-app
+        run: |
+          test -f .gitlab-ci.yml && test ! -d .github
+          ! grep -q "__PROD_BRANCH__" .gitlab-ci.yml
       # Not frozen: variant overlays legitimately change package.json (e.g.
       # ui-base swaps Radix for Base UI), so the scaffold's first install
       # must be allowed to update the copied lockfile — exactly what a user's

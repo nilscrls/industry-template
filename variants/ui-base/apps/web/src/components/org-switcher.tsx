@@ -30,13 +30,13 @@ import { Input } from "@repo/ui/components/input";
 import { cn } from "@repo/ui/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { Building2Icon, PlusIcon } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { authClient } from "@/lib/auth-client";
+import { useRouter } from "@/lib/navigation";
 
 const createOrgSchema = z.object({ name: z.string().min(1).max(100) });
 type CreateOrgValues = z.infer<typeof createOrgSchema>;

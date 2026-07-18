@@ -28,6 +28,12 @@ paths:
   public path (a path in `baseURL` *replaces* `basePath`), and the express
   mount registers **before** `app.init()` so Nest's 404 catch-all doesn't
   swallow it. Don't reorder bootstrap.
+- That express mount also means the auth endpoints **bypass Nest's global
+  `ThrottlerGuard`** — their only rate limiting is Better-Auth's built-in
+  `rateLimit` (Redis-backed via secondary storage, gated by
+  `AUTH_RATE_LIMIT_ENABLED`). Don't disable it assuming the throttler
+  covers `/auth/*`, and keep the tighter sign-in/sign-up/reset rules when
+  touching it.
 - Caching is scope-first: `cache.forOrg(orgId)` / `cache.forUser(userId)` /
   `cache.global()` (caller-independent values only). Never build raw Redis
   keys from request data — an unscoped key is a cross-tenant IDOR waiting to
@@ -39,8 +45,6 @@ paths:
 - BullMQ receives plain connection options parsed from `REDIS_URL` — never
   pass an ioredis instance (nominal type clash with bullmq's bundled
   ioredis).
-- The pino logger must set no `transport` when `NODE_ENV === "test"` —
-  transports spawn worker threads that crash vitest's forked workers.
 - `vitest.swc.ts` keeps explicit `legacyDecorator + decoratorMetadata`;
   unplugin-swc does not read tsconfig. Don't remove it.
 - Integration tests (`pnpm test:integration`, Testcontainers) set **every**

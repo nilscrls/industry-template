@@ -86,5 +86,6 @@ changes.
   ids flow through logs and error payloads.
 - **Backups**: `postgres-data` and `minio-data` volumes are the state;
   `pg_dump` on a schedule + object-storage replication is the minimum.
+  Ready-made: `pnpm backup:db` / `pnpm backup:files` + restore runbook — see [docs/backup.md](backup.md).
 - **Health**: point uptime checks at `/api/health/ready` (through the proxy)
   — it verifies db and redis, not just the process.

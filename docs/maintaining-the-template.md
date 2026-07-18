@@ -16,6 +16,7 @@ src/          CLI source (@clack/prompts) — scaffold logic is pure & tested
 tests/        CLI tests, incl. scaffold smoke tests against the REAL template
 template/     the reference app (its docs/ ships to every generated project)
 variants/     per-option overlays: ui-base (Base UI), authz-rebac (ReBAC),
+              org-single, i18n-url, logging-winston, ci-gitlab, and
               ai-claude (AGENTS.md + CLAUDE.md + .claude/rules — applied by default)
 docs/         this documentation
 .github/      CI: `cli` + `template` + `variants` jobs (quality + Testcontainers)
@@ -31,18 +32,46 @@ docs/         this documentation
   `project_member` schema + regenerated drizzle migrations (`_delete.json`
   removes the RBAC ones), projects/users services and controllers, seeds,
   `docs/authorization.md`, and its own integration suite.
+- `variants/org-single/` — single-organization mode: a UI-neutral
+  `org-switcher.tsx` stub, the `packages/auth/src/auth.ts` seam it replaces
+  (auto-provisions one `DEFAULT_ORG`, `allowUserToCreateOrganization: false`),
+  and its own `apps/api/test/api.int.test.ts`. Applied AFTER ui-base, so its
+  web files must stay UI-library-neutral (see below) — last write wins.
+- `variants/i18n-url/` — URL-prefixed locales: `middleware.ts` prefix-rewrite,
+  `locale-switcher.tsx`, `i18n/request.ts`, and the `lib/navigation.tsx` shim
+  (`localizeHref`). Also applied after ui-base and UI-neutral.
+- `variants/logging-winston/` — winston (`nest-winston`) replacements for the
+  `apps/api` logger.ts / app.setup.ts / exception.filter / mail.processor /
+  mail.service (+ their specs) and the api `package.json` (no `nestjs-pino`),
+  plus the winston copies of `docs/stack.md`/`features.md`/`testing.md`.
+- `variants/ci-gitlab/` — `.gitlab-ci.yml` (carries the `__PROD_BRANCH__`
+  marker — it is listed in `PROD_BRANCH_FILES`), a `.versionrc.json`, and a
+  GitLab-flavored `docs/releases.md`; its `_delete.json` removes `.github/`,
+  `release-please-config.json` and `.release-please-manifest.json`.
+
+**UI-neutral** (for the post-ui-base overlays org-single and i18n-url) means
+no variant-divergent primitives — no `DropdownMenu`, no Radix/Base-specific
+APIs. org-single's org-switcher is strictly zero-`@repo/ui` (its scaffold test
+asserts that). i18n-url's locale-switcher may import `@repo/ui/components/button`
+— Button's API is identical in both flavors — but nothing more. Keep the two
+tests' different strictness intact.
+
 - `variants/ai-claude/` — AI assistant config, applied **by default**
   (`--ai=none` opts out): `AGENTS.md` (agent instructions inside
-  `BEGIN/END:create-industry-app` markers; `__UI_VARIANT__` /
-  `__AUTHZ_VARIANT__` / `__LOCALE_VARIANT__` tokens are stamped at scaffold
-  time), a one-line `CLAUDE.md` importing it, and path-scoped
+  `BEGIN/END:create-industry-app` markers; the `__UI_VARIANT__` /
+  `__AUTHZ_VARIANT__` / `__ORG_VARIANT__` / `__LOCALE_VARIANT__` /
+  `__I18N_VARIANT__` / `__LOGGING_VARIANT__` / `__CI_VARIANT__` /
+  `__OBSERVABILITY_VARIANT__` tokens are stamped at scaffold time by
+  `stampAgentsVariants`), a one-line `CLAUDE.md` importing it, and path-scoped
   `.claude/rules/*.md` — stored as `_claude/` in the overlay (same
   npm-publish concern as `_gitignore`; the scaffold renames it). Rules with
   a variant suffix (`authz.rbac.md`/`authz.rebac.md`,
-  `ui.radix.md`/`ui.base.md`) are resolved at scaffold time — the chosen
-  one is renamed to `<dimension>.md`, the others deleted
-  (`selectVariantRules`); a new variant of either dimension needs a
-  matching rule file. `_claude/agents/code-reviewer.md` ships a review
+  `ui.radix.md`/`ui.base.md`, `logging.pino.md`/`logging.winston.md`) are
+  resolved at scaffold time — the chosen one is renamed to `<dimension>.md`,
+  the others deleted (`selectVariantRules`); a new variant of any rules
+  dimension (authz, ui, logging) needs a matching rule file. The org, i18n,
+  ci and observability axes deliberately get **no** suffixed rule files — a
+  stamped AGENTS.md bullet only. `_claude/agents/code-reviewer.md` ships a review
   subagent tuned to the constraints table below. The
   `_claude/skills/` directory holds the in-house `scaffold-feature` skill
   plus third-party skills vendored by `pnpm sync-skills`
@@ -63,6 +92,33 @@ manual `workflow_dispatch`) — day-to-day pushes rely on lefthook + the local
 checklist below, so run it before merging significant changes. To regenerate the ReBAC migrations after a schema change:
 scaffold with `--authz=rebac`, delete `packages/db/drizzle`, run
 `pnpm db:generate`, copy the folder back into the overlay.
+
+Current mirror pairs (a template edit must be replayed in the overlay copy):
+
+- `packages/auth/src/auth.ts` → its `variants/org-single/packages/auth/src/auth.ts`
+  counterpart (any auth.ts edit — rate limiting, providers — must be replayed
+  there; org-single derives its copy from the post-security template).
+- `apps/api/test/api.int.test.ts` → its authz-rebac and org-single copies.
+- The `apps/api` logger/mail files and api `package.json` → their
+  `variants/logging-winston/` copies.
+- `docs/stack.md`/`features.md`/`testing.md` → their logging-winston copies.
+
+**Overlays never ship `.env.example`, root `package.json`,
+`docker-compose.yml`, or `turbo.json`.** `stampEnvChoices`, `pruneBackup`, and
+`setProjectName` run AFTER overlay application and assume the template's own
+copies of those files — an overlay copy would be silently overwritten or, for
+env stamping, break the fail-loud line lookup.
+
+**Backup tooling is template content guarded by prune markers, not an
+overlay.** `--backup=false` (`pruneBackup` in `src/scaffold.ts`) deletes whole
+paths (`scripts/backup/`, `docs/backup.md`), strips the `# BEGIN backup` …
+`# END backup` blocks from `docker-compose.yml` + `.env.example`, removes lines
+matching `/backup\.md|backup:db|backup:files|restore:db|restore:files/` from
+`README.md` + `docs/deployment.md`, and deletes the four
+`backup:*`/`restore:*` root package scripts. Each strip is fail-loud (throws
+when the markers/lines are missing), so keep every backup reference inside one
+of those shapes — a backup mention added outside a marker block or on a
+non-matching line will be missed by the prune and break the scaffold test.
 
 ## Development workflow
 
@@ -139,11 +195,31 @@ private).
 
 ## Keeping the template current
 
-Renovate updates both workspaces. Scaffold-time options are deliberately
-few — **UI primitives (radix/base), authorization model (rbac/rebac),
-default locale (en/fr) and AI config (claude/none, additive markdown only)**
-— because every option multiplies the test matrix
-(the `variants` CI job pays that cost). Before adding a new option, prefer a
+Renovate updates both workspaces. The scaffold-time axes are:
+
+- **UI primitives** — radix/base (overlay)
+- **Authorization model** — rbac/rebac (overlay)
+- **Organization model** — multi/single (overlay)
+- **Default locale** — en/fr (mechanical stamp)
+- **Locale routing** — cookie/url (overlay)
+- **Observability** — sentry/posthog/otel multiselect (env stamp, no overlay)
+- **Behavior flags** — require-email-verification/emails-enabled (env stamp)
+- **API logger** — pino/winston (overlay)
+- **CI provider** — github/gitlab (overlay)
+- **Backup tooling** — keep/prune (template content + prune, no overlay)
+- **AI config** — claude/none (additive markdown only)
+
+The `variants` CI matrix is NOT the cartesian product — it is a curated set of
+rows chosen so every overlay appears at least once, every overlay-pair with an
+application-order constraint appears at least once (ui-base→org-single, i18n-url
+after ui-base), and the env-stamping axes (observability, flags, backup) are
+covered by `tests/scaffold.test.ts` copy-only assertions rather than full
+builds. When you add an overlay, add one matrix row exercising it and one
+scaffold test; do not multiply rows. Before adding a new option, prefer a
 documented migration guide in `template/docs/`; add an overlay only when the
-choice is structural (different dependencies or data model), and wire it
-into the CI matrix + `tests/scaffold.test.ts` in the same PR.
+choice is structural (different dependencies or data model).
+
+ORM choice (drizzle → prisma) is deliberately NOT a scaffold option: it touches
+the schema, RLS policies, migrations, seeds and every service — as an overlay it
+would double the whole matrix. It ships as a migration guide instead:
+`template/docs/prisma-migration.md`.

@@ -1,3 +1,5 @@
+// MIRRORED FILE: variants/logging-winston/apps/api/src/app.setup.ts overlays
+// this file — mirror any change there (see docs/maintaining-the-template.md).
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import type { Auth } from "@repo/auth";

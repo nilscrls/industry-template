@@ -9,16 +9,21 @@ architecture — if a step feels missing, check `docs/architecture.md` first.
 pnpm gen feature        # prompts: singular name, plural
 ```
 
-Generated and auto-registered: contract file + router/index/subjects entries,
-drizzle table + schema index entry, api module/controller/service +
-`it.todo` integration specs, a web list page. Then:
+Generated and auto-registered: contract file (list/find/create/update/remove
+with search + `sortBy`) + router/index/subjects entries, drizzle table +
+schema index entry, api module/controller/service + `it.todo` integration
+specs, a URL-state web table page (TanStack Table + nuqs) with its
+`search-params.ts` + unit test, i18n keys in `messages/en.json` AND
+`fr.json`, and a nav item in `apps/web/src/components/app-shell.tsx`. Then:
 
-1. `pnpm db:generate && pnpm db:migrate` — create/apply the migration.
-2. Grant permissions for the new subject — see `docs/authorization.md` for
+1. `pnpm lint:fix` — normalize the generated import order.
+2. `pnpm db:generate && pnpm db:migrate` — create/apply the migration.
+3. Grant permissions for the new subject — see `docs/authorization.md` for
    this project's model.
-3. Add `messages/*.json` keys and a nav item in
-   `apps/web/src/components/app-shell.tsx`.
-4. Turn the generated `it.todo`s into real tests and make them pass.
+4. Review the inserted i18n copy (the French strings are real, the entity
+   words are placeholders) and swap the nav icon (the generator reuses the
+   projects icon).
+5. Turn the generated `it.todo`s into real tests and make them pass.
 
 ## Add an endpoint to an existing feature
 

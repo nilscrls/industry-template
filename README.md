@@ -17,8 +17,13 @@ npx create-industry-app my-app -- --yes --no-install
 ```
 
 Prompts (or flags): UI primitives `--ui=radix|base`, authorization model
-`--authz=rbac|rebac`, default language `--locale=en|fr`, plus `--yes` accept
-defaults (radix/rbac/en), `--no-git`, `--no-install`.
+`--authz=rbac|rebac`, organization model `--org=multi|single`, default
+language `--locale=en|fr`, locale routing `--i18n=cookie|url`, observability
+`--observability=sentry,posthog,otel`, behavior flags
+`--flags=require-email-verification,emails-enabled`, logger
+`--logging=pino|winston`, CI `--ci=github|gitlab`, backup
+`--backup`/`--no-backup`, plus `--yes` accept defaults, `--no-git`,
+`--no-install`. Full reference: [docs/cli.md](docs/cli.md).
 
 ## Documentation
 

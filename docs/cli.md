@@ -9,12 +9,14 @@ npx create-industry-app my-app
 ```
 
 Interactive prompts: project name (also the target directory), UI primitives,
-authorization model, default language, AI assistant config, then optional
-setup steps (git init, pnpm install). Non-interactive:
+authorization model, organization model, default language, locale routing,
+observability, behavior flags, API logger, CI provider, backup tooling, AI
+assistant config, then optional setup steps (git init, pnpm install).
+Non-interactive:
 
 ```sh
 npx create-industry-app my-app -- --yes            # accept all defaults
-npx create-industry-app my-app -- --yes --ui=base --authz=rebac --locale=fr
+npx create-industry-app my-app -- --yes --ui=base --authz=rebac --org=single --i18n=url --ci=gitlab
 ```
 
 | Flag | Effect |
@@ -22,7 +24,14 @@ npx create-industry-app my-app -- --yes --ui=base --authz=rebac --locale=fr
 | `[directory]` | target path; its basename becomes the default project name |
 | `--ui=radix\|base` | shadcn/ui primitive library (default `radix`): Radix UI, or Base UI (`@base-ui/react`, `render`-prop composition) |
 | `--authz=rbac\|rebac` | OpenFGA authorization model (default `rbac`): global roles + per-user grants, or per-project relations (owner/editor/viewer) |
+| `--org=multi\|single` | organization model (default `multi`): org switcher + invitations, or one implicit organization |
 | `--locale=en\|fr` | default UI language (default `en`); both catalogs always ship |
+| `--i18n=cookie\|url` | locale routing (default `cookie`): cookie-stored locale, or URL-prefixed paths (`/fr/...`) via middleware rewrite |
+| `--observability=sentry,posthog,otel\|none` | comma-separated collectors to enable (default `none`); everything ships wired but disabled — this stamps the matching `*_ENABLED` vars to `true` in `.env.example`/`.env` |
+| `--flags=require-email-verification,emails-enabled\|none` | env-driven behavior flags (default `emails-enabled`); stamps `REQUIRE_EMAIL_VERIFICATION` / `EMAILS_ENABLED` into `.env.example`/`.env` |
+| `--logging=pino\|winston` | API logger (default `pino`) |
+| `--ci=github\|gitlab` | CI provider (default `github`): GitHub Actions + release-please, or `.gitlab-ci.yml` |
+| `--backup` / `--no-backup` | keep or prune the Postgres backup/restore tooling (default keep; interactive confirm) |
 | `--ai=claude\|none` | AI assistant config (default `claude`): `AGENTS.md` (agent instructions, stamped with the chosen variants), `CLAUDE.md` (imports it), path-scoped `.claude/rules/` (incl. authz/ui rules matching the chosen variants), `.claude/skills/` (the `scaffold-feature` generator workflow + vendored Vercel/Anthropic skills, provenance in `vendored.lock.json`) and a `code-reviewer` agent |
 | `--yes`, `-y` | skip all prompts, take defaults/flags |
 | `--no-git` | skip `git init` |
@@ -42,10 +51,14 @@ npx create-industry-app my-app -- --yes --ui=base --authz=rebac --locale=fr
    components (and the few `asChild` call sites) for Base UI ports;
    `--authz=rebac` swaps the permission contracts, db schema + migrations,
    ability factory, seeds and integration tests for the membership-based
-   model.
+   model; `--org=single` swaps the org switcher + auth config for
+   single-organization mode; `--i18n=url` swaps the middleware/navigation for
+   URL-prefixed locales; `--logging=winston` swaps the api logger stack;
+   `--ci=gitlab` replaces `.github/` + release-please with a `.gitlab-ci.yml`.
 3. Unless `--ai=none`, applies the `ai-claude` overlay — `AGENTS.md`,
    `CLAUDE.md` (a one-line `@AGENTS.md` import) and `.claude/rules/` — and
-   stamps the chosen ui/authz/locale variants into `AGENTS.md`. The managed
+   stamps the chosen variants (ui, authz, org, locale, i18n, logging, ci,
+   observability) into `AGENTS.md`. The managed
    content sits between `BEGIN:create-industry-app` markers; edits outside
    them survive template upgrades.
 4. Sets `DEFAULT_LOCALE` in `packages/i18n/src/config.ts` from `--locale`.
@@ -53,9 +66,13 @@ npx create-industry-app my-app -- --yes --ui=base --authz=rebac --locale=fr
    (npm strips or mangles dot-entries in published packages, so the template
    and overlays store them prefixed).
 6. Stamps the project name into the root `package.json`.
-7. Materializes `.env` from `.env.example`, generating a random 64-hex
+7. Stamps the observability and behavior-flag choices into `.env.example`
+   (and therefore `.env`); with `--no-backup`, removes `scripts/backup/`,
+   `docs/backup.md`, the compose `backup` block, the `BACKUP_*` env vars and
+   the four backup/restore package scripts.
+8. Materializes `.env` from `.env.example`, generating a random 64-hex
    `BETTER_AUTH_SECRET`.
-8. Optionally initializes git (`main` branch) and runs `pnpm install`, then
+9. Optionally initializes git (`main` branch) and runs `pnpm install`, then
    commits the scaffold and creates a `develop` branch — ready for
    git-flow-next. (The repo is created before the install so the template's
    `prepare` script can register git hooks; the commit happens after so the

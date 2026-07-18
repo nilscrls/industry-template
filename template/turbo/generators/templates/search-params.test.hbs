@@ -1,0 +1,77 @@
+import { describe, expect, it } from "vitest";
+import {
+  columnFiltersToParams,
+  paramsToColumnFilters,
+  paramsToSorting,
+  type {{ pascalCase plural }}SearchParams,
+  sortingToParams,
+} from "./search-params";
+
+const base: {{ pascalCase plural }}SearchParams = {
+  page: 1,
+  search: "",
+  sortBy: "createdAt",
+  sortOrder: "desc",
+};
+
+describe("paramsToColumnFilters", () => {
+  it("omits the filter when the search is empty", () => {
+    expect(paramsToColumnFilters(base)).toEqual([]);
+  });
+
+  it("maps search to the name column", () => {
+    expect(paramsToColumnFilters({ ...base, search: "acme" })).toEqual([
+      { id: "name", value: "acme" },
+    ]);
+  });
+});
+
+describe("columnFiltersToParams", () => {
+  it("reads search back out of column filters", () => {
+    expect(columnFiltersToParams([{ id: "name", value: "acme" }])).toEqual({
+      search: "acme",
+    });
+  });
+
+  it("falls back to an empty search for missing or invalid values", () => {
+    expect(columnFiltersToParams([{ id: "name", value: 42 }])).toEqual({
+      search: "",
+    });
+  });
+
+  it("round-trips with paramsToColumnFilters", () => {
+    const params = { ...base, search: "widget" };
+    expect(columnFiltersToParams(paramsToColumnFilters(params))).toEqual({
+      search: "widget",
+    });
+  });
+});
+
+describe("sorting bridge", () => {
+  it("derives a single sorting descriptor from the params", () => {
+    expect(
+      paramsToSorting({ ...base, sortBy: "name", sortOrder: "asc" })
+    ).toEqual([{ id: "name", desc: false }]);
+  });
+
+  it("maps a valid sorting state back to params", () => {
+    expect(sortingToParams([{ id: "name", desc: true }])).toEqual({
+      sortBy: "name",
+      sortOrder: "desc",
+    });
+  });
+
+  it("falls back to the default sort for an unknown column", () => {
+    expect(sortingToParams([{ id: "bogus", desc: false }])).toEqual({
+      sortBy: "createdAt",
+      sortOrder: "desc",
+    });
+  });
+
+  it("falls back to the default sort when nothing is sorted", () => {
+    expect(sortingToParams([])).toEqual({
+      sortBy: "createdAt",
+      sortOrder: "desc",
+    });
+  });
+});

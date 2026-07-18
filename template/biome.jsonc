@@ -50,10 +50,12 @@
     },
     {
       // A package's index.ts IS its public API; drizzle needs a combined
-      // schema module for relational queries.
+      // schema module for relational queries. navigation.tsx is a deliberate
+      // re-export shim the --i18n=url variant swaps for locale wrappers.
       "includes": [
         "packages/*/src/index.ts",
-        "packages/db/src/schema/index.ts"
+        "packages/db/src/schema/index.ts",
+        "apps/web/src/lib/navigation.tsx"
       ],
       "linter": { "rules": { "performance": { "noBarrelFile": "off" } } }
     },

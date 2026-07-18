@@ -25,6 +25,10 @@
     "compose:dev:down": "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile dev down",
     "compose:all": "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile all up -d --build",
     "compose:prod": "docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile all up -d --build",
+    "backup:db": "dotenv -e .env -- node scripts/backup/backup-db.mjs",
+    "backup:files": "dotenv -e .env -- node scripts/backup/backup-files.mjs",
+    "restore:db": "dotenv -e .env -- node scripts/backup/restore-db.mjs",
+    "restore:files": "dotenv -e .env -- node scripts/backup/restore-files.mjs",
     "gen": "turbo gen",
     "commit": "czg",
     "prepare": "node scripts/prepare.mjs"

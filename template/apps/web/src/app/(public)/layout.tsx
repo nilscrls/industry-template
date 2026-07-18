@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import type { ReactNode } from "react";
+import { Link } from "@/lib/navigation";
 
 /** Public pages (changelog, legal): centered column, no app shell. */
 export default async function PublicLayout({

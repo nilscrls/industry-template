@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useConsent } from "@/components/consent";
+import { Link } from "@/lib/navigation";
 
 /**
  * Global footer: legal links required for GDPR/LCEN compliance plus the

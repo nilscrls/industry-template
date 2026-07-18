@@ -86,6 +86,11 @@ beforeAll(async () => {
   process.env.FGA_API_TOKEN = "test-token";
   process.env.FGA_MODEL_ID = "";
   process.env.BETTER_AUTH_SECRET = "integration-test-secret-0123456789abcdef";
+  // This suite fires rapid sign-ups/sign-ins from one IP; the limiter has
+  // its own dedicated suite (test/rate-limit.int.test.ts).
+  process.env.AUTH_RATE_LIMIT_ENABLED = "false";
+  process.env.REQUIRE_EMAIL_VERIFICATION = "false";
+  process.env.EMAILS_ENABLED = "true";
   process.env.MICROSOFT_CLIENT_ID = "test-client-id";
   process.env.MICROSOFT_CLIENT_SECRET = "test-client-secret";
   process.env.MICROSOFT_TENANT_ID = "common";

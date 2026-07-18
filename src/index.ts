@@ -8,8 +8,15 @@ import { type CliFlags, parseArgs } from "./args.js";
 import {
   type AiVariant,
   type AuthzVariant,
+  type CiVariant,
+  DEFAULT_FEATURE_FLAGS,
+  type FeatureFlag,
+  type I18nVariant,
   isDirEmpty,
   type LocaleVariant,
+  type LoggingVariant,
+  type ObservabilityTool,
+  type OrgVariant,
   type ProdBranch,
   scaffold,
   type UiVariant,
@@ -69,18 +76,31 @@ async function promptProjectName(flags: CliFlags): Promise<string> {
 interface VariantChoices {
   ai: AiVariant;
   authz: AuthzVariant;
+  backup: boolean;
+  ci: CiVariant;
+  featureFlags: readonly FeatureFlag[];
+  i18n: I18nVariant;
   locale: LocaleVariant;
+  logging: LoggingVariant;
+  observability: readonly ObservabilityTool[];
+  org: OrgVariant;
   prodBranch: ProdBranch;
   ui: UiVariant;
 }
 
-async function promptVariant<TValue extends string>(
+/**
+ * Resolve a single choice: an explicit flag wins, `--yes` falls back to the
+ * default, otherwise ask interactively. The `!== undefined` check (not
+ * truthiness) is load-bearing — `backup: false` and `observability: []` from
+ * flags must short-circuit the prompt instead of being treated as "unset".
+ */
+async function promptOrFallback<TValue>(
   flagValue: TValue | undefined,
   skipPrompts: boolean,
   fallback: TValue,
   ask: () => Promise<TValue | symbol>
 ): Promise<TValue> {
-  if (flagValue) {
+  if (flagValue !== undefined) {
     return flagValue;
   }
   if (skipPrompts) {
@@ -95,7 +115,7 @@ async function promptVariant<TValue extends string>(
 }
 
 async function promptVariants(flags: CliFlags): Promise<VariantChoices> {
-  const ui = await promptVariant(flags.ui, flags.yes, "radix", () =>
+  const ui = await promptOrFallback(flags.ui, flags.yes, "radix", () =>
     p.select({
       message: "UI primitives (shadcn/ui)",
       options: [
@@ -113,7 +133,7 @@ async function promptVariants(flags: CliFlags): Promise<VariantChoices> {
       initialValue: "radix" as const,
     })
   );
-  const authz = await promptVariant(flags.authz, flags.yes, "rbac", () =>
+  const authz = await promptOrFallback(flags.authz, flags.yes, "rbac", () =>
     p.select({
       message: "Authorization model (OpenFGA)",
       options: [
@@ -131,7 +151,25 @@ async function promptVariants(flags: CliFlags): Promise<VariantChoices> {
       initialValue: "rbac" as const,
     })
   );
-  const locale = await promptVariant(flags.locale, flags.yes, "en", () =>
+  const org = await promptOrFallback(flags.org, flags.yes, "multi", () =>
+    p.select({
+      message: "Organization model",
+      options: [
+        {
+          value: "multi" as const,
+          label: "Multi-org",
+          hint: "org switcher, invitations, org-scoped data",
+        },
+        {
+          value: "single" as const,
+          label: "Single-org",
+          hint: "one implicit organization, no switcher UI",
+        },
+      ],
+      initialValue: "multi" as const,
+    })
+  );
+  const locale = await promptOrFallback(flags.locale, flags.yes, "en", () =>
     p.select({
       message: "Default language",
       options: [
@@ -141,7 +179,118 @@ async function promptVariants(flags: CliFlags): Promise<VariantChoices> {
       initialValue: "en" as const,
     })
   );
-  const ai = await promptVariant(flags.ai, flags.yes, "claude", () =>
+  const i18n = await promptOrFallback(flags.i18n, flags.yes, "cookie", () =>
+    p.select({
+      message: "Locale routing",
+      options: [
+        {
+          value: "cookie" as const,
+          label: "Cookie",
+          hint: "no URL prefix; locale stored in a cookie",
+        },
+        {
+          value: "url" as const,
+          label: "URL prefix",
+          hint: "/fr/... paths via middleware rewrite (SEO-friendly)",
+        },
+      ],
+      initialValue: "cookie" as const,
+    })
+  );
+  const observability = await promptOrFallback<readonly ObservabilityTool[]>(
+    flags.observability,
+    flags.yes,
+    [],
+    () =>
+      p.multiselect({
+        message:
+          "Observability (space to toggle — all ship wired but disabled)",
+        options: [
+          {
+            value: "sentry" as const,
+            label: "Sentry",
+            hint: "exception capture",
+          },
+          {
+            value: "posthog" as const,
+            label: "PostHog",
+            hint: "analytics + feature flags",
+          },
+          {
+            value: "otel" as const,
+            label: "OpenTelemetry",
+            hint: "OTLP traces",
+          },
+        ],
+        required: false,
+      })
+  );
+  const featureFlags = await promptOrFallback<readonly FeatureFlag[]>(
+    flags.featureFlags,
+    flags.yes,
+    DEFAULT_FEATURE_FLAGS,
+    () =>
+      p.multiselect({
+        message: "Behavior flags (env-driven, changeable later in .env)",
+        options: [
+          {
+            value: "emails-enabled" as const,
+            label: "Send emails",
+            hint: "transactional mail via SMTP (off = log-only)",
+          },
+          {
+            value: "require-email-verification" as const,
+            label: "Require email verification",
+            hint: "block sign-in until the address is verified",
+          },
+        ],
+        initialValues: [...DEFAULT_FEATURE_FLAGS],
+        required: false,
+      })
+  );
+  const logging = await promptOrFallback(flags.logging, flags.yes, "pino", () =>
+    p.select({
+      message: "API logger",
+      options: [
+        {
+          value: "pino" as const,
+          label: "pino",
+          hint: "nestjs-pino, fastest JSON logger",
+        },
+        {
+          value: "winston" as const,
+          label: "winston",
+          hint: "nest-winston, transport ecosystem",
+        },
+      ],
+      initialValue: "pino" as const,
+    })
+  );
+  const ci = await promptOrFallback(flags.ci, flags.yes, "github", () =>
+    p.select({
+      message: "CI provider",
+      options: [
+        {
+          value: "github" as const,
+          label: "GitHub Actions",
+          hint: "+ release-please releases",
+        },
+        {
+          value: "gitlab" as const,
+          label: "GitLab CI",
+          hint: ".gitlab-ci.yml, manual releases",
+        },
+      ],
+      initialValue: "github" as const,
+    })
+  );
+  const backup = await promptOrFallback(flags.backup, flags.yes, true, () =>
+    p.confirm({
+      message: "Keep the built-in Postgres backup/restore tooling?",
+      initialValue: true,
+    })
+  );
+  const ai = await promptOrFallback(flags.ai, flags.yes, "claude", () =>
     p.select({
       message: "AI assistant config",
       options: [
@@ -155,17 +304,38 @@ async function promptVariants(flags: CliFlags): Promise<VariantChoices> {
       initialValue: "claude" as const,
     })
   );
-  const prodBranch = await promptVariant(flags.branch, flags.yes, "main", () =>
-    p.select({
-      message: "Production branch (git-flow)",
-      options: [
-        { value: "main" as const, label: "main", hint: "GitHub default" },
-        { value: "master" as const, label: "master", hint: "classic git-flow" },
-      ],
-      initialValue: "main" as const,
-    })
+  const prodBranch = await promptOrFallback(
+    flags.branch,
+    flags.yes,
+    "main",
+    () =>
+      p.select({
+        message: "Production branch (git-flow)",
+        options: [
+          { value: "main" as const, label: "main", hint: "GitHub default" },
+          {
+            value: "master" as const,
+            label: "master",
+            hint: "classic git-flow",
+          },
+        ],
+        initialValue: "main" as const,
+      })
   );
-  return { ui, authz, locale, ai, prodBranch };
+  return {
+    ui,
+    authz,
+    org,
+    locale,
+    i18n,
+    observability,
+    featureFlags,
+    logging,
+    ci,
+    backup,
+    ai,
+    prodBranch,
+  };
 }
 
 async function promptSetupSteps(

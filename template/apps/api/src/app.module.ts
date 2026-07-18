@@ -1,3 +1,5 @@
+// MIRRORED FILE: variants/logging-winston/apps/api/src/app.module.ts overlays
+// this file — mirror any change there (see docs/maintaining-the-template.md).
 import { ThrottlerStorageRedisService } from "@nest-lab/throttler-storage-redis";
 import { BullModule } from "@nestjs/bullmq";
 import { Module } from "@nestjs/common";

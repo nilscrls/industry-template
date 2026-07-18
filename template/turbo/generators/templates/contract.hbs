@@ -20,10 +20,24 @@ export const update{{ pascalCase name }}Schema = z.object({
   name: {{ camelCase name }}Schema.shape.name.optional(),
 });
 
+export const {{ camelCase name }}SortFields = ["name", "createdAt", "updatedAt"] as const;
+export type {{ pascalCase name }}SortField = (typeof {{ camelCase name }}SortFields)[number];
+
+export function is{{ pascalCase name }}SortField(
+  value: unknown
+): value is {{ pascalCase name }}SortField {
+  return {{ camelCase name }}SortFields.includes(value as {{ pascalCase name }}SortField);
+}
+
+export const list{{ pascalCase plural }}QuerySchema = paginationQuerySchema.extend({
+  search: z.string().max(120).optional(),
+  sortBy: z.enum({{ camelCase name }}SortFields).default("createdAt"),
+});
+
 export const {{ camelCase plural }}Contract = {
   list: base
     .route({ method: "GET", path: "/{{ plural }}", summary: "List {{ plural }}", tags: ["{{ plural }}"] })
-    .input(paginationQuerySchema.extend({ search: z.string().max(120).optional() }))
+    .input(list{{ pascalCase plural }}QuerySchema)
     .output(paginatedSchema({{ camelCase name }}Schema)),
 
   find: base

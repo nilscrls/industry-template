@@ -15,13 +15,18 @@ Node >= 22.12) scaffolded by create-industry-app with these choices:
 
 - UI primitives: __UI_VARIANT__
 - Authorization model: __AUTHZ_VARIANT__
+- Organizations: __ORG_VARIANT__
 - Default locale: __LOCALE_VARIANT__
+- Locale routing: __I18N_VARIANT__
+- API logger: __LOGGING_VARIANT__
+- CI provider: __CI_VARIANT__
+- Observability enabled at scaffold time: __OBSERVABILITY_VARIANT__
 
 Layout:
 
 - `apps/api` — NestJS 11 (Express, **CommonJS**), oRPC contract-first API,
   Drizzle ORM (Postgres 17, row-level security), Better-Auth, OpenFGA,
-  BullMQ + ioredis, pino.
+  BullMQ + ioredis (API logger: see scaffold choices above).
 - `apps/web` — Next.js 16 App Router, TanStack Query/Table, next-intl,
   react-hook-form, nuqs.
 - `packages/` — `contracts` (oRPC contracts + Zod schemas), `db` (Drizzle
@@ -32,6 +37,10 @@ Layout:
 Deeper documentation ships in `docs/` — `architecture.md`, `stack.md`,
 `features.md`, `authorization.md`, `testing.md`, `guides.md`,
 `deployment.md`. Read the relevant one before structural changes.
+The scaffold-time choices above are baked in — do not re-introduce the org
+switcher in single-org apps, cookie routing in URL-prefixed apps, or the
+other logger; behavior flags (email verification, email sending) are
+env-driven via `.env` (`REQUIRE_EMAIL_VERIFICATION`, `EMAILS_ENABLED`).
 Path-scoped conventions live in `.claude/rules/`; `.claude/skills/` ships
 `scaffold-feature` (the `pnpm gen` workflow) plus vendored Vercel/Anthropic
 skills (React performance, Next.js dev-loop verification, webapp testing —

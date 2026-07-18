@@ -1,6 +1,5 @@
 "use client";
 
-import { LOCALE_COOKIE, SUPPORTED_LOCALES } from "@repo/i18n";
 import { Button } from "@repo/ui/components/button";
 import {
   DropdownMenu,
@@ -10,10 +9,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@repo/ui/components/dropdown-menu";
-import { cn } from "@repo/ui/lib/utils";
 import {
   FolderKanbanIcon,
-  GlobeIcon,
   LayoutDashboardIcon,
   LogOutIcon,
   MenuIcon,
@@ -22,13 +19,13 @@ import {
   ShieldIcon,
   SunIcon,
 } from "lucide-react";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { useTheme } from "next-themes";
 import type { ReactNode } from "react";
+import { LocaleSwitcher } from "@/components/locale-switcher";
 import { OrgSwitcher } from "@/components/org-switcher";
 import { authClient } from "@/lib/auth-client";
+import { Link, usePathname, useRouter } from "@/lib/navigation";
 
 const NAV_ITEMS = [
   { href: "/dashboard", key: "dashboard", icon: LayoutDashboardIcon },
@@ -49,39 +46,6 @@ function ThemeToggle() {
       <SunIcon className="dark:hidden" />
       <MoonIcon className="hidden dark:block" />
     </Button>
-  );
-}
-
-function LocaleSwitcher() {
-  const locale = useLocale();
-  const router = useRouter();
-  const t = useTranslations("shell");
-
-  function setLocale(next: string) {
-    // biome-ignore lint/suspicious/noDocumentCookie: single first-party preference cookie
-    document.cookie = `${LOCALE_COOKIE}=${next}; path=/; max-age=31536000; samesite=lax`;
-    router.refresh();
-  }
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button aria-label={t("changeLocale")} size="icon" variant="ghost">
-          <GlobeIcon />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        {SUPPORTED_LOCALES.map((candidate) => (
-          <DropdownMenuItem
-            className={cn(candidate === locale && "font-semibold")}
-            key={candidate}
-            onClick={() => setLocale(candidate)}
-          >
-            {t(`locales.${candidate}`)}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 

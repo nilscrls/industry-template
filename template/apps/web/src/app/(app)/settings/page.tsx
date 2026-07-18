@@ -26,8 +26,6 @@ import {
   FormMessage,
 } from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { QRCodeSVG } from "qrcode.react";
 import { useState } from "react";
@@ -36,6 +34,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { useConsent } from "@/components/consent";
 import { authClient } from "@/lib/auth-client";
+import { Link, useRouter } from "@/lib/navigation";
 
 const passwordSchema = z.object({ password: z.string().min(8) });
 type PasswordValues = z.infer<typeof passwordSchema>;

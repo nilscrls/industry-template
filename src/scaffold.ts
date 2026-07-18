@@ -25,13 +25,54 @@ export type AiVariant = (typeof AI_VARIANTS)[number];
 export const PROD_BRANCH_VARIANTS = ["main", "master"] as const;
 export type ProdBranch = (typeof PROD_BRANCH_VARIANTS)[number];
 
+export const ORG_VARIANTS = ["multi", "single"] as const;
+export type OrgVariant = (typeof ORG_VARIANTS)[number];
+
+export const I18N_VARIANTS = ["cookie", "url"] as const;
+export type I18nVariant = (typeof I18N_VARIANTS)[number];
+
+export const CI_VARIANTS = ["github", "gitlab"] as const;
+export type CiVariant = (typeof CI_VARIANTS)[number];
+
+export const LOGGING_VARIANTS = ["pino", "winston"] as const;
+export type LoggingVariant = (typeof LOGGING_VARIANTS)[number];
+
+/** Observability collectors togglable at scaffold time (env stamping, no overlay). */
+export const OBSERVABILITY_TOOLS = ["sentry", "posthog", "otel"] as const;
+export type ObservabilityTool = (typeof OBSERVABILITY_TOOLS)[number];
+
+/** Env-driven behavior flags togglable at scaffold time (env stamping, no overlay). */
+export const FEATURE_FLAGS = [
+  "require-email-verification",
+  "emails-enabled",
+] as const;
+export type FeatureFlag = (typeof FEATURE_FLAGS)[number];
+
+/** The behavior flags the template ships enabled — mirrors template/.env.example
+ *  (EMAILS_ENABLED=true, REQUIRE_EMAIL_VERIFICATION=false). */
+export const DEFAULT_FEATURE_FLAGS: readonly FeatureFlag[] = ["emails-enabled"];
+
 export interface ScaffoldOptions {
   /** AI assistant config (AGENTS.md, CLAUDE.md, .claude/rules). Default: "claude". */
   ai?: AiVariant;
   /** OpenFGA authorization model. Default: "rbac". */
   authz?: AuthzVariant;
+  /** Ship db+files backup tooling (scripts/backup, compose `backup` profile). Default: true. */
+  backup?: boolean;
+  /** CI provider files. Default: "github". "gitlab" applies variants/ci-gitlab. */
+  ci?: CiVariant;
+  /** Env-driven behavior flags stamped into .env(.example). Default: DEFAULT_FEATURE_FLAGS. */
+  featureFlags?: readonly FeatureFlag[];
+  /** Locale routing strategy. Default: "cookie". "url" applies variants/i18n-url. */
+  i18n?: I18nVariant;
   /** Default UI language. Default: "en". */
   locale?: LocaleVariant;
+  /** API logger. Default: "pino". "winston" applies variants/logging-winston. */
+  logging?: LoggingVariant;
+  /** Observability collectors enabled via env stamping. Default: [] (all *_ENABLED=false). */
+  observability?: readonly ObservabilityTool[];
+  /** Organization model. Default: "multi". "single" applies variants/org-single. */
+  org?: OrgVariant;
   /** Git-flow production branch name stamped into CI/docs. Default: "main". */
   prodBranch?: ProdBranch;
   projectName: string;
@@ -161,6 +202,32 @@ const LOCALE_LABELS: Record<LocaleVariant, string> = {
   fr: "fr (Français)",
 };
 
+const ORG_LABELS: Record<OrgVariant, string> = {
+  multi: "multi-organization (org switcher, org-scoped data + invitations)",
+  single: "single-organization (one implicit org, switcher UI removed)",
+};
+
+const I18N_LABELS: Record<I18nVariant, string> = {
+  cookie: "cookie-based locale, no URL prefix",
+  url: "URL-prefixed locales (`/fr/...`) via middleware rewrite",
+};
+
+const LOGGING_LABELS: Record<LoggingVariant, string> = {
+  pino: "pino (nestjs-pino, JSON to stdout)",
+  winston: "winston (nest-winston, JSON to stdout)",
+};
+
+const CI_LABELS: Record<CiVariant, string> = {
+  github: "GitHub Actions (`.github/workflows/`)",
+  gitlab: "GitLab CI (`.gitlab-ci.yml`)",
+};
+
+function observabilityLabel(tools: readonly ObservabilityTool[]): string {
+  return tools.length === 0
+    ? "none (all collectors ship disabled; flip *_ENABLED in .env to opt in)"
+    : tools.join(", ");
+}
+
 /**
  * Base-template files that reference the git-flow production branch. Stamping
  * throws if a listed file exists without the marker, so template drift is
@@ -170,6 +237,7 @@ const LOCALE_LABELS: Record<LocaleVariant, string> = {
 const PROD_BRANCH_FILES = [
   ".github/workflows/ci.yml",
   ".github/workflows/release-please.yml",
+  ".gitlab-ci.yml",
   "README.md",
   "docs/guides.md",
   "docs/releases.md",
@@ -196,7 +264,12 @@ function stampAgentsVariants(
   targetDir: string,
   choices: {
     authz: AuthzVariant;
+    ci: CiVariant;
+    i18n: I18nVariant;
     locale: LocaleVariant;
+    logging: LoggingVariant;
+    observability: readonly ObservabilityTool[];
+    org: OrgVariant;
     prodBranch: ProdBranch;
     ui: UiVariant;
   }
@@ -206,7 +279,12 @@ function stampAgentsVariants(
   const replacements: [marker: string, value: string][] = [
     ["__UI_VARIANT__", UI_LABELS[choices.ui]],
     ["__AUTHZ_VARIANT__", AUTHZ_LABELS[choices.authz]],
+    ["__ORG_VARIANT__", ORG_LABELS[choices.org]],
     ["__LOCALE_VARIANT__", LOCALE_LABELS[choices.locale]],
+    ["__I18N_VARIANT__", I18N_LABELS[choices.i18n]],
+    ["__LOGGING_VARIANT__", LOGGING_LABELS[choices.logging]],
+    ["__CI_VARIANT__", CI_LABELS[choices.ci]],
+    ["__OBSERVABILITY_VARIANT__", observabilityLabel(choices.observability)],
     ["__PROD_BRANCH__", choices.prodBranch],
   ];
   for (const [marker, value] of replacements) {
@@ -222,13 +300,14 @@ function stampAgentsVariants(
 
 /**
  * The ai-claude overlay ships one rule file per variant of a dimension
- * (authz.rbac.md / authz.rebac.md, ui.radix.md / ui.base.md); keep the
- * chosen one as `<dimension>.md` and drop the rest. Runs before
- * restoreDotfiles, so the directory is still `_claude`.
+ * (authz.rbac.md / authz.rebac.md, ui.radix.md / ui.base.md,
+ * logging.pino.md / logging.winston.md); keep the chosen one as
+ * `<dimension>.md` and drop the rest. Runs before restoreDotfiles, so the
+ * directory is still `_claude`.
  */
 function selectVariantRules(
   targetDir: string,
-  choices: { authz: AuthzVariant; ui: UiVariant }
+  choices: { authz: AuthzVariant; logging: LoggingVariant; ui: UiVariant }
 ): void {
   const rulesDir = path.join(targetDir, "_claude", "rules");
   const dimensions: [
@@ -238,6 +317,7 @@ function selectVariantRules(
   ][] = [
     ["authz", choices.authz, AUTHZ_VARIANTS],
     ["ui", choices.ui, UI_VARIANTS],
+    ["logging", choices.logging, LOGGING_VARIANTS],
   ];
   for (const [dimension, chosen, variants] of dimensions) {
     renameSync(
@@ -303,6 +383,153 @@ function writeDotEnv(targetDir: string): void {
   writeFileSync(path.join(targetDir, ".env"), resolved.join("\n"));
 }
 
+/** ObservabilityTool → the env keys flipped to "true" when the tool is chosen. */
+const OBSERVABILITY_ENV_KEYS: Record<ObservabilityTool, readonly string[]> = {
+  sentry: ["SENTRY_ENABLED", "NEXT_PUBLIC_SENTRY_ENABLED"],
+  posthog: ["POSTHOG_ENABLED", "NEXT_PUBLIC_POSTHOG_ENABLED"],
+  otel: ["OTEL_ENABLED"],
+};
+
+/** FeatureFlag → env key + the value template/.env.example ships with. */
+const FEATURE_FLAG_ENV: Record<
+  FeatureFlag,
+  { key: string; templateDefault: boolean }
+> = {
+  "require-email-verification": {
+    key: "REQUIRE_EMAIL_VERIFICATION",
+    templateDefault: false,
+  },
+  "emails-enabled": { key: "EMAILS_ENABLED", templateDefault: true },
+};
+
+/**
+ * Whole-line replace of `KEY=...` in an array of env lines; fail loud so
+ * template drift (a renamed/removed var) breaks the scaffold tests.
+ */
+function stampEnvLine(
+  lines: string[],
+  key: string,
+  value: string,
+  filePath: string
+): void {
+  const index = lines.findIndex((line) => line.startsWith(`${key}=`));
+  if (index === -1) {
+    throw new Error(`Env marker line "${key}=" not found in ${filePath}`);
+  }
+  lines[index] = `${key}=${value}`;
+}
+
+/**
+ * Stamp the scaffold-time observability + feature-flag choices into
+ * .env.example (writeDotEnv then inherits them into .env). Defaults stamp
+ * nothing — the template already ships the default values, so the default
+ * scaffold stays byte-identical to the template.
+ */
+function stampEnvChoices(
+  targetDir: string,
+  choices: {
+    featureFlags: readonly FeatureFlag[];
+    observability: readonly ObservabilityTool[];
+  }
+): void {
+  const stamps: [key: string, value: string][] = [];
+  for (const tool of choices.observability) {
+    for (const key of OBSERVABILITY_ENV_KEYS[tool]) {
+      stamps.push([key, "true"]);
+    }
+  }
+  for (const flag of FEATURE_FLAGS) {
+    const chosen = choices.featureFlags.includes(flag);
+    const { key, templateDefault } = FEATURE_FLAG_ENV[flag];
+    if (chosen !== templateDefault) {
+      stamps.push([key, String(chosen)]);
+    }
+  }
+  if (stamps.length === 0) {
+    return;
+  }
+  const examplePath = path.join(targetDir, ".env.example");
+  const lines = readFileSync(examplePath, "utf8").split("\n");
+  for (const [key, value] of stamps) {
+    stampEnvLine(lines, key, value, examplePath);
+  }
+  writeFileSync(examplePath, lines.join("\n"));
+}
+
+/** Whole paths removed by --backup=false. */
+const BACKUP_PRUNE_PATHS = ["scripts/backup", "docs/backup.md"];
+
+/** Files carrying a `# BEGIN backup` … `# END backup` block. */
+const BACKUP_MARKER_FILES = ["docker-compose.yml", ".env.example"];
+
+/** Files carrying single-line backup references. */
+const BACKUP_LINE_FILES = ["README.md", "docs/deployment.md"];
+const BACKUP_LINE_PATTERN =
+  /backup\.md|backup:db|backup:files|restore:db|restore:files/;
+
+const BACKUP_PACKAGE_SCRIPTS = [
+  "backup:db",
+  "backup:files",
+  "restore:db",
+  "restore:files",
+];
+
+/**
+ * Remove the marker-delimited backup block (markers inclusive). Throws when
+ * the file exists without both markers, so template drift is caught by the
+ * scaffold tests — same contract as stampProdBranch. Missing files are
+ * skipped (test fixtures use minimal templates).
+ */
+function stripMarkedBlock(filePath: string): void {
+  if (!existsSync(filePath)) {
+    return;
+  }
+  const lines = readFileSync(filePath, "utf8").split("\n");
+  const begin = lines.findIndex((line) => line.includes("BEGIN backup"));
+  const end = lines.findIndex((line) => line.includes("END backup"));
+  if (begin === -1 || end === -1 || end < begin) {
+    throw new Error(`Backup markers not found in ${filePath}`);
+  }
+  writeFileSync(
+    filePath,
+    [...lines.slice(0, begin), ...lines.slice(end + 1)].join("\n")
+  );
+}
+
+/** Remove every line matching BACKUP_LINE_PATTERN; throws when none match. */
+function stripMatchingLines(filePath: string): void {
+  if (!existsSync(filePath)) {
+    return;
+  }
+  const lines = readFileSync(filePath, "utf8").split("\n");
+  const kept = lines.filter((line) => !BACKUP_LINE_PATTERN.test(line));
+  if (kept.length === lines.length) {
+    throw new Error(`No backup references found to prune in ${filePath}`);
+  }
+  writeFileSync(filePath, kept.join("\n"));
+}
+
+/** --backup=false: remove the backup tooling the template ships by default. */
+function pruneBackup(targetDir: string): void {
+  for (const relative of BACKUP_PRUNE_PATHS) {
+    rmSync(path.join(targetDir, relative), { recursive: true, force: true });
+  }
+  for (const relative of BACKUP_MARKER_FILES) {
+    stripMarkedBlock(path.join(targetDir, relative));
+  }
+  for (const relative of BACKUP_LINE_FILES) {
+    stripMatchingLines(path.join(targetDir, relative));
+  }
+  const packageJsonPath = path.join(targetDir, "package.json");
+  const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+  for (const script of BACKUP_PACKAGE_SCRIPTS) {
+    if (packageJson.scripts) {
+      delete packageJson.scripts[script];
+    }
+  }
+  writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
+}
+
 export function scaffold(options: ScaffoldOptions): void {
   const {
     templateDir,
@@ -311,9 +538,16 @@ export function scaffold(options: ScaffoldOptions): void {
     variantsDir,
     ui = "radix",
     authz = "rbac",
+    org = "multi",
+    i18n = "cookie",
+    logging = "pino",
+    ci = "github",
     locale = "en",
     ai = "claude",
     prodBranch = "main",
+    observability = [],
+    featureFlags = DEFAULT_FEATURE_FLAGS,
+    backup = true,
   } = options;
   const nameError = validateProjectName(projectName);
   if (nameError) {
@@ -327,21 +561,52 @@ export function scaffold(options: ScaffoldOptions): void {
   }
 
   copyTemplate(templateDir, targetDir);
+  // Overlay order is load-bearing (last write wins): ui-base → authz-rebac →
+  // org-single → i18n-url → logging-winston → ci-gitlab → ai-claude (always
+  // last). org-single/i18n-url land after ui-base so their UI-neutral files win.
   if (ui === "base") {
     applyVariantOverlay(variantsDir, "ui-base", targetDir);
   }
   if (authz === "rebac") {
     applyVariantOverlay(variantsDir, "authz-rebac", targetDir);
   }
+  if (org === "single") {
+    applyVariantOverlay(variantsDir, "org-single", targetDir);
+  }
+  if (i18n === "url") {
+    applyVariantOverlay(variantsDir, "i18n-url", targetDir);
+  }
+  if (logging === "winston") {
+    applyVariantOverlay(variantsDir, "logging-winston", targetDir);
+  }
+  if (ci === "gitlab") {
+    applyVariantOverlay(variantsDir, "ci-gitlab", targetDir);
+  }
   if (ai === "claude") {
     applyVariantOverlay(variantsDir, "ai-claude", targetDir);
-    stampAgentsVariants(targetDir, { ui, authz, locale, prodBranch });
-    selectVariantRules(targetDir, { ui, authz });
+    stampAgentsVariants(targetDir, {
+      ui,
+      authz,
+      locale,
+      prodBranch,
+      org,
+      i18n,
+      logging,
+      ci,
+      observability,
+    });
+    selectVariantRules(targetDir, { ui, authz, logging });
   }
   // Unconditional (even for the default "main") so the marker never leaks.
   stampProdBranch(targetDir, prodBranch);
   setDefaultLocale(targetDir, locale);
+  stampEnvChoices(targetDir, { observability, featureFlags });
+  if (!backup) {
+    pruneBackup(targetDir);
+  }
   restoreDotfiles(targetDir);
   setProjectName(targetDir, projectName);
+  // Must stay after stampEnvChoices/pruneBackup: .env inherits the stamped
+  // .env.example (and never carries BACKUP_* when backup was pruned).
   writeDotEnv(targetDir);
 }

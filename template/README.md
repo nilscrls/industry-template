@@ -7,7 +7,7 @@ Industrial-grade full-stack TypeScript monorepo, scaffolded by `create-industry-
 | Layer | Tech |
 |---|---|
 | Frontend | Next.js 16, shadcn/ui (Tailwind v4), TanStack Query/Table, react-hook-form, next-intl, next-themes, recharts |
-| Backend | NestJS 11, Better-Auth, OpenFGA (+ Postgres RLS), Drizzle (Postgres), Redis, BullMQ, Minio (S3), nestjs-pino |
+| Backend | NestJS 11, Better-Auth, OpenFGA (+ Postgres RLS), Drizzle (Postgres), Redis, BullMQ, Minio (S3), structured logging |
 | Contract | oRPC — one zod contract in `packages/contracts`, live end-to-end types, OpenAPI at `/api/openapi.json` |
 | Quality | Biome (ultracite), Vitest, Testcontainers, Playwright, lefthook + commitlint |
 
@@ -34,6 +34,7 @@ Maildev UI: <http://localhost:1080> · Minio console: <http://localhost:9001>.
 | [docs/guides.md](docs/guides.md) | recipes: add a feature/endpoint/permission/error code/locale/env var/email, conventions |
 | [docs/testing.md](docs/testing.md) | test pyramid, TDD loop, integration-test pattern, sharp edges |
 | [docs/deployment.md](docs/deployment.md) | compose profiles, reverse proxy, env matrix, scaling, day-2 ops |
+| [docs/backup.md](docs/backup.md) | db + file backup/restore: pnpm backup:db / backup:files, restore runbook, cron |
 
 ## How the pieces fit
 
@@ -55,7 +56,7 @@ Maildev UI: <http://localhost:1080> · Minio console: <http://localhost:9001>.
   translation in `packages/i18n/messages/*`; `traceId` matches the api log line.
 - **Files.** The api presigns Minio PUT/GET URLs; bytes never stream through Nest.
 - **Logging.** Pretty in dev, JSON on stdout in prod, optional daily-rotated files via
-  `LOG_FILE_ENABLED=true` (pino-roll). Every line carries the request's `traceId`.
+  `LOG_FILE_ENABLED=true`. Every line carries the request's `traceId`.
 
 ## Scripts
 
@@ -69,6 +70,7 @@ pnpm gen feature            # scaffold a vertical slice (contract → db → api
 pnpm commit                 # commitizen-style guided commit (cz-git)
 pnpm compose:all            # full stack in docker (dev ports)
 pnpm compose:prod           # prod overlay: external `proxy` network, no host ports
+pnpm backup:db / backup:files    # pg_dump + bucket mirror (docs/backup.md)
 ```
 
 ## TDD loop
