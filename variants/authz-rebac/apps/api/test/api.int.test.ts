@@ -608,7 +608,9 @@ describe("api integration", () => {
     expect(signIn.status).not.toBe(200);
 
     // The user row is gone; the erasure left an anonymized audit event.
-    const { db, pool } = createDb(process.env.DATABASE_URL_MIGRATIONS as string);
+    const { db, pool } = createDb(
+      process.env.DATABASE_URL_MIGRATIONS as string
+    );
     const users = await db
       .select({ id: user.id })
       .from(user)
