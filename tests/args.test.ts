@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { enumFlag, parseArgs } from "../src/args.js";
+import { boolFlag, enumFlag, listFlag, parseArgs } from "../src/args.js";
+import { FEATURE_FLAGS, OBSERVABILITY_TOOLS } from "../src/scaffold.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -47,9 +48,16 @@ describe("parseArgs", () => {
       install: true,
       ui: undefined,
       authz: undefined,
+      org: undefined,
       locale: undefined,
+      i18n: undefined,
+      logging: undefined,
+      ci: undefined,
       ai: undefined,
       branch: undefined,
+      observability: undefined,
+      featureFlags: undefined,
+      backup: undefined,
     });
   });
 
@@ -77,7 +85,11 @@ describe("parseArgs", () => {
       "app",
       "--ui=base",
       "--authz=rebac",
+      "--org=single",
       "--locale=fr",
+      "--i18n=url",
+      "--logging=winston",
+      "--ci=gitlab",
       "--ai=none",
       "--branch=master",
     ]);
@@ -85,10 +97,23 @@ describe("parseArgs", () => {
       directory: "app",
       ui: "base",
       authz: "rebac",
+      org: "single",
       locale: "fr",
+      i18n: "url",
+      logging: "winston",
+      ci: "gitlab",
       ai: "none",
       branch: "master",
     });
+  });
+
+  it("parses list and boolean flags", () => {
+    expect(parseArgs(["--flags=none"]).featureFlags).toEqual([]);
+    expect(parseArgs(["--observability=sentry,posthog"]).observability).toEqual(
+      ["sentry", "posthog"]
+    );
+    expect(parseArgs(["--no-backup"]).backup).toBe(false);
+    expect(parseArgs(["--backup"]).backup).toBe(true);
   });
 
   it("rejects an invalid --branch value", () => {
@@ -105,6 +130,129 @@ describe("parseArgs", () => {
       expect.stringContaining("Invalid --branch=trunk")
     );
     expect(error).toHaveBeenCalledWith(expect.stringContaining("main, master"));
+    expect(exit).toHaveBeenCalledWith(1);
+  });
+});
+
+describe("listFlag", () => {
+  it("returns undefined when the flag is absent", () => {
+    expect(listFlag([], "observability", OBSERVABILITY_TOOLS)).toBeUndefined();
+  });
+
+  it("parses a single value", () => {
+    expect(
+      listFlag(["--observability=sentry"], "observability", OBSERVABILITY_TOOLS)
+    ).toEqual(["sentry"]);
+  });
+
+  it("parses multiple values in argv order", () => {
+    expect(
+      listFlag(
+        ["--observability=sentry,otel"],
+        "observability",
+        OBSERVABILITY_TOOLS
+      )
+    ).toEqual(["sentry", "otel"]);
+  });
+
+  it("collapses duplicates", () => {
+    expect(
+      listFlag(
+        ["--observability=sentry,sentry"],
+        "observability",
+        OBSERVABILITY_TOOLS
+      )
+    ).toEqual(["sentry"]);
+  });
+
+  it("treats a lone `none` as an empty selection", () => {
+    expect(
+      listFlag(["--observability=none"], "observability", OBSERVABILITY_TOOLS)
+    ).toEqual([]);
+  });
+
+  it("rejects `none` mixed with values", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {
+      // swallow
+    });
+    const exit = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+
+    listFlag(
+      ["--observability=none,sentry"],
+      "observability",
+      OBSERVABILITY_TOOLS
+    );
+
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining("Invalid --observability=none,sentry")
+    );
+    expect(exit).toHaveBeenCalledWith(1);
+  });
+
+  it("rejects an unknown value and lists the accepted ones", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {
+      // swallow
+    });
+    const exit = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+
+    listFlag(["--observability=datadog"], "observability", OBSERVABILITY_TOOLS);
+
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining("sentry, posthog, otel")
+    );
+    expect(exit).toHaveBeenCalledWith(1);
+  });
+
+  it("rejects an empty value", () => {
+    vi.spyOn(console, "error").mockImplementation(() => {
+      // swallow
+    });
+    const exit = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+
+    listFlag(["--flags="], "flags", FEATURE_FLAGS);
+
+    expect(exit).toHaveBeenCalledWith(1);
+  });
+});
+
+describe("boolFlag", () => {
+  it("returns undefined when absent", () => {
+    expect(boolFlag([], "backup")).toBeUndefined();
+  });
+
+  it("parses --backup and --backup=true as true", () => {
+    expect(boolFlag(["--backup"], "backup")).toBe(true);
+    expect(boolFlag(["--backup=true"], "backup")).toBe(true);
+  });
+
+  it("parses --no-backup and --backup=false as false", () => {
+    expect(boolFlag(["--no-backup"], "backup")).toBe(false);
+    expect(boolFlag(["--backup=false"], "backup")).toBe(false);
+  });
+
+  it("lets --no-backup win over --backup", () => {
+    expect(boolFlag(["--backup", "--no-backup"], "backup")).toBe(false);
+  });
+
+  it("exits on an invalid value", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {
+      // swallow
+    });
+    const exit = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+
+    boolFlag(["--backup=maybe"], "backup");
+
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining("Invalid --backup=maybe")
+    );
     expect(exit).toHaveBeenCalledWith(1);
   });
 });

@@ -155,11 +155,27 @@ describe("scaffold", () => {
       "packages/db/drizzle/0000_roles.sql",
       "packages/db/drizzle/0001_init.sql",
       "packages/db/sql/init-roles.sh",
+      "scripts/backup/backup-db.mjs",
+      "scripts/backup/restore-db.mjs",
+      "docs/backup.md",
     ]) {
       expect(existsSync(path.join(targetDir, file)), `missing ${file}`).toBe(
         true
       );
     }
+
+    // Backup tooling ships by default: compose block, env vars carried into
+    // the generated .env, and the root package.json scripts.
+    expect(
+      readFileSync(path.join(targetDir, "docker-compose.yml"), "utf8")
+    ).toContain("backup-db:");
+    expect(readFileSync(path.join(targetDir, ".env"), "utf8")).toContain(
+      "BACKUP_DIR="
+    );
+    expect(
+      JSON.parse(readFileSync(path.join(targetDir, "package.json"), "utf8"))
+        .scripts["backup:db"]
+    ).toBeDefined();
 
     // Defaults: Radix primitives, RBAC permissions, English fallback locale.
     const uiDeps = JSON.parse(
@@ -362,6 +378,20 @@ describe("scaffold", () => {
     expect(agents).toContain("ReBAC");
     expect(agents).toContain("en (English)");
     expect(agents).not.toContain("__UI_VARIANT__");
+    for (const marker of [
+      "__ORG_VARIANT__",
+      "__I18N_VARIANT__",
+      "__LOGGING_VARIANT__",
+      "__CI_VARIANT__",
+      "__OBSERVABILITY_VARIANT__",
+    ]) {
+      expect(agents, `marker left: ${marker}`).not.toContain(marker);
+    }
+    // Default (non-flag) axes stamped with their labels.
+    expect(agents).toContain("multi-organization");
+    expect(agents).toContain("cookie-based locale");
+    expect(agents).toContain("pino");
+    expect(agents).toContain("GitHub Actions");
     const rulesDir = path.join(targetDir, ".claude", "rules");
     for (const rule of [
       "api.md",
@@ -370,12 +400,14 @@ describe("scaffold", () => {
       "testing.md",
       "authz.md",
       "ui.md",
+      "logging.md",
     ]) {
       expect(existsSync(path.join(rulesDir, rule)), `missing ${rule}`).toBe(
         true
       );
     }
-    // Variant rule selection: rebac authz + default radix ui, no leftovers.
+    // Variant rule selection: rebac authz + default radix ui + default pino
+    // logger, no leftovers.
     expect(readFileSync(path.join(rulesDir, "authz.md"), "utf8")).toContain(
       "ReBAC"
     );
@@ -387,6 +419,8 @@ describe("scaffold", () => {
       "authz.rebac.md",
       "ui.radix.md",
       "ui.base.md",
+      "logging.pino.md",
+      "logging.winston.md",
     ]) {
       expect(existsSync(path.join(rulesDir, leftover))).toBe(false);
     }
@@ -475,7 +509,7 @@ describe("scaffold", () => {
     ).toThrow(/Could not set default locale/);
   });
 
-  it("composes ui=base + authz=rebac + locale=fr + ai=claude in one scaffold", () => {
+  it("composes every non-default axis in one scaffold", () => {
     const targetDir = path.join(workDir, "real-combined");
     scaffold({
       templateDir: REAL_TEMPLATE,
@@ -484,7 +518,13 @@ describe("scaffold", () => {
       projectName: "real-app",
       ui: "base",
       authz: "rebac",
+      org: "single",
       locale: "fr",
+      i18n: "url",
+      logging: "winston",
+      ci: "gitlab",
+      observability: ["posthog"],
+      backup: false,
       ai: "claude",
     });
 
@@ -514,14 +554,61 @@ describe("scaffold", () => {
       readFileSync(path.join(targetDir, "packages/i18n/src/config.ts"), "utf8")
     ).toContain('DEFAULT_LOCALE: Locale = "fr"');
 
-    // AGENTS.md stamped with all three chosen variants, no leftover markers.
+    // org-single applied AFTER ui-base: its UI-neutral org-switcher wins.
+    expect(
+      readFileSync(
+        path.join(targetDir, "apps/web/src/components/org-switcher.tsx"),
+        "utf8"
+      )
+    ).not.toContain("@repo/ui/components");
+    // i18n-url middleware + the wave-0 locale-switcher extraction survive.
+    expect(
+      readFileSync(path.join(targetDir, "apps/web/src/middleware.ts"), "utf8")
+    ).toContain("NextResponse.rewrite");
+    expect(
+      existsSync(
+        path.join(targetDir, "apps/web/src/components/locale-switcher.tsx")
+      )
+    ).toBe(true);
+
+    // winston overlay replaced the api logger deps.
+    const apiDeps = JSON.parse(
+      readFileSync(path.join(targetDir, "apps/api/package.json"), "utf8")
+    ).dependencies;
+    expect(apiDeps["nest-winston"]).toBeDefined();
+    expect(apiDeps["nestjs-pino"]).toBeUndefined();
+
+    // ci-gitlab overlay: .gitlab-ci.yml present, .github removed by _delete.json.
+    expect(existsSync(path.join(targetDir, ".gitlab-ci.yml"))).toBe(true);
+    expect(existsSync(path.join(targetDir, ".github"))).toBe(false);
+
+    // backup=false pruned the tooling.
+    expect(existsSync(path.join(targetDir, "scripts", "backup"))).toBe(false);
+
+    // AGENTS.md stamped with every chosen axis, no leftover markers.
     const agents = readFileSync(path.join(targetDir, "AGENTS.md"), "utf8");
     expect(agents).toContain("Base UI");
     expect(agents).toContain("ReBAC");
+    expect(agents).toContain("single-organization");
     expect(agents).toContain("fr (Français)");
-    expect(agents).not.toContain("__UI_VARIANT__");
+    expect(agents).toContain("URL-prefixed");
+    expect(agents).toContain("winston");
+    expect(agents).toContain("GitLab CI");
+    expect(agents).toContain("posthog");
+    for (const marker of [
+      "__UI_VARIANT__",
+      "__AUTHZ_VARIANT__",
+      "__ORG_VARIANT__",
+      "__LOCALE_VARIANT__",
+      "__I18N_VARIANT__",
+      "__LOGGING_VARIANT__",
+      "__CI_VARIANT__",
+      "__OBSERVABILITY_VARIANT__",
+    ]) {
+      expect(agents, `marker left: ${marker}`).not.toContain(marker);
+    }
 
-    // Variant rules resolved to the base/rebac pair, no leftovers.
+    // Variant rules resolved to the base/rebac/winston triple, no leftovers.
     const rulesDir = path.join(targetDir, ".claude", "rules");
     expect(readFileSync(path.join(rulesDir, "ui.md"), "utf8")).toContain(
       "Base UI primitives"
@@ -529,13 +616,299 @@ describe("scaffold", () => {
     expect(readFileSync(path.join(rulesDir, "authz.md"), "utf8")).toContain(
       "ReBAC"
     );
+    expect(existsSync(path.join(rulesDir, "logging.md"))).toBe(true);
     for (const leftover of [
       "authz.rbac.md",
       "authz.rebac.md",
       "ui.radix.md",
       "ui.base.md",
+      "logging.pino.md",
+      "logging.winston.md",
     ]) {
       expect(existsSync(path.join(rulesDir, leftover))).toBe(false);
     }
+  });
+
+  describe("org variant", () => {
+    it("applies the single-org overlay when org=single", () => {
+      const targetDir = path.join(workDir, "real-org-single");
+      scaffold({
+        templateDir: REAL_TEMPLATE,
+        variantsDir: REAL_VARIANTS,
+        targetDir,
+        projectName: "real-app",
+        org: "single",
+      });
+
+      // auth.ts single-org deltas.
+      const auth = readFileSync(
+        path.join(targetDir, "packages/auth/src/auth.ts"),
+        "utf8"
+      );
+      expect(auth).toContain("allowUserToCreateOrganization: false");
+      expect(auth).toContain("DEFAULT_ORG");
+      // org-switcher stub is UI-library-neutral (applied after ui-base).
+      expect(
+        readFileSync(
+          path.join(targetDir, "apps/web/src/components/org-switcher.tsx"),
+          "utf8"
+        )
+      ).not.toContain("@repo/ui/components");
+    });
+  });
+
+  describe("i18n routing variant", () => {
+    it("applies the url-prefix overlay when i18n=url", () => {
+      const targetDir = path.join(workDir, "real-i18n-url");
+      scaffold({
+        templateDir: REAL_TEMPLATE,
+        variantsDir: REAL_VARIANTS,
+        targetDir,
+        projectName: "real-app",
+        i18n: "url",
+      });
+
+      const middleware = readFileSync(
+        path.join(targetDir, "apps/web/src/middleware.ts"),
+        "utf8"
+      );
+      expect(middleware).toContain("LOCALE_HEADER");
+      expect(middleware).toContain("NextResponse.rewrite");
+      expect(
+        readFileSync(
+          path.join(targetDir, "apps/web/src/lib/navigation.tsx"),
+          "utf8"
+        )
+      ).toContain("localizeHref");
+    });
+  });
+
+  describe("logging variant", () => {
+    it("applies the winston overlay when logging=winston", () => {
+      const targetDir = path.join(workDir, "real-winston");
+      scaffold({
+        templateDir: REAL_TEMPLATE,
+        variantsDir: REAL_VARIANTS,
+        targetDir,
+        projectName: "real-app",
+        logging: "winston",
+      });
+
+      const apiDeps = JSON.parse(
+        readFileSync(path.join(targetDir, "apps/api/package.json"), "utf8")
+      ).dependencies;
+      expect(apiDeps["nest-winston"]).toBeDefined();
+      expect(apiDeps.winston).toBeDefined();
+      expect(apiDeps["nestjs-pino"]).toBeUndefined();
+    });
+  });
+
+  describe("ci variant", () => {
+    it("applies the gitlab overlay and stamps the prod branch into .gitlab-ci.yml", () => {
+      const targetDir = path.join(workDir, "real-gitlab");
+      scaffold({
+        templateDir: REAL_TEMPLATE,
+        variantsDir: REAL_VARIANTS,
+        targetDir,
+        projectName: "real-app",
+        ci: "gitlab",
+        prodBranch: "master",
+      });
+
+      expect(existsSync(path.join(targetDir, ".gitlab-ci.yml"))).toBe(true);
+      // _delete.json removed GitHub Actions + release-please.
+      expect(existsSync(path.join(targetDir, ".github"))).toBe(false);
+      expect(
+        existsSync(path.join(targetDir, "release-please-config.json"))
+      ).toBe(false);
+      expect(
+        existsSync(path.join(targetDir, ".release-please-manifest.json"))
+      ).toBe(false);
+      const gitlabCi = readFileSync(
+        path.join(targetDir, ".gitlab-ci.yml"),
+        "utf8"
+      );
+      expect(gitlabCi).toContain("master");
+      expect(gitlabCi).not.toContain("__PROD_BRANCH__");
+      // GitLab-flavored releases doc, no release-please references.
+      expect(
+        readFileSync(path.join(targetDir, "docs/releases.md"), "utf8")
+      ).not.toContain("release-please");
+    });
+  });
+
+  describe("observability stamping", () => {
+    it("stamps chosen collectors to true in .env.example AND .env", () => {
+      const targetDir = path.join(workDir, "real-obs");
+      scaffold({
+        templateDir: REAL_TEMPLATE,
+        variantsDir: REAL_VARIANTS,
+        targetDir,
+        projectName: "real-app",
+        observability: ["sentry", "otel"],
+      });
+
+      for (const file of [".env.example", ".env"]) {
+        const env = readFileSync(path.join(targetDir, file), "utf8");
+        expect(env, file).toMatch(/^SENTRY_ENABLED=true$/m);
+        expect(env, file).toMatch(/^NEXT_PUBLIC_SENTRY_ENABLED=true$/m);
+        expect(env, file).toMatch(/^OTEL_ENABLED=true$/m);
+        expect(env, file).toMatch(/^POSTHOG_ENABLED=false$/m);
+        expect(env, file).toMatch(/^NEXT_PUBLIC_POSTHOG_ENABLED=false$/m);
+      }
+    });
+
+    it("leaves every collector false by default", () => {
+      const targetDir = path.join(workDir, "real-obs-default");
+      scaffold({
+        templateDir: REAL_TEMPLATE,
+        variantsDir: REAL_VARIANTS,
+        targetDir,
+        projectName: "real-app",
+      });
+
+      const env = readFileSync(path.join(targetDir, ".env"), "utf8");
+      expect(env).toMatch(/^SENTRY_ENABLED=false$/m);
+      expect(env).toMatch(/^POSTHOG_ENABLED=false$/m);
+      expect(env).toMatch(/^OTEL_ENABLED=false$/m);
+    });
+  });
+
+  describe("feature-flag stamping", () => {
+    it("stamps flags=none (emails off) into both env files", () => {
+      const targetDir = path.join(workDir, "real-flags-none");
+      scaffold({
+        templateDir: REAL_TEMPLATE,
+        variantsDir: REAL_VARIANTS,
+        targetDir,
+        projectName: "real-app",
+        featureFlags: [],
+      });
+
+      for (const file of [".env.example", ".env"]) {
+        const env = readFileSync(path.join(targetDir, file), "utf8");
+        expect(env, file).toMatch(/^EMAILS_ENABLED=false$/m);
+        expect(env, file).toMatch(/^REQUIRE_EMAIL_VERIFICATION=false$/m);
+      }
+    });
+
+    it("stamps require-email-verification=true when chosen", () => {
+      const targetDir = path.join(workDir, "real-flags-verify");
+      scaffold({
+        templateDir: REAL_TEMPLATE,
+        variantsDir: REAL_VARIANTS,
+        targetDir,
+        projectName: "real-app",
+        featureFlags: ["require-email-verification", "emails-enabled"],
+      });
+
+      const env = readFileSync(path.join(targetDir, ".env"), "utf8");
+      expect(env).toMatch(/^REQUIRE_EMAIL_VERIFICATION=true$/m);
+      expect(env).toMatch(/^EMAILS_ENABLED=true$/m);
+    });
+
+    it("keeps the template defaults when flags are omitted", () => {
+      const targetDir = path.join(workDir, "real-flags-default");
+      scaffold({
+        templateDir: REAL_TEMPLATE,
+        variantsDir: REAL_VARIANTS,
+        targetDir,
+        projectName: "real-app",
+      });
+
+      const env = readFileSync(path.join(targetDir, ".env"), "utf8");
+      expect(env).toMatch(/^EMAILS_ENABLED=true$/m);
+      expect(env).toMatch(/^REQUIRE_EMAIL_VERIFICATION=false$/m);
+    });
+  });
+
+  describe("backup pruning", () => {
+    it("prunes the backup tooling when backup=false", () => {
+      const targetDir = path.join(workDir, "real-no-backup");
+      scaffold({
+        templateDir: REAL_TEMPLATE,
+        variantsDir: REAL_VARIANTS,
+        targetDir,
+        projectName: "no-backup-app",
+        backup: false,
+      });
+
+      expect(existsSync(path.join(targetDir, "scripts", "backup"))).toBe(false);
+      expect(existsSync(path.join(targetDir, "docs", "backup.md"))).toBe(false);
+      const compose = readFileSync(
+        path.join(targetDir, "docker-compose.yml"),
+        "utf8"
+      );
+      expect(compose).not.toContain("backup-db");
+      expect(compose).not.toContain("BEGIN backup");
+      const envExample = readFileSync(
+        path.join(targetDir, ".env.example"),
+        "utf8"
+      );
+      expect(envExample).not.toContain("BACKUP_DIR");
+      expect(readFileSync(path.join(targetDir, ".env"), "utf8")).not.toContain(
+        "BACKUP_DIR"
+      );
+      const pkg = JSON.parse(
+        readFileSync(path.join(targetDir, "package.json"), "utf8")
+      );
+      expect(pkg.scripts["backup:db"]).toBeUndefined();
+      expect(pkg.scripts["restore:files"]).toBeUndefined();
+      expect(
+        readFileSync(path.join(targetDir, "README.md"), "utf8")
+      ).not.toContain("backup.md");
+      const deployment = readFileSync(
+        path.join(targetDir, "docs", "deployment.md"),
+        "utf8"
+      );
+      expect(deployment).not.toContain("backup:db");
+      // The generic day-2 advice survives the prune.
+      expect(deployment).toContain("**Backups**");
+    });
+
+    it("throws when a backup-marked file has lost a marker", () => {
+      const templateDir = makeFixtureTemplate();
+      writeFileSync(
+        path.join(templateDir, "docker-compose.yml"),
+        "services:\n  # BEGIN backup\n  backup-db:\n    image: x\n"
+      );
+      expect(() =>
+        scaffold({
+          templateDir,
+          targetDir: path.join(workDir, "bad-backup-marker"),
+          projectName: "acme-erp",
+          ai: "none",
+          backup: false,
+        })
+      ).toThrow(/Backup markers not found/);
+    });
+
+    it("throws when a backup-line file has nothing to prune", () => {
+      const templateDir = makeFixtureTemplate();
+      // Marker files must strip cleanly so the line-strip guard is reached.
+      writeFileSync(
+        path.join(templateDir, ".env.example"),
+        "DATABASE_URL=postgres://localhost:5432/app\nBETTER_AUTH_SECRET=\n# BEGIN backup\nBACKUP_DIR=./backups\n# END backup\n"
+      );
+      writeFileSync(
+        path.join(templateDir, "docker-compose.yml"),
+        "services:\n  # BEGIN backup\n  backup-db:\n    image: x\n  # END backup\n"
+      );
+      // README is a branch-marked file too — keep the marker so stampProdBranch
+      // (which runs before pruneBackup) doesn't throw first.
+      writeFileSync(
+        path.join(templateDir, "README.md"),
+        "# App\n\nBranch: __PROD_BRANCH__. No backup references here.\n"
+      );
+      expect(() =>
+        scaffold({
+          templateDir,
+          targetDir: path.join(workDir, "bad-backup-line"),
+          projectName: "acme-erp",
+          ai: "none",
+          backup: false,
+        })
+      ).toThrow(/No backup references found/);
+    });
   });
 });
