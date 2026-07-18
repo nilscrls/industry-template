@@ -1,0 +1,122 @@
+# GitLab CI mirror of the template pipeline: quality → integration → e2e run
+# in parallel on MRs and on pushes to __PROD_BRANCH__ / develop; a release job
+# publishes a GitLab Release when a v* tag is pushed (see docs/releases.md).
+#
+# Testcontainers and docker compose talk to a docker:dind service. The job's
+# /builds tree is shared with services (docker executor volumes_from), so
+# compose bind mounts like ./packages/db/sql/init-roles.sh resolve inside
+# dind — true on gitlab.com shared runners; self-hosted runners need the
+# default build-volume sharing (and privileged = true for dind).
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == "__PROD_BRANCH__"
+    - if: $CI_COMMIT_BRANCH == "develop"
+
+stages: [test, release]
+
+variables:
+  TURBO_TELEMETRY_DISABLED: "1"
+  PNPM_VERSION: "10.12.1"
+  # dind wiring (ignored by jobs without the service)
+  DOCKER_HOST: tcp://docker:2375
+  DOCKER_TLS_CERTDIR: ""
+  DOCKER_DRIVER: overlay2
+
+default:
+  image: node:22-bookworm
+  interruptible: true
+  cache:
+    key:
+      files: [pnpm-lock.yaml]
+    paths: [.pnpm-store]
+  before_script:
+    - npm install --global "pnpm@$PNPM_VERSION"
+    - pnpm config set store-dir "$CI_PROJECT_DIR/.pnpm-store"
+
+# Same env materialization as the GitHub workflow: turbo hashes .env and the
+# web build reads it; BETTER_AUTH_SECRET must be non-empty.
+.materialize_env:
+  script:
+    - cp .env.example .env
+    - sed -i "s/^BETTER_AUTH_SECRET=$/BETTER_AUTH_SECRET=$(openssl rand -hex 32)/" .env
+
+# Tag pipelines only run the release job — CI already validated the release
+# commit on __PROD_BRANCH__ (same rationale as the GitHub setup).
+.test_job:
+  stage: test
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never
+    - when: on_success
+
+quality:
+  extends: .test_job
+  script:
+    - pnpm install --frozen-lockfile
+    - !reference [.materialize_env, script]
+    - pnpm lint
+    - pnpm build
+    - pnpm check-types
+    - pnpm test
+
+integration:
+  extends: .test_job
+  services:
+    - docker:27-dind
+  variables:
+    TESTCONTAINERS_HOST_OVERRIDE: docker
+  script:
+    - pnpm install --frozen-lockfile
+    - !reference [.materialize_env, script]
+    - pnpm test:integration
+
+e2e:
+  extends: .test_job
+  services:
+    - docker:27-dind
+  script:
+    # Plain node image: fetch the docker CLI + compose plugin (static builds).
+    - curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz | tar -xz --strip-components=1 -C /usr/local/bin docker/docker
+    - mkdir -p /usr/local/lib/docker/cli-plugins
+    - curl -fsSL https://github.com/docker/compose/releases/download/v2.32.4/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
+    - chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+    - pnpm install --frozen-lockfile
+    - !reference [.materialize_env, script]
+    # Compose publishes host ports on the dind daemon ("docker"), not on
+    # localhost: repoint the infra endpoints. The api/web processes run in
+    # THIS container, so app URLs stay on localhost.
+    - sed -i "s|localhost:5432|docker:5432|g; s|localhost:6379|docker:6379|g; s|localhost:9000|docker:9000|g; s|localhost:8080|docker:8080|g; s|^SMTP_HOST=localhost$|SMTP_HOST=docker|" .env
+    - docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile dev up -d --wait
+    - pnpm build
+    - pnpm db:migrate
+    - pnpm db:seed
+    - (cd apps/api && nohup node dist/main.js > /tmp/api.log 2>&1 &)
+    - (cd apps/web && nohup pnpm start > /tmp/web.log 2>&1 &)
+    - npx wait-on --timeout 60000 http://localhost:3001/health/ready http://localhost:3000
+    - pnpm --filter @repo/web exec playwright install --with-deps chromium
+    - pnpm --filter @repo/web exec playwright test --project=chromium
+  after_script:
+    - |
+      if [ "$CI_JOB_STATUS" != "success" ]; then
+        echo "── api ──"; cat /tmp/api.log || true
+        echo "── web ──"; cat /tmp/web.log || true
+      fi
+
+# Turns a pushed v* tag (created locally by commit-and-tag-version, see
+# docs/releases.md) into a GitLab Release.
+release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d/
+  cache: []
+  before_script: []
+  script:
+    - echo "Creating GitLab release for $CI_COMMIT_TAG"
+  release:
+    tag_name: $CI_COMMIT_TAG
+    name: $CI_COMMIT_TAG
+    description: "Changelog: apps/web/content/changelog.md (rendered at /changelog)."
