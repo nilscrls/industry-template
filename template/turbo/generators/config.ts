@@ -1,4 +1,11 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { PlopTypes } from "@turbo/gen";
+
+/** kebab-case → camelCase, matching plop's `camelCase` helper for our inputs. */
+function toCamel(value: string): string {
+  return value.replace(/-([a-z0-9])/g, (_, char: string) => char.toUpperCase());
+}
 
 /**
  * `pnpm gen feature` — scaffolds a vertical slice for a new entity:
@@ -53,7 +60,7 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
         path: "{{ turbo.paths.root }}/packages/contracts/src/index.ts",
         pattern: /$/,
         template:
-          'export { {{ camelCase plural }}Contract, {{ camelCase name }}Schema, type {{ pascalCase name }} } from "./{{ plural }}.js";\n',
+          'export {\n  is{{ pascalCase name }}SortField,\n  list{{ pascalCase plural }}QuerySchema,\n  {{ camelCase plural }}Contract,\n  {{ camelCase name }}Schema,\n  {{ camelCase name }}SortFields,\n  type {{ pascalCase name }},\n  type {{ pascalCase name }}SortField,\n} from "./{{ plural }}.js";\n',
       },
       {
         type: "modify",
@@ -134,13 +141,130 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
         path: "{{ turbo.paths.root }}/apps/web/src/app/(app)/{{ plural }}/page.tsx",
         templateFile: "templates/page.hbs",
       },
+      {
+        type: "add",
+        path: "{{ turbo.paths.root }}/apps/web/src/app/(app)/{{ plural }}/search-params.ts",
+        templateFile: "templates/search-params.hbs",
+      },
+      {
+        type: "add",
+        path: "{{ turbo.paths.root }}/apps/web/src/app/(app)/{{ plural }}/search-params.test.ts",
+        templateFile: "templates/search-params.test.hbs",
+      },
+      // ── i18n ─────────────────────────────────────────────────────────
+      // Text-level insertion (NOT JSON re-serialization) so the catalogs
+      // keep their exact formatting. Single `{` braces (ICU args like
+      // {page}) are literal to handlebars — only `{{ }}` is interpolated.
+      {
+        type: "modify",
+        path: "{{ turbo.paths.root }}/packages/i18n/messages/en.json",
+        pattern: /( {2}"projects": \{)/,
+        template: [
+          '  "{{ camelCase plural }}": {',
+          '    "title": "{{ titleCase plural }}",',
+          '    "searchPlaceholder": "Search…",',
+          '    "empty": "Nothing here yet.",',
+          '    "previous": "Previous",',
+          '    "next": "Next",',
+          '    "pageInfo": "Page {page} of {totalPages}",',
+          '    "fields": {',
+          '      "name": "Name",',
+          '      "createdAt": "Created"',
+          "    }",
+          "  },",
+          "$1",
+        ].join("\n"),
+      },
+      {
+        type: "modify",
+        path: "{{ turbo.paths.root }}/packages/i18n/messages/fr.json",
+        pattern: /( {2}"projects": \{)/,
+        template: [
+          '  "{{ camelCase plural }}": {',
+          '    "title": "{{ titleCase plural }}",',
+          '    "searchPlaceholder": "Rechercher…",',
+          '    "empty": "Rien pour le moment.",',
+          '    "previous": "Précédent",',
+          '    "next": "Suivant",',
+          '    "pageInfo": "Page {page} sur {totalPages}",',
+          '    "fields": {',
+          '      "name": "Nom",',
+          '      "createdAt": "Créé le"',
+          "    }",
+          "  },",
+          "$1",
+        ].join("\n"),
+      },
+      // shell.nav label (anchor: shell.nav is the only nav whose first key
+      // is "dashboard" with a string value — admin.nav starts with
+      // "organizations").
+      {
+        type: "modify",
+        path: "{{ turbo.paths.root }}/packages/i18n/messages/en.json",
+        pattern: /("nav": \{\n {6}"dashboard": "[^"]+",)/,
+        template: '$1\n      "{{ camelCase plural }}": "{{ titleCase plural }}",',
+      },
+      {
+        type: "modify",
+        path: "{{ turbo.paths.root }}/packages/i18n/messages/fr.json",
+        pattern: /("nav": \{\n {6}"dashboard": "[^"]+",)/,
+        template: '$1\n      "{{ camelCase plural }}": "{{ titleCase plural }}",',
+      },
+      // ── nav ──────────────────────────────────────────────────────────
+      // Anchor exists verbatim in both UI variants of app-shell.tsx (the
+      // scaffolded app has exactly one). Reuses FolderKanbanIcon — swap the
+      // icon afterwards if you want a distinct one.
+      {
+        type: "modify",
+        path: "{{ turbo.paths.root }}/apps/web/src/components/app-shell.tsx",
+        pattern:
+          /(\{ href: "\/projects", key: "projects", icon: FolderKanbanIcon \},)/,
+        template:
+          '$1\n  { href: "/{{ plural }}", key: "{{ camelCase plural }}", icon: FolderKanbanIcon },',
+      },
+      // plop `modify` is a silent no-op when the pattern does not match —
+      // verify the automated registrations really landed.
+      function verifyRegistrations(answers) {
+        const data = answers as {
+          plural: string;
+          turbo: { paths: { root: string } };
+        };
+        const root = data.turbo.paths.root;
+        const camelPlural = toCamel(data.plural);
+        const checks: [string, string][] = [
+          [
+            path.join(root, "packages/i18n/messages/en.json"),
+            `"${camelPlural}": {`,
+          ],
+          [
+            path.join(root, "packages/i18n/messages/fr.json"),
+            `"${camelPlural}": {`,
+          ],
+          [
+            path.join(root, "apps/web/src/components/app-shell.tsx"),
+            `href: "/${data.plural}"`,
+          ],
+        ];
+        const missed = checks
+          .filter(
+            ([file, needle]) => !readFileSync(file, "utf8").includes(needle)
+          )
+          .map(([file, needle]) => `${needle} missing from ${file}`);
+        if (missed.length > 0) {
+          throw new Error(
+            `Anchor drift — automated registration failed:\n${missed.join("\n")}`
+          );
+        }
+        return "i18n namespaces (en+fr) and nav item registered";
+      },
       function reminders() {
         return [
           "Next steps:",
-          "  1. pnpm db:generate && pnpm db:migrate   # create the migration",
-          "  2. Review the generated type in packages/fga/model.fga, then pnpm fga:bootstrap",
-          "  3. Add i18n keys under `{{ camelCase plural }}` in packages/i18n/messages/*.json",
-          "  4. Add a nav item in apps/web/src/components/app-shell.tsx",
+          "  1. pnpm lint:fix                          # normalize generated import order",
+          "  2. pnpm db:generate && pnpm db:migrate    # create the migration",
+          "  3. Review the generated type in packages/fga/model.fga, then pnpm fga:bootstrap",
+          "  4. i18n keys (en+fr) and the nav item were inserted automatically —",
+          "     review the copy and swap the nav icon in apps/web/src/components/app-shell.tsx",
           "  5. Make the generated int tests pass (TDD: they start as todos)",
         ].join("\n");
       },

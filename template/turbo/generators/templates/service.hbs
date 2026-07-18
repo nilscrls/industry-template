@@ -1,13 +1,18 @@
 import { Injectable } from "@nestjs/common";
-import type { Paginated, PaginationQuery, {{ pascalCase name }} } from "@repo/contracts";
+import type {
+  list{{ pascalCase plural }}QuerySchema,
+  Paginated,
+  {{ pascalCase name }},
+} from "@repo/contracts";
 import { {{ camelCase name }} } from "@repo/db";
-import { and, count, desc, eq, ilike } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike } from "drizzle-orm";
+import type { z } from "zod";
 import { forbidden, notFound } from "../common/app-error";
 import { currentUser } from "../common/request-context";
 import { DbService } from "../db/db.module";
 import { FgaService } from "../fga/fga.service";
 
-type ListQuery = PaginationQuery & { search?: string | undefined };
+type ListQuery = z.infer<typeof list{{ pascalCase plural }}QuerySchema>;
 type Row = typeof {{ camelCase name }}.$inferSelect;
 
 /**
@@ -32,12 +37,19 @@ export class {{ pascalCase plural }}Service {
       eq({{ camelCase name }}.ownerId, currentUser().id),
       query.search ? ilike({{ camelCase name }}.name, `%${query.search}%`) : undefined
     );
+    const sortColumn = {
+      name: {{ camelCase name }}.name,
+      createdAt: {{ camelCase name }}.createdAt,
+      updatedAt: {{ camelCase name }}.updatedAt,
+    }[query.sortBy];
+    const orderBy =
+      query.sortOrder === "asc" ? asc(sortColumn) : desc(sortColumn);
     const [rows, totals] = await Promise.all([
       this.db
         .select()
         .from({{ camelCase name }})
         .where(where)
-        .orderBy(desc({{ camelCase name }}.createdAt))
+        .orderBy(orderBy)
         .limit(query.pageSize)
         .offset((query.page - 1) * query.pageSize),
       this.db.select({ value: count() }).from({{ camelCase name }}).where(where),
