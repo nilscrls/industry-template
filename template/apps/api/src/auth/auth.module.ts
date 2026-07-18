@@ -67,11 +67,27 @@ export const AUTH = "BETTER_AUTH_INSTANCE";
                 await redis.set(`ba:${key}`, value);
               }
             },
+            // Atomic INCR-with-TTL for the rate limiter: check-and-increment
+            // happens in one Redis round trip, so concurrent requests can't
+            // all pass a stale read. TTL is set only on creation — the
+            // counter expires a fixed window after its first hit.
+            increment: async (key, ttl) => {
+              const count = await redis.eval(
+                "local c = redis.call('INCR', KEYS[1]) " +
+                  "if c == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end " +
+                  "return c",
+                1,
+                `ba:${key}`,
+                ttl
+              );
+              return Number(count);
+            },
             delete: async (key) => {
               await redis.del(`ba:${key}`);
             },
           },
-          requireEmailVerification: env.NODE_ENV === "production",
+          rateLimitEnabled: env.AUTH_RATE_LIMIT_ENABLED,
+          requireEmailVerification: env.REQUIRE_EMAIL_VERIFICATION,
           onBeforeUserDelete: deletion.beforeDelete,
           onAfterUserDelete: deletion.afterDelete,
           onOrganizationCreated: async ({ organizationId, userId }) => {

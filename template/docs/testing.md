@@ -50,7 +50,7 @@ pnpm compose:dev && pnpm db:migrate && pnpm db:seed && pnpm dev
 pnpm test:e2e
 ```
 
-CI does the same with built apps (see `.github/workflows/ci.yml`, `e2e` job).
+CI does the same with built apps (see the pipeline's `e2e` job).
 `WEB_URL` overrides the base URL. Tests create unique users per run and also
 exercise the seeded admin — keep them independent of each other beyond the
 `describe.serial` chain they're in.

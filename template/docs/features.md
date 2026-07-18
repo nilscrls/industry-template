@@ -14,8 +14,8 @@ Email + password with verification and reset emails, powered by Better-Auth.
   (`signIn.email`, `signUp.email`, `signOut`, `useSession`).
 - Pages: `apps/web/src/app/(auth)/login`, `(auth)/register`; route
   protection in `apps/web/src/middleware.ts` (cookie hint + redirect).
-- Email verification is required in production
-  (`requireEmailVerification: NODE_ENV === "production"`), relaxed in dev.
+- Email verification is gated by the `REQUIRE_EMAIL_VERIFICATION` flag
+  (scaffold-time choice, stamped into `.env`; flip per environment).
 - Dev users after `pnpm db:seed` (password `Password123!`):
   `admin@example.com`, `manager@example.com`, `member@example.com`.
 
@@ -125,7 +125,9 @@ string; `useAppMutation` already toasts it. Translations live under
   `pnpm --filter @repo/emails preview` for the live preview UI.
 - Sending: better-auth hooks enqueue onto the BullMQ `mail` queue
   (`apps/api/src/mail/`) — 5 attempts, exponential backoff, so SMTP hiccups
-  never fail a signup.
+  never fail a signup. The `EMAILS_ENABLED` flag gates enqueueing: when off,
+  `MailService` skips the queue and logs the drop (do not combine with
+  `REQUIRE_EMAIL_VERIFICATION=true`).
 - Dev inbox: maildev at <http://localhost:1080>.
 - New job types: add a queue in a module (`BullModule.registerQueue`), a
   `@Processor` worker, and enqueue from services — `mail/` is the pattern.
@@ -152,8 +154,8 @@ footer with legal links. Details and the operator checklist:
 
 ## Changelog & releases
 
-release-please maintains the version and `apps/web/content/changelog.md`
-from conventional commits (workflow: `.github/workflows/release-please.yml`);
+The release flow maintains the version and `apps/web/content/changelog.md`
+from conventional commits (flow: `docs/releases.md`);
 the app renders it at the public `/changelog` route
 (`apps/web/src/app/(public)/changelog/page.tsx`, react-markdown, server-side).
 Flow and hotfix back-merges: `docs/releases.md`.
@@ -189,8 +191,11 @@ Flow and hotfix back-merges: `docs/releases.md`.
   the owner. See `docs/authorization.md`.
 - `/health/live` and `/health/ready` (db + redis probes) — compose
   healthchecks and `depends_on` gate on them.
-- Rate limiting: 300 req/min/IP default, Redis-backed
-  (tune in `app.module.ts`, per-route with `@Throttle`).
+- Rate limiting, two layers, both Redis-backed: 300 req/min/IP on the Nest
+  router (tune in `app.module.ts`, per-route with `@Throttle`), plus
+  Better-Auth's built-in limiter on the `/auth` mount — that express mount
+  bypasses the Nest guard, so credential endpoints get their own tight
+  rules (`packages/auth/src/auth.ts`, toggle `AUTH_RATE_LIMIT_ENABLED`).
 - Strict security headers on both apps: the API ships a deny-all CSP, HSTS
   and `frame-ancestors 'none'` via helmet (`app.setup.ts`); the web app sets
   its baseline in `next.config.ts`.

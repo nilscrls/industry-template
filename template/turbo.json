@@ -16,6 +16,7 @@
         "FGA_*",
         "REDIS_URL",
         "BETTER_AUTH_SECRET",
+        "AUTH_RATE_LIMIT_ENABLED",
         "MICROSOFT_*",
         "OTEL_*",
         "SENTRY_*",
@@ -23,6 +24,8 @@
         "S3_*",
         "SMTP_*",
         "MAIL_FROM",
+        "REQUIRE_EMAIL_VERIFICATION",
+        "EMAILS_ENABLED",
         "LOG_*"
       ]
     },
@@ -39,6 +42,7 @@
         "FGA_*",
         "REDIS_URL",
         "BETTER_AUTH_SECRET",
+        "AUTH_RATE_LIMIT_ENABLED",
         "MICROSOFT_*",
         "OTEL_*",
         "SENTRY_*",
@@ -46,6 +50,8 @@
         "S3_*",
         "SMTP_*",
         "MAIL_FROM",
+        "REQUIRE_EMAIL_VERIFICATION",
+        "EMAILS_ENABLED",
         "LOG_*"
       ]
     },

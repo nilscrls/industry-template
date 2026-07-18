@@ -86,6 +86,10 @@ Better-auth lives on the api (`packages/auth/src/auth.ts`, wired in
 
 - email + password, email verification and password reset (mails go through
   the BullMQ queue), `admin` plugin for roles/bans/impersonation.
+- built-in **rate limiting** on the auth endpoints (`AUTH_RATE_LIMIT_ENABLED`,
+  Redis-backed via secondary storage, tighter rules for sign-in/sign-up/reset) —
+  the express-mounted auth handler bypasses Nest's `ThrottlerGuard`, so this is
+  the only limiter covering it.
 - Sessions in Postgres, mirrored into **Redis secondary storage**, plus a
   5-minute signed **cookie cache** so most requests never touch a store.
   Consequence: role changes take effect on the next sign-in or after the

@@ -19,6 +19,14 @@ export const env = createEnv({
     DATABASE_URL_AUTH: z.string().min(1),
     REDIS_URL: z.string().min(1),
     BETTER_AUTH_SECRET: z.string().min(32),
+    /**
+     * Better-Auth's built-in limiter on the /auth/* mount — the express
+     * mount bypasses the Nest ThrottlerGuard, so this is the only rate
+     * limit auth endpoints get. Rules live in packages/auth/src/auth.ts.
+     */
+    AUTH_RATE_LIMIT_ENABLED: z
+      .enum(["true", "false"])
+      .transform((value) => value === "true"),
 
     /** OpenFGA — the authorization engine (hard runtime dependency). */
     FGA_API_URL: z.url(),
@@ -73,6 +81,19 @@ export const env = createEnv({
       .enum(["true", "false"])
       .transform((value) => value === "true"),
     LOG_DIR: z.string().min(1),
+
+    /**
+     * Scaffold-time feature flags (create-industry-app stamps the chosen
+     * values; operators can still flip them per environment).
+     */
+    /** Gate sign-in on a verified email address. */
+    REQUIRE_EMAIL_VERIFICATION: z
+      .enum(["true", "false"])
+      .transform((value) => value === "true"),
+    /** Enqueue transactional emails. When false, sends are skipped (logged). */
+    EMAILS_ENABLED: z
+      .enum(["true", "false"])
+      .transform((value) => value === "true"),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,
