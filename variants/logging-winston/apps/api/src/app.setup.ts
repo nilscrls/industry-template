@@ -93,7 +93,9 @@ export async function createApp(): Promise<NestExpressApplication> {
   // first (never logged — their URLs can carry one-time tokens) while every
   // Nest route, registered at init, is.
   express.use(
-    createRequestLoggerMiddleware(app.get<WinstonLogger>(WINSTON_MODULE_PROVIDER))
+    createRequestLoggerMiddleware(
+      app.get<WinstonLogger>(WINSTON_MODULE_PROVIDER)
+    )
   );
 
   await app.init();

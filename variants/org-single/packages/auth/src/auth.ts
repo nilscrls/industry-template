@@ -279,7 +279,10 @@ export function createAuth(options: CreateAuthOptions) {
                 userId: user.id,
               });
             } else {
-              await options.onMemberAdded?.({ organizationId, userId: user.id });
+              await options.onMemberAdded?.({
+                organizationId,
+                userId: user.id,
+              });
             }
           },
         },

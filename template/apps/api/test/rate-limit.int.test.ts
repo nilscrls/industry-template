@@ -54,7 +54,9 @@ beforeAll(async () => {
   process.env.DATABASE_URL_AUTH = roleUrl("app_auth");
   process.env.REDIS_URL = redis.getConnectionUrl();
   process.env.FGA_API_URL = "http://127.0.0.1:1";
-  process.env.FGA_STORE_ID = "unused";
+  // Any syntactically valid ULID: the SDK validates the format at client
+  // construction, but nothing in this suite ever dials the (closed) port.
+  process.env.FGA_STORE_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
   process.env.FGA_API_TOKEN = "test-token";
   process.env.FGA_MODEL_ID = "";
   process.env.BETTER_AUTH_SECRET = "integration-test-secret-0123456789abcdef";
