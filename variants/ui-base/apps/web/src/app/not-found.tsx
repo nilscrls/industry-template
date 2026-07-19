@@ -1,4 +1,4 @@
-import { Button } from "@repo/ui/components/button";
+import { buttonVariants } from "@repo/ui/components/button";
 import { useTranslations } from "next-intl";
 import { Link } from "@/lib/navigation";
 
@@ -11,9 +11,11 @@ export default function NotFoundPage() {
       <p className="max-w-md text-muted-foreground text-sm">
         {t("notFoundDescription")}
       </p>
-      <Button nativeButton={false} render={<Link href="/dashboard" />}>
+      {/* A styled link, not a Button render: Base UI's Button stamps
+          role="button" on the anchor, breaking link semantics. */}
+      <Link className={buttonVariants()} href="/dashboard">
         {t("backHome")}
-      </Button>
+      </Link>
     </main>
   );
 }
