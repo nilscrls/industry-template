@@ -27,9 +27,9 @@ import {
 import type { z } from "zod";
 import { forbidden, notFound } from "../common/app-error";
 import { activeOrganizationId, currentUser } from "../common/request-context";
-import type { DbService } from "../db/db.module";
-import type { FgaService } from "../fga/fga.service";
-import type { CacheService } from "../redis/cache.service";
+import { DbService } from "../db/db.module";
+import { FgaService } from "../fga/fga.service";
+import { CacheService } from "../redis/cache.service";
 
 type ListQuery = z.infer<typeof listProjectsQuerySchema>;
 type CreateInput = z.infer<typeof createProjectSchema>;

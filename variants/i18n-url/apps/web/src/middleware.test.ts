@@ -48,9 +48,9 @@ describe("middleware (url locale)", () => {
 
   it("rewrites the locale root to /", () => {
     const res = middleware(request("/en", SIGNED_IN));
-    expect(new URL(res.headers.get("x-middleware-rewrite") ?? "").pathname).toBe(
-      "/"
-    );
+    expect(
+      new URL(res.headers.get("x-middleware-rewrite") ?? "").pathname
+    ).toBe("/");
   });
 
   it("sends a signed-out visitor to the same-locale login with a prefixed next", () => {
