@@ -1,10 +1,10 @@
 import { Injectable } from "@nestjs/common";
 import {
+  type OrgCapability,
+  orgCapabilities,
   type Paginated,
   type PaginationQuery,
   type PermissionSnapshot,
-  orgCapabilities,
-  type OrgCapability,
   type Role,
   roleSchema,
   type SystemCapability,

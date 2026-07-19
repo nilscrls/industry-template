@@ -31,10 +31,9 @@ export function LocaleSwitcher() {
   }
 
   return (
-    <div
+    <fieldset
       aria-label={t("changeLocale")}
-      className="flex items-center"
-      role="group"
+      className="flex items-center border-0 p-0"
     >
       {SUPPORTED_LOCALES.map((candidate) => (
         <Button
@@ -47,6 +46,6 @@ export function LocaleSwitcher() {
           {candidate.toUpperCase()}
         </Button>
       ))}
-    </div>
+    </fieldset>
   );
 }
