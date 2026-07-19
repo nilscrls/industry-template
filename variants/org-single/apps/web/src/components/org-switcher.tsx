@@ -17,10 +17,7 @@ export function OrgSwitcher() {
   const { data: activeOrganization } = authClient.useActiveOrganization();
 
   return (
-    <span
-      aria-label={t("switchLabel")}
-      className="inline-flex h-8 max-w-40 items-center gap-1.5 rounded-md border px-2.5 font-medium text-sm"
-    >
+    <span className="inline-flex h-8 max-w-40 items-center gap-1.5 rounded-md border px-2.5 font-medium text-sm">
       <Building2Icon aria-hidden className="size-4 shrink-0" />
       <span className="truncate">
         {activeOrganization?.name ?? t("noOrganization")}

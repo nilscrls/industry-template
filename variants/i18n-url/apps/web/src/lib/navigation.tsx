@@ -54,8 +54,7 @@ export function useRouter(): Router {
   return useMemo<Router>(
     () => ({
       ...router,
-      push: (href, options) =>
-        router.push(localizeHref(locale, href), options),
+      push: (href, options) => router.push(localizeHref(locale, href), options),
       replace: (href, options) =>
         router.replace(localizeHref(locale, href), options),
       prefetch: (href, options) =>
