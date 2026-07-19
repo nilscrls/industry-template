@@ -1,6 +1,6 @@
 {
   "name": "create-industry-app",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Scaffold an industrial-grade full-stack TypeScript monorepo: Next.js 16 + NestJS + oRPC + Drizzle + Better-Auth, wired for TDD and Docker",
   "keywords": [
     "create-app",
