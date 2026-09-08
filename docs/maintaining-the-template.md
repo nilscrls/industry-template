@@ -28,10 +28,13 @@ docs/         this documentation
   Radix-based `@repo/ui` components, the ui `package.json`/`components.json`,
   and the three app files that used `asChild` (render-prop conversions).
 - `variants/authz-rebac/` — relation-based OpenFGA model: its own
-  `packages/fga/model.fga` + `sync.ts`, permission contracts,
-  `project_member` schema + regenerated drizzle migrations (`_delete.json`
-  removes the RBAC ones), projects/users services and controllers, seeds,
-  `docs/authorization.md`, and its own integration suite.
+  `packages/fga/model.fga` + `sync.ts`, permission contracts, a
+  `ProjectMember` entity + its own hand-written
+  `packages/db/src/migrations/` (a superset of the template's — every table
+  incl. wallet/walletEntry/RLS, plus `projectMember` with no RLS;
+  `_delete.json` removes the RBAC migrations first), projects/users services
+  and controllers, seeds, `docs/authorization.md`, and its own integration
+  suite.
 - `variants/org-single/` — single-organization mode: a UI-neutral
   `org-switcher.tsx` stub, the `packages/auth/src/auth.ts` seam it replaces
   (auto-provisions one `DEFAULT_ORG`, `allowUserToCreateOrganization: false`),
@@ -102,19 +105,40 @@ overlay too** — the `variants` CI job scaffolds each variant (and the
 base+rebac combination) and runs lint/build/check-types/test against it, so
 drift fails CI. CI is release-gated (push to `release/**`, `v*` tags, or
 manual `workflow_dispatch`) — day-to-day pushes rely on lefthook + the local
-checklist below, so run it before merging significant changes. To regenerate the ReBAC migrations after a schema change:
-scaffold with `--authz=rebac`, delete `packages/db/drizzle`, run
-`pnpm db:generate`, copy the folder back into the overlay.
+checklist below, so run it before merging significant changes. There is no
+`db:generate`-and-copy recipe for the ReBAC entities/migrations: TypeORM
+migrations are hand-written, not generated from a schema diff, so keeping
+the overlay current is a manual mirror — after changing
+`packages/db/src/entities/index.ts` or `packages/db/src/migrations/` in the
+template, hand-edit (or copy and re-apply the ReBAC-specific hunks: the
+`ProjectMember` entity, its migration table, and the two extra `index.ts`
+registrations) into
+`variants/authz-rebac/packages/db/src/{entities/index.ts,entities/project-member.ts,migrations/}`.
+Run the rebac scaffold's `pnpm db:migrate` against a scratch database
+afterwards to confirm it still applies cleanly.
 
 Current mirror pairs (a template edit must be replayed in the overlay copy):
 
-- `packages/auth/src/auth.ts` → its `variants/org-single/packages/auth/src/auth.ts`
-  counterpart (any auth.ts edit — rate limiting, providers — must be replayed
-  there; org-single derives its copy from the post-security template).
+- `packages/auth/src/auth.ts` ↔ `variants/org-single/packages/auth/src/auth.ts`
+  (any auth.ts edit — rate limiting, providers — must be replayed there;
+  org-single derives its copy from the post-security template).
+- `packages/auth/src/seed-dev.ts` ↔ `variants/authz-rebac/packages/auth/src/seed-dev.ts`.
+- `packages/fga/src/sync.ts` ↔ `variants/authz-rebac/packages/fga/src/sync.ts`;
+  `packages/fga/model.fga` ↔ `variants/authz-rebac/packages/fga/model.fga`.
+- `packages/contracts/src/{permissions.ts,permissions.test.ts,index.ts,projects.ts,users.ts}`
+  ↔ their `variants/authz-rebac/packages/contracts/src/*` counterparts.
+- `packages/db/src/entities/index.ts` + `packages/db/src/migrations/*` ↔
+  `variants/authz-rebac/packages/db/src/{entities/index.ts,entities/project-member.ts,migrations/*}`.
+- `apps/api/src/{projects,users}/*` ↔
+  `variants/authz-rebac/apps/api/src/{projects,users}/*`.
 - `apps/api/test/api.int.test.ts` → its authz-rebac and org-single copies.
-- The `apps/api` logger/mail files and api `package.json` → their
-  `variants/logging-winston/` copies.
-- `docs/stack.md`/`features.md`/`testing.md` → their logging-winston copies.
+- `apps/api/package.json`, `apps/api/src/app.module.ts`, `docs/stack.md`,
+  `docs/features.md`, `docs/testing.md` ↔ their `variants/logging-winston/`
+  copies.
+- `docs/authorization.md` ↔ `variants/authz-rebac/docs/authorization.md`.
+- `apps/web/e2e/org-and-settings.spec.ts` ↔ its `variants/org-single` copy
+  (unaffected by data-layer changes, but still a mirror pair to keep in
+  mind).
 
 **Overlays never ship `.env.example`, root `package.json`,
 `docker-compose.yml`, or `turbo.json`.** `stampEnvChoices`, `pruneBackup`, and
@@ -169,7 +193,7 @@ conventional (`pnpm commit`); lefthook runs biome + commitlint + typecheck.
 ## Full verification checklist
 
 Run before releasing, and before accepting majors of **biome/ultracite,
-oRPC, TanStack Query, drizzle, better-auth**:
+oRPC, TanStack Query, typeorm, better-auth**:
 
 1. Root: `pnpm lint && pnpm check-types && pnpm build && pnpm test`
    (the last test scaffolds the real template into a temp dir).
@@ -193,14 +217,14 @@ Each of these broke once; the integration suite guards most of them.
 
 | Constraint | Why |
 |---|---|
-| Internal packages compile to **CJS** (no `"type": "module"`); `library.json` sets `verbatimModuleSyntax: false`; scripts use `main().catch()`, never top-level await | the CJS Nest app and ESM-typed deps (drizzle) must resolve ONE type identity per dependency, or nominal private fields collide (TS2322 storms) |
+| Internal packages compile to **CJS** (no `"type": "module"`); `library.json` sets `verbatimModuleSyntax: false`; scripts use `main().catch()`, never top-level await | the CJS Nest app and ESM-typed deps (typeorm, orpc) must resolve ONE type identity per dependency, or nominal private fields collide (TS2322 storms) |
 | DI tokens live in `*.constants.ts`, never in the Nest module file | module-file tokens create circular imports; the token evaluates `undefined` inside `@Inject()` — at runtime, in both CJS and vitest |
 | `style/useImportType` stays **off** for `apps/api` | biome converts DI-injected classes to `import type`, silently erasing the metadata Nest resolves constructors from |
 | `apps/api/vitest.swc.ts` keeps explicit `legacyDecorator + decoratorMetadata` | unplugin-swc does not read tsconfig; without it `@Inject()` metadata vanishes under vitest |
 | No pino `transport` when `NODE_ENV === "test"` | transports spawn worker threads that crash vitest's forked workers |
 | Better-Auth `baseUrl` = full public base (`${WEB_URL}/api/auth`); express mount re-prefixes `/api` and registers **before** `app.init()` (with `--api=direct`: base is `${API_PUBLIC_URL}/auth`, no re-prefix) | a path in `baseURL` *replaces* `basePath` as the router mount; Nest's 404 catch-all registers at init and swallows later mounts |
 | Server handler inputs typed from schema **outputs**, never `InferContractRouterInputs` | that type is the client input view; `z.coerce` fields become `unknown` |
-| `migrate.ts` uses `__dirname` (with a biome-ignore) | the unsafe autofix rewrites it to `import.meta.dirname`, which breaks CJS |
+| `packages/db/src/migrations/index.ts` lists migration classes explicitly (no glob) | the same file has to resolve under `tsx` (src) and from `dist`; a path glob resolves in only one of them |
 | Template dotfiles stored as `_gitignore`; template `biome.jsonc` sets `vcs.useIgnoreFile: false` | npm strips `.gitignore` from packages; biome would otherwise demand the missing ignore file |
 | The ai-claude overlay stores `.claude/` as `_claude/`; the scaffold renames it (`restoreDotfiles`) | same npm-publish hazard as `_gitignore` — dot-entries in `files` dirs are not reliably packed |
 | BullMQ gets plain connection options parsed from `REDIS_URL` | passing an ioredis instance couples to bullmq's own ioredis version (nominal type clash) |
@@ -251,7 +275,10 @@ scaffold test; do not multiply rows. Before adding a new option, prefer a
 documented migration guide in `template/docs/`; add an overlay only when the
 choice is structural (different dependencies or data model).
 
-ORM choice (drizzle → prisma) is deliberately NOT a scaffold option: it touches
-the schema, RLS policies, migrations, seeds and every service — as an overlay it
-would double the whole matrix. It ships as a migration guide instead:
-`template/docs/prisma-migration.md`.
+ORM is TypeORM; swapping it is a migration, not a flag. It is deliberately
+NOT a scaffold option: the ORM touches the entities, RLS policies,
+migrations, seeds and every service — as an overlay it would double the
+whole matrix. If you need a different ORM, treat it as a one-off migration
+of the running app (start from `template/docs/database.md`'s description of
+what depends on TypeORM today), not something the template offers a
+generated guide for.

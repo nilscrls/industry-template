@@ -1,24 +1,24 @@
 import { randomUUID } from "node:crypto";
 import {
-  createDb,
-  member,
-  organization,
-  project,
-  projectMember,
-  user,
+  createDataSource,
+  createPool,
+  Member,
+  Organization,
+  Project,
+  ProjectMember,
+  User,
 } from "@repo/db";
-import { and, count, eq } from "drizzle-orm";
+import type { DataSource } from "typeorm";
 import { createAuth } from "./auth.js";
 
 const PASSWORD = "Password123!";
 const ORG = { name: "Acme Inc", slug: "acme" } as const;
 const FIXTURES = [
   { email: "admin@example.com", name: "Ada Admin", role: "admin" },
-  { email: "manager@example.com", name: "Manny Manager", role: "member" },
-  { email: "member@example.com", name: "Mia Member", role: "member" },
+  { email: "manager@example.com", name: "Manny Manager", role: "user" },
+  { email: "user@example.com", name: "Uma User", role: "user" },
 ] as const;
 
-type Db = ReturnType<typeof createDb>["db"];
 type Auth = ReturnType<typeof createAuth>;
 
 function requireEnv(): {
@@ -26,14 +26,17 @@ function requireEnv(): {
   secret: string;
   webUrl: string;
 } {
-  const connectionString = process.env.DATABASE_URL;
+  // Owner connection: seeds cross tenants and bypass RLS (app_user is not
+  // BYPASSRLS, so seeding through it fails on every RLS-protected insert).
+  const connectionString =
+    process.env.DATABASE_URL_MIGRATIONS ?? process.env.DATABASE_URL;
   const secret = process.env.BETTER_AUTH_SECRET;
   const webUrl = process.env.WEB_URL;
   if (connectionString && secret && webUrl) {
     return { connectionString, secret, webUrl };
   }
   const missing = Object.entries({
-    DATABASE_URL: connectionString,
+    DATABASE_URL_MIGRATIONS: connectionString,
     BETTER_AUTH_SECRET: secret,
     WEB_URL: webUrl,
   })
@@ -43,58 +46,55 @@ function requireEnv(): {
   process.exit(1);
 }
 
-async function ensureUsers(db: Db, auth: Auth): Promise<void> {
+async function ensureUsers(ds: DataSource, auth: Auth): Promise<void> {
+  const userRepo = ds.manager.getRepository(User);
   for (const fixture of FIXTURES) {
-    const existing = await db
-      .select({ id: user.id })
-      .from(user)
-      .where(eq(user.email, fixture.email));
-    if (existing.length === 0) {
+    const existing = await userRepo.findOne({
+      where: { email: fixture.email },
+    });
+    if (!existing) {
       await auth.api.signUpEmail({
         body: { email: fixture.email, password: PASSWORD, name: fixture.name },
       });
     }
-    await db
-      .update(user)
-      .set({ role: fixture.role, emailVerified: true })
-      .where(eq(user.email, fixture.email));
+    await userRepo.update(
+      { email: fixture.email },
+      { role: fixture.role, emailVerified: true }
+    );
   }
 }
 
 /** One shared demo organization: all fixtures and demo data in one tenant. */
-async function ensureOrganization(db: Db): Promise<string> {
-  let [org] = await db
-    .select({ id: organization.id })
-    .from(organization)
-    .where(eq(organization.slug, ORG.slug));
+async function ensureOrganization(ds: DataSource): Promise<string> {
+  const orgRepo = ds.manager.getRepository(Organization);
+  const memberRepo = ds.manager.getRepository(Member);
+  const userRepo = ds.manager.getRepository(User);
+
+  let org = await orgRepo.findOne({ where: { slug: ORG.slug } });
   if (!org) {
     // Adopt the earliest organization if one already exists — the
     // single-org variant bootstraps the workspace on first signup.
-    [org] = await db
-      .select({ id: organization.id })
-      .from(organization)
-      .orderBy(organization.createdAt)
-      .limit(1);
+    org = await orgRepo
+      .createQueryBuilder("organization")
+      .orderBy("organization.createdAt", "ASC")
+      .limit(1)
+      .getOne();
   }
   if (!org) {
-    [org] = await db
-      .insert(organization)
-      .values({ id: randomUUID(), name: ORG.name, slug: ORG.slug })
-      .returning({ id: organization.id });
+    org = await orgRepo.save(
+      orgRepo.create({ id: randomUUID(), name: ORG.name, slug: ORG.slug })
+    );
   }
   if (!org) {
     throw new Error("Failed to seed the demo organization");
   }
-  const allUsers = await db
-    .select({ id: user.id, email: user.email })
-    .from(user);
+  const allUsers = await userRepo.find({ select: { id: true, email: true } });
   for (const row of allUsers) {
-    const existing = await db
-      .select({ id: member.id })
-      .from(member)
-      .where(and(eq(member.userId, row.id), eq(member.organizationId, org.id)));
-    if (existing.length === 0) {
-      await db.insert(member).values({
+    const existing = await memberRepo.findOne({
+      where: { userId: row.id, organizationId: org.id },
+    });
+    if (!existing) {
+      await memberRepo.insert({
         id: randomUUID(),
         organizationId: org.id,
         userId: row.id,
@@ -106,7 +106,7 @@ async function ensureOrganization(db: Db): Promise<string> {
 }
 
 async function seedProject(
-  db: Db,
+  ds: DataSource,
   orgId: string,
   owner: { id: string },
   other: { id: string } | undefined,
@@ -116,9 +116,10 @@ async function seedProject(
 ): Promise<void> {
   const daysAgo = ownerIndex * 4 + statusIndex * 2;
   const createdAt = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
-  const [created] = await db
-    .insert(project)
-    .values({
+  const projectRepo = ds.manager.getRepository(Project);
+  const projectMemberRepo = ds.manager.getRepository(ProjectMember);
+  const created = await projectRepo.save(
+    projectRepo.create({
       name: `Demo ${status} project ${ownerIndex + 1}.${statusIndex + 1}`,
       description: "Seeded demo data — safe to delete.",
       status,
@@ -127,12 +128,12 @@ async function seedProject(
       createdAt,
       updatedAt: createdAt,
     })
-    .returning();
+  );
   if (!created) {
     return;
   }
   // ReBAC: the owner relation is the grant, not the ownerId column.
-  await db.insert(projectMember).values({
+  await projectMemberRepo.insert({
     projectId: created.id,
     userId: owner.id,
     relation: "owner",
@@ -140,14 +141,14 @@ async function seedProject(
   // Cross-membership demos: the other member gets editor access to the
   // first project, viewer access to the second.
   if (other && statusIndex === 0) {
-    await db.insert(projectMember).values({
+    await projectMemberRepo.insert({
       projectId: created.id,
       userId: other.id,
       relation: "editor",
     });
   }
   if (other && statusIndex === 1) {
-    await db.insert(projectMember).values({
+    await projectMemberRepo.insert({
       projectId: created.id,
       userId: other.id,
       relation: "viewer",
@@ -155,21 +156,21 @@ async function seedProject(
   }
 }
 
-async function seedProjects(db: Db, orgId: string): Promise<void> {
-  const [projectCount] = await db.select({ value: count() }).from(project);
-  if (!projectCount || projectCount.value > 0) {
+async function seedProjects(ds: DataSource, orgId: string): Promise<void> {
+  const projectRepo = ds.manager.getRepository(Project);
+  const userRepo = ds.manager.getRepository(User);
+  const projectCount = await projectRepo.count();
+  if (projectCount > 0) {
     return;
   }
-  const members = await db
-    .select({ id: user.id, email: user.email })
-    .from(user);
+  const members = await userRepo.find({ select: { id: true, email: true } });
   const owners = members.filter((row) => row.email !== "admin@example.com");
   const statuses = ["draft", "active", "active", "archived"] as const;
   for (const [ownerIndex, owner] of owners.entries()) {
     const other = owners.find((row) => row.id !== owner.id);
     for (const [statusIndex, status] of statuses.entries()) {
       await seedProject(
-        db,
+        ds,
         orgId,
         owner,
         other,
@@ -189,9 +190,11 @@ async function main(): Promise<void> {
   }
 
   const { connectionString, secret, webUrl } = requireEnv();
-  const { db, pool } = createDb(connectionString);
+  const ds = createDataSource(connectionString);
+  const pool = createPool(connectionString);
+  await ds.initialize();
   const auth = createAuth({
-    db,
+    pool,
     secret,
     baseUrl: `${webUrl}/api/auth`,
     trustedOrigins: [webUrl],
@@ -199,11 +202,11 @@ async function main(): Promise<void> {
   });
 
   try {
-    await ensureUsers(db, auth);
-    const orgId = await ensureOrganization(db);
-    await seedProjects(db, orgId);
+    await ensureUsers(ds, auth);
+    const orgId = await ensureOrganization(ds);
+    await seedProjects(ds, orgId);
 
-    console.log("Dev fixtures ready (ReBAC: grants via project_member):");
+    console.log("Dev fixtures ready (ReBAC: grants via projectMember):");
     for (const fixture of FIXTURES) {
       console.log(`  ${fixture.role.padEnd(8)} ${fixture.email} / ${PASSWORD}`);
     }
@@ -211,6 +214,7 @@ async function main(): Promise<void> {
       "  cross-grants: each member is editor/viewer on one of the other's projects"
     );
   } finally {
+    await ds.destroy();
     await pool.end();
   }
 }

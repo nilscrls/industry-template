@@ -5,7 +5,7 @@ import { z } from "zod";
  * (`packages/fga/model.fga`) — this file only names the capabilities and
  * relations so contracts, guards and the web app share one typed list.
  */
-export const roles = ["admin", "manager", "member"] as const;
+export const roles = ["admin", "manager", "user"] as const;
 export type Role = (typeof roles)[number];
 export const roleSchema = z.enum(roles);
 
@@ -22,6 +22,7 @@ export const orgCapabilities = [
   "can_read_all_files",
   "can_read_audit_log",
   "can_manage_feature_flag",
+  "can_manage_wallet",
 ] as const;
 export type OrgCapability = (typeof orgCapabilities)[number];
 

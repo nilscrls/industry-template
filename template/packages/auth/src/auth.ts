@@ -1,10 +1,7 @@
-import type { Database } from "@repo/db";
-import * as schema from "@repo/db/schema";
 import { betterAuth } from "better-auth";
-import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError } from "better-auth/api";
 import { admin, organization, twoFactor } from "better-auth/plugins";
-import { eq } from "drizzle-orm";
+import type { Pool } from "pg";
 
 export interface DeletedUser {
   email: string;
@@ -58,7 +55,6 @@ export interface CreateAuthOptions {
    * its own subdomain instead of through the web app's /api proxy.
    */
   cookieDomain?: string;
-  db: Database;
   /**
    * Microsoft Entra ID OIDC connection. Adding another provider later is a
    * config addition here + a `socialProviders` entry, not a rewrite.
@@ -84,6 +80,12 @@ export interface CreateAuthOptions {
   onOrganizationCreated?: (event: MembershipEvent) => Promise<void>;
   onOrganizationDeleted?: (event: { organizationId: string }) => Promise<void>;
   /**
+   * Better-Auth's own connection — its built-in Kysely adapter takes a raw
+   * `pg.Pool` directly (no ORM in between) and double-quotes every
+   * camelCase identifier itself.
+   */
+  pool: Pool;
+  /**
    * Turn on Better-Auth's built-in rate limiter (the api wires this to
    * AUTH_RATE_LIMIT_ENABLED). Off by default so seeds and scripts that
    * call createAuth() directly never trip it.
@@ -101,7 +103,7 @@ export interface CreateAuthOptions {
 export function createAuth(options: CreateAuthOptions) {
   return betterAuth({
     appName: "Industry App",
-    database: drizzleAdapter(options.db, { provider: "pg", schema }),
+    database: options.pool,
     secret: options.secret,
     // NOTE: a path inside baseURL replaces basePath entirely — the path of
     // baseUrl IS the mount path better-auth matches requests against, and
@@ -223,15 +225,18 @@ export function createAuth(options: CreateAuthOptions) {
           // without any membership get no active org — the API answers with
           // empty lists, never 403 (same rule as fresh users).
           before: async (session) => {
-            const memberships = await options.db
-              .select({ organizationId: schema.member.organizationId })
-              .from(schema.member)
-              .where(eq(schema.member.userId, session.userId))
-              .limit(1);
+            // Deterministic "first" membership: order by createdAt then id
+            // so the choice is stable even when two rows share a timestamp.
+            const result = await options.pool.query<{
+              organizationId: string;
+            }>(
+              'select "organizationId" from "member" where "userId" = $1 order by "createdAt" asc, "id" asc limit 1',
+              [session.userId]
+            );
             return {
               data: {
                 ...session,
-                activeOrganizationId: memberships[0]?.organizationId ?? null,
+                activeOrganizationId: result.rows[0]?.organizationId ?? null,
               },
             };
           },
@@ -239,7 +244,11 @@ export function createAuth(options: CreateAuthOptions) {
       },
     },
     plugins: [
-      admin({ defaultRole: "member", adminRoles: ["admin"] }),
+      // "manager" is an app-level role (contracts + OpenFGA), not a
+      // Better-Auth admin-plugin concept — adding it to adminRoles would
+      // require a custom `roles` map (createAccessControl) or createAuth
+      // throws, since the plugin only knows the roles it's told about.
+      admin({ defaultRole: "user", adminRoles: ["admin"] }),
       organization({
         organizationHooks: {
           afterCreateOrganization: async ({ organization, user }) => {

@@ -14,6 +14,10 @@ export const errorCatalog = {
   FILE_TOO_LARGE: z.object({ maxSizeMb: z.number() }),
   FILE_TYPE_NOT_ALLOWED: z.object({ allowed: z.string() }),
   RATE_LIMITED: z.object({ retryAfterSeconds: z.number() }),
+  WALLET_INSUFFICIENT_BALANCE: z.object({
+    balance: z.number(),
+    requested: z.number(),
+  }),
   INTERNAL: z.object({}),
 } as const;
 

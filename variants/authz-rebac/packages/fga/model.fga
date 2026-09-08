@@ -29,6 +29,7 @@ type org
     define can_read_all_files: admin
     define can_read_audit_log: admin
     define can_manage_feature_flag: admin
+    define can_manage_wallet: admin
 
 type project
   relations

@@ -16,14 +16,18 @@ make you compliant by itself.
   strictly necessary and not gated (but ARE listed in the privacy policy).
 - **Data export (portability, art. 20)**: `GET /me/export`
   (`apps/api/src/privacy/`) — the authenticated user's account, memberships,
-  projects, file metadata and own audit entries as JSON; throttled 5/hour;
-  audited. Surfaced in Settings → "Download my data".
+  projects, file metadata, the points wallet for the **active organization**
+  (balance + the 20 most recent entries) and own audit entries as JSON;
+  throttled 5/hour; audited. Surfaced in Settings →
+  "Download my data".
 - **Account deletion (erasure, art. 17)**: Better-Auth `deleteUser`,
   password-confirmed, from Settings. Blocked while the user is the sole
   owner of an organization (transfer or delete it first —
-  `apps/api/src/auth/user-deletion.ts`). Rows cascade; uploaded blobs are
-  deleted from S3; **audit entries are kept with `actorId` nulled** —
-  anonymized accountability, not data retention (documented in the policy).
+  `apps/api/src/auth/user-deletion.ts`). Rows cascade (including the points
+  wallet: `wallet.userId` and `walletEntry.walletId` are `ON DELETE CASCADE`,
+  `walletEntry.actorId` is `ON DELETE SET NULL`); uploaded blobs are deleted
+  from S3; **audit entries are kept with `actorId` nulled** — anonymized
+  accountability, not data retention (documented in the policy).
 - **Audit trail** of every mutation (org-scoped, append-only) including
   `user.exportData` and `user.delete` events.
 

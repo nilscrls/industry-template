@@ -8,7 +8,7 @@
  */
 function main(): void {
   console.log(
-    "Nothing to seed: ReBAC permissions derive from project_member rows + the FGA model."
+    "Nothing to seed: ReBAC permissions derive from projectMember rows + the FGA model."
   );
 }
 

@@ -3,7 +3,7 @@
 Scaffolds an industrial-grade, production-ready full-stack TypeScript monorepo:
 
 - **Frontend** — Next.js 16, shadcn/ui as a workspace package (Radix or Base UI, Tailwind v4), TanStack Query/Table with URL-driven filters (nuqs), react-hook-form, next-intl as a workspace package (en/fr), dark mode, recharts
-- **Backend** — NestJS 11, Better-Auth, OpenFGA (RBAC roles+grants or ReBAC relations — your pick) + Postgres row-level security, Drizzle (Postgres), Redis cache, BullMQ, Minio (presigned), nestjs-pino
+- **Backend** — NestJS 11, Better-Auth, OpenFGA (RBAC roles+grants or ReBAC relations — your pick) + Postgres row-level security, TypeORM (Postgres), Redis cache, BullMQ, Minio (presigned), nestjs-pino
 - **Contract** — oRPC: one zod contract package, live end-to-end type safety, OpenAPI for free
 - **Quality** — Vitest (unit) + Testcontainers (integration) + Playwright (e2e), Biome/ultracite, lefthook + commitlint (commitizen style), git-flow-next
 - **Ops** — t3-env, docker compose profiles (`dev` / `all`) with dev/prod overlay merging, multi-stage Dockerfiles via `turbo prune`, GitHub Actions

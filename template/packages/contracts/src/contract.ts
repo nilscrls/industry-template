@@ -6,6 +6,7 @@ import { organizationsContract } from "./organizations.js";
 import { privacyContract } from "./privacy.js";
 import { projectsContract } from "./projects.js";
 import { meContract, usersContract } from "./users.js";
+import { walletContract } from "./wallet.js";
 
 /**
  * The whole API surface. Paths are explicit on every route (required by the
@@ -20,6 +21,7 @@ export const contract = populateContractRouterPaths({
   audit: auditContract,
   organizations: organizationsContract,
   flags: flagsContract,
+  wallet: walletContract,
 });
 
 export type AppContract = typeof contract;

@@ -9,7 +9,7 @@ apps/
 packages/
   contracts/            THE source of truth: zod schemas, oRPC contract,
                         error catalog, permission definitions
-  db/                   drizzle schema, migrations (drizzle/), seeds, client factory
+  db/                   TypeORM entities, hand-written migrations, seeds, DataSource factory
   auth/                 better-auth factory (org/member lifecycle hooks)
   fga/                  OpenFGA model (model.fga), client, bootstrap + sync
   emails/               react-email templates + render helper
@@ -57,8 +57,8 @@ sequenceDiagram
   B->>W: /api/projects (cookie)
   W->>A: rewrite → /projects
   Note over A: request-context middleware<br/>(x-request-id + AsyncLocalStorage)
-  Note over A: helmet → better-auth mount (/auth/*)<br/>→ Throttler → AuthGuard → PoliciesGuard
-  A->>A: oRPC handler → service → drizzle
+  Note over A: helmet → better-auth mount (/auth/*)<br/>→ Throttler → AuthGuard → PermissionsGuard
+  A->>A: oRPC handler → service → typeorm
   A-->>B: typed JSON (or {code, params, traceId})
 ```
 
@@ -90,8 +90,9 @@ Better-auth lives on the api (`packages/auth/src/auth.ts`, wired in
   Redis-backed via secondary storage, tighter rules for sign-in/sign-up/reset) —
   the express-mounted auth handler bypasses Nest's `ThrottlerGuard`, so this is
   the only limiter covering it.
-- Sessions in Postgres, mirrored into **Redis secondary storage**, plus a
-  5-minute signed **cookie cache** so most requests never touch a store.
+- Sessions live in **Redis secondary storage** plus a 5-minute signed
+  **cookie cache**, so most requests never touch a store; the Postgres
+  `session` table is a read model that stays empty in this configuration.
   Consequence: role changes take effect on the next sign-in or after the
   cookie cache expires — the integration test documents this.
 - `baseUrl` must be the full public auth base (`${WEB_URL}/api/auth`): a path
@@ -138,20 +139,23 @@ Single wire shape everywhere: `{ code, params, traceId }`.
 
 ## Data layer
 
-Drizzle (Postgres), schema per domain in `packages/db/src/schema/`. Columns
-use `casing: "snake_case"` inference. Migrations are generated SQL
-(`pnpm db:generate`) applied by a **programmatic migrator**
-(`src/migrate.ts`) that needs only runtime deps — the same compiled file runs
-locally and as the compose `migrate` one-shot service. Seeding is split:
-baseline (role permissions — safe anywhere) in `@repo/db`, dev fixtures
-(users, demo projects — refuses `NODE_ENV=production`) in `@repo/auth`.
+TypeORM (Postgres), one entity per file in `packages/db/src/entities/` with
+explicit column types — the default naming strategy keeps every column
+camelCase (property name == column name; see `docs/database.md`). Migrations
+are hand-written classes (`packages/db/src/migrations/`, an explicit list, no
+glob) applied by a **programmatic migrator** (`src/migrate.ts`) that needs
+only runtime deps — the same compiled file runs locally and as the compose
+`migrate` one-shot service. Seeding is split: baseline (roles/grants — safe
+anywhere) in `@repo/db`, dev fixtures (users, demo projects — refuses
+`NODE_ENV=production`) in `@repo/auth`.
 
 ## Why the internal packages compile to CommonJS
 
 The api is CJS (NestJS's paved road); Next bundles anything. If the shared
-packages were ESM, TypeScript would load ESM-typed deps (drizzle) through two
-resolution modes and their nominal private fields collide. CJS everywhere
-internal = one type identity per dependency. Practical consequences:
+packages were ESM, TypeScript would load ESM-typed deps (typeorm, orpc)
+through two resolution modes and their nominal private fields collide. CJS
+everywhere internal = one type identity per dependency. Practical
+consequences:
 
 - script entrypoints use `main().catch(...)`, never top-level `await`;
 - DI tokens live in `*.constants.ts` files, never in the Nest module file

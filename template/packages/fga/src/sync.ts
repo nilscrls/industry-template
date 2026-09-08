@@ -1,11 +1,11 @@
 import type { TupleKey } from "@openfga/sdk";
 import {
-  createDb,
-  fileObject,
-  member,
-  organization,
-  project,
-  user,
+  createDataSource,
+  FileObject,
+  Member,
+  Organization,
+  Project,
+  User,
 } from "@repo/db";
 import { createFgaClient, type OpenFgaClient } from "./client.js";
 import { ref } from "./model.js";
@@ -52,31 +52,24 @@ async function readAllTuples(client: OpenFgaClient): Promise<TupleKey[]> {
 }
 
 async function desiredTuples(databaseUrl: string): Promise<TupleKey[]> {
-  const { db, pool } = createDb(databaseUrl);
+  // Owner connection: the sync legitimately reads every tenant's rows, so it
+  // reads through TypeORM directly rather than via withTenant (no RLS to
+  // scope past — there is no single tenant here).
+  const ds = createDataSource(databaseUrl);
+  await ds.initialize();
   try {
     const [users, orgs, members, projects, files] = await Promise.all([
-      db.select({ id: user.id, role: user.role }).from(user),
-      db.select({ id: organization.id }).from(organization),
-      db
-        .select({
-          organizationId: member.organizationId,
-          userId: member.userId,
-        })
-        .from(member),
-      db
-        .select({
-          id: project.id,
-          organizationId: project.organizationId,
-          ownerId: project.ownerId,
-        })
-        .from(project),
-      db
-        .select({
-          id: fileObject.id,
-          organizationId: fileObject.organizationId,
-          ownerId: fileObject.ownerId,
-        })
-        .from(fileObject),
+      ds.manager.find(User, { select: { id: true, role: true } }),
+      ds.manager.find(Organization, { select: { id: true } }),
+      ds.manager.find(Member, {
+        select: { organizationId: true, userId: true },
+      }),
+      ds.manager.find(Project, {
+        select: { id: true, organizationId: true, ownerId: true },
+      }),
+      ds.manager.find(FileObject, {
+        select: { id: true, organizationId: true, ownerId: true },
+      }),
     ]);
 
     const tuples: TupleKey[] = [];
@@ -133,7 +126,7 @@ async function desiredTuples(databaseUrl: string): Promise<TupleKey[]> {
     }
     return tuples;
   } finally {
-    await pool.end();
+    await ds.destroy();
   }
 }
 

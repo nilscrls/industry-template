@@ -1,6 +1,6 @@
 ---
 name: scaffold-feature
-description: Scaffold a complete vertical slice for a new entity (oRPC contract, Drizzle table, NestJS module with TDD test skeletons, Next.js page) using the repo's turbo generator. Use whenever adding a new domain entity or CRUD feature — never hand-write the module wiring.
+description: Scaffold a complete vertical slice for a new entity (oRPC contract, TypeORM entity + migration stub, NestJS module with TDD test skeletons, Next.js page) using the repo's turbo generator. Use whenever adding a new domain entity or CRUD feature — never hand-write the module wiring.
 ---
 
 # Scaffold a new feature
@@ -19,8 +19,12 @@ plural, then:
   `sortBy` with typed sort-field literals) and registers it in the contract
   router, index exports, the contracts `resources` list, and appends a
   `type` block to `packages/fga/model.fga`;
-- adds `packages/db/src/schema/<plural>.ts` and registers it in the schema
-  index;
+- adds `packages/db/src/entities/<name>.ts` (a TypeORM entity, singular
+  kebab-case) and
+  registers it in `packages/db/src/entities/index.ts`; adds a hand-written
+  migration stub (`packages/db/src/migrations/<timestamp>-Add<Plural>.ts`,
+  its class name ending in the same 13-digit timestamp TypeORM orders by)
+  and registers it in `packages/db/src/migrations/index.ts`;
 - adds `apps/api/src/<plural>/` (service with a sort-column map, controller,
   module), registers the module in `app.module.ts`, and creates
   `apps/api/test/<plural>.int.test.ts` — TDD skeletons that start as todos;
@@ -37,7 +41,8 @@ Non-interactive: `pnpm gen feature --args <name> <plural>`.
 ## After generating
 
 1. `pnpm lint:fix` — normalize the generated import order.
-2. `pnpm db:generate && pnpm db:migrate` — create and apply the migration.
+2. Review the generated migration stub (it's a plain `CREATE TABLE`, not a
+   diff), then `pnpm db:migrate`.
 3. Review the generated `type` block in `packages/fga/model.fga`, then run
    `pnpm fga:bootstrap` (see `docs/authorization.md`).
 4. Review the inserted i18n copy in `en.json`/`fr.json` (entity words are
@@ -47,7 +52,7 @@ Non-interactive: `pnpm gen feature --args <name> <plural>`.
    they are the feature's TDD checklist.
 
 Do not bypass the generator and hand-copy an existing module: the `modify`
-actions above register the feature in nine places (contract router, contract
-index, resources, model.fga, schema index, app.module, both message catalogs
-and the nav), and missing one produces runtime DI, contract-router or i18n
-failures, not compile errors.
+actions above register the feature in ten places (contract router, contract
+index, resources, model.fga, the entities index, the migrations index,
+app.module, both message catalogs and the nav), and missing one produces
+runtime DI, contract-router or i18n failures, not compile errors.

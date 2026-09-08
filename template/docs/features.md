@@ -17,7 +17,9 @@ Email + password with verification and reset emails, powered by Better-Auth.
 - Email verification is gated by the `REQUIRE_EMAIL_VERIFICATION` flag
   (scaffold-time choice, stamped into `.env`; flip per environment).
 - Dev users after `pnpm db:seed` (password `Password123!`):
-  `admin@example.com`, `manager@example.com`, `member@example.com`.
+  `admin@example.com` (role `admin`), `manager@example.com` (role `manager`
+  in the RBAC model — the ReBAC model has no manager role and seeds this
+  user as `user`), `user@example.com` (role `user`).
 
 ## Authorization — OpenFGA
 
@@ -40,11 +42,11 @@ net underneath.
 ## Multi-tenancy (organizations)
 
 Better-Auth's `organization` plugin is the tenancy foundation: every
-tenant-owned row (`project`, `file_object`, `audit_log`) carries an
-`organization_id`, and every query is scoped to the session's active
-organization.
+tenant-owned row (`project`, `fileObject`, `auditLog`, `wallet`,
+`walletEntry`) carries an `organizationId`, and every query is scoped to
+the session's active organization.
 
-- Tables: `packages/db/src/schema/organizations.ts`; the session stores
+- Tables: `packages/db/src/entities/organization.ts`; the session stores
   `activeOrganizationId` (new sessions default to the user's first
   membership via a database hook in `packages/auth/src/auth.ts`).
 - API scoping: `activeOrganizationId()` from
@@ -71,7 +73,7 @@ shows "Sign in with Microsoft" next to email + password.
 
 ## Audit log
 
-Append-only `audit_log` table (actor, organization, action, entity,
+Append-only `auditLog` table (actor, organization, action, entity,
 payload, `requestId` for log/trace correlation). ONE choke point writes it:
 `AuditService.audited(...)` — an oRPC middleware attached to every mutating
 procedure (`implement(...).use(audit.audited({ action, entityType }))`).
@@ -87,7 +89,7 @@ at `/admin/flags` (override wins over PostHog; writes are audited).
 ## Admin panel
 
 `/admin` (route group `(admin)` in `apps/web`), gated by the existing
-`admin` role — the API re-checks every endpoint via `@RequireAbility`.
+`admin` role — the API re-checks every endpoint via `@RequirePermission`.
 Surfaces: organizations overview, audit log viewer, feature-flag overrides.
 
 ## End-to-end typed API
@@ -144,13 +146,27 @@ changes). HTTP responses default to `Cache-Control: private, no-store`
 (`app.setup.ts`). Redis also backs sessions, queues and rate limits. See
 `docs/guides.md` for the rules.
 
+## Points wallet (transactions reference implementation)
+
+A small per-user, per-organization balance (`GET /wallet/me`,
+`POST /wallet/spend`, `POST /wallet/credit`) demonstrating the template's
+transaction idiom: one `dbService.tenant(...)` transaction, a pessimistic
+row lock, an atomic conditional `UPDATE` and a `CHECK` constraint as a
+backstop against a double-spend under concurrent requests. `spend` needs no
+extra capability (a user only ever spends their own balance); `credit`
+requires the org capability `can_manage_wallet` — see
+`docs/authorization.md` for who holds it in this project (manager or admin
+under RBAC, admin only under ReBAC). See `docs/database.md`
+("Transactions") for the full walkthrough and
+`apps/web/src/components/dashboard/points-card.tsx` for the UI.
+
 ## GDPR / privacy
 
 Cookie-consent-gated analytics, public legal pages (en/fr, operator
-placeholders), data export (`GET /me/export`), password-confirmed account
-deletion with sole-owner protection and anonymized audit retention, global
-footer with legal links. Details and the operator checklist:
-`docs/compliance.md`.
+placeholders), data export (`GET /me/export`, including the points wallet),
+password-confirmed account deletion with sole-owner protection and
+anonymized audit retention, global footer with legal links. Details and the
+operator checklist: `docs/compliance.md`.
 
 ## Changelog & releases
 
@@ -169,7 +185,7 @@ Flow and hotfix back-merges: `docs/releases.md`.
 - Every log line and every error payload carries the request's `traceId`,
   also echoed as the `x-request-id` response header (inbound header honored).
 - OpenTelemetry (`OTEL_ENABLED=true`): auto-instruments HTTP, Express,
-  Nest, pg (Drizzle), ioredis and BullMQ, exporting OTLP to
+  Nest, pg, ioredis and BullMQ, exporting OTLP to
   `OTEL_EXPORTER_OTLP_ENDPOINT` — no vendor hardcoded
   (`apps/api/src/tracing.ts`). When tracing is on, pino's `traceId` IS the
   OTel trace id, so logs and spans correlate on one field.
@@ -222,6 +238,6 @@ Flow and hotfix back-merges: `docs/releases.md`.
 ## Vertical-slice generator
 
 `pnpm gen feature` scaffolds and registers a new entity end to end:
-contract + db schema + api module (with TDD `it.todo` integration specs) +
-web page, then prints the manual checklist (migration, permissions, i18n
-keys, nav). Templates: `turbo/generators/`.
+contract + TypeORM entity + migration stub + api module (with TDD `it.todo`
+integration specs) + web page, then prints the manual checklist (review the
+migration, permissions, i18n keys, nav). Templates: `turbo/generators/`.

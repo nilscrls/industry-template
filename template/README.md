@@ -7,7 +7,7 @@ Industrial-grade full-stack TypeScript monorepo, scaffolded by `create-industry-
 | Layer | Tech |
 |---|---|
 | Frontend | Next.js 16, shadcn/ui (Tailwind v4), TanStack Query/Table, react-hook-form, next-intl, next-themes, recharts |
-| Backend | NestJS 11, Better-Auth, OpenFGA (+ Postgres RLS), Drizzle (Postgres), Redis, BullMQ, Minio (S3), structured logging |
+| Backend | NestJS 11, Better-Auth, OpenFGA (+ Postgres RLS), TypeORM (Postgres), Redis, BullMQ, Minio (S3), structured logging |
 | Contract | oRPC — one zod contract in `packages/contracts`, live end-to-end types, OpenAPI at `/api/openapi.json` |
 | Quality | Biome (ultracite), Vitest, Testcontainers, Playwright, lefthook + commitlint |
 
@@ -20,7 +20,9 @@ pnpm db:migrate && pnpm db:seed
 pnpm dev                    # web on :3000, api on :3001
 ```
 
-Seeded logins (`Password123!`): `admin@example.com`, `manager@example.com`, `member@example.com`.
+Seeded logins (`Password123!`): `admin@example.com` (role `admin`),
+`manager@example.com` (role `manager` in the RBAC model, `user` in ReBAC —
+which has no manager role), `user@example.com` (role `user`).
 Maildev UI: <http://localhost:1080> · Minio console: <http://localhost:9001>.
 
 ## Documentation
@@ -35,6 +37,7 @@ Maildev UI: <http://localhost:1080> · Minio console: <http://localhost:9001>.
 | [docs/git-flow.md](docs/git-flow.md) | branching model: production/develop, feature/release/hotfix branches, back-merge rules |
 | [docs/testing.md](docs/testing.md) | test pyramid, TDD loop, integration-test pattern, sharp edges |
 | [docs/deployment.md](docs/deployment.md) | compose profiles, reverse proxy, env matrix, scaling, day-2 ops |
+| [docs/database.md](docs/database.md) | TypeORM entities/migrations, the three DB principals, RLS + `tenant()`, transactions, Better-Auth tables |
 | [docs/backup.md](docs/backup.md) | db + file backup/restore: pnpm backup:db / backup:files, restore runbook, cron |
 
 ## How the pieces fit
@@ -45,8 +48,9 @@ Maildev UI: <http://localhost:1080> · Minio console: <http://localhost:9001>.
   → both sides fail to compile.
 - **Same-origin API.** The browser only calls `/api/*` on the web origin; Next rewrites to
   the api in dev, the reverse proxy routes it in prod. No CORS, no cookie domain pain.
-- **Auth.** Better-Auth lives on the api (`/api/auth/*`), sessions in Postgres with a Redis
-  secondary storage and a 5-minute signed cookie cache. Emails (verification, reset) render
+- **Auth.** Better-Auth lives on the api (`/api/auth/*`), sessions in Redis (secondary
+  storage) with a 5-minute signed cookie cache — the Postgres `session` table stays empty
+  in this configuration. Emails (verification, reset) render
   with react-email and send through a BullMQ queue with retries.
 - **Authorization.** OpenFGA (model in `packages/fga/model.fga`, chosen at scaffold
   time — see `docs/authorization.md`) with Postgres row-level security underneath.
@@ -65,7 +69,7 @@ Maildev UI: <http://localhost:1080> · Minio console: <http://localhost:9001>.
 pnpm dev / build / lint / check-types / test
 pnpm test:integration       # Testcontainers (needs Docker)
 pnpm test:e2e               # Playwright against a running stack
-pnpm db:generate            # drizzle migration from schema changes
+pnpm db:generate            # draft a TypeORM migration from a live DB (review before committing)
 pnpm db:migrate / db:seed
 pnpm gen feature            # scaffold a vertical slice (contract → db → api → web)
 pnpm commit                 # commitizen-style guided commit (cz-git)
@@ -76,7 +80,7 @@ pnpm backup:db / backup:files    # pg_dump + bucket mirror (docs/backup.md)
 
 ## TDD loop
 
-1. `pnpm gen feature` → contract, schema, api module, and `it.todo` integration specs.
+1. `pnpm gen feature` → contract, TypeORM entity + migration stub, api module, and `it.todo` integration specs.
 2. Turn a todo into a real test (pattern in `apps/api/test/api.int.test.ts`), watch it fail.
 3. Implement until green: `pnpm --filter @repo/api test:integration`.
 4. Unit-test pure logic next to the source (`*.spec.ts` / `*.test.ts`).
@@ -94,5 +98,5 @@ See [docs/git-flow.md](docs/git-flow.md) for the full branching model and
 `docker-compose.prod.yml` attaches `web` and `api` to an external `proxy` network
 (create once: `docker network create proxy`) — point your reverse proxy at
 `web:3000` and route `PathPrefix(/api)` → `api:3001` (strip the prefix). The
-`migrate` one-shot service applies drizzle migrations before the api starts.
+`migrate` one-shot service applies the TypeORM migrations before the api starts.
 Set real values in `.env` (secrets, SMTP, S3) and `NEXT_PUBLIC_API_URL=https://your.domain/api`.

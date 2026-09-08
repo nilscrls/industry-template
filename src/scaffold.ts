@@ -171,7 +171,7 @@ function copyTemplate(templateDir: string, targetDir: string): void {
 /**
  * Overlay a variant on the scaffolded tree: first remove the paths listed in
  * the overlay's `_delete.json` (template files the variant replaces
- * wholesale, e.g. drizzle migrations), then copy every overlay file over the
+ * wholesale, e.g. db migrations), then copy every overlay file over the
  * target, replacing the default implementation.
  */
 function applyVariantOverlay(

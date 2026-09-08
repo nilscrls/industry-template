@@ -1,12 +1,12 @@
 import type { TupleKey } from "@openfga/sdk";
 import {
-  createDb,
-  fileObject,
-  member,
-  organization,
-  project,
-  projectMember,
-  user,
+  createDataSource,
+  FileObject,
+  Member,
+  Organization,
+  Project,
+  ProjectMember,
+  User,
 } from "@repo/db";
 import { createFgaClient, type OpenFgaClient } from "./client.js";
 import { ref } from "./model.js";
@@ -15,8 +15,8 @@ import { ref } from "./model.js";
  * Full reconciliation (ReBAC variant): Postgres is the source of truth, the
  * FGA store a derived index. Rebuilds every tuple from the database —
  * global roles from `user.role`, org membership from `member`, project
- * relations (owner/editor/viewer) from `project_member`, file ownership
- * from `file_object`.
+ * relations (owner/editor/viewer) from `projectMember`, file ownership
+ * from `fileObject`.
  *
  * Run whenever drift is suspected (e.g. after a failed post-commit tuple
  * write): pnpm fga:sync
@@ -54,35 +54,28 @@ async function readAllTuples(client: OpenFgaClient): Promise<TupleKey[]> {
 }
 
 async function desiredTuples(databaseUrl: string): Promise<TupleKey[]> {
-  const { db, pool } = createDb(databaseUrl);
+  // Owner connection: the sync legitimately reads every tenant's rows, so it
+  // reads through TypeORM directly rather than via withTenant (no RLS to
+  // scope past — there is no single tenant here).
+  const ds = createDataSource(databaseUrl);
+  await ds.initialize();
   try {
     const [users, orgs, members, projects, relations, files] =
       await Promise.all([
-        db.select({ id: user.id, role: user.role }).from(user),
-        db.select({ id: organization.id }).from(organization),
-        db
-          .select({
-            organizationId: member.organizationId,
-            userId: member.userId,
-          })
-          .from(member),
-        db
-          .select({ id: project.id, organizationId: project.organizationId })
-          .from(project),
-        db
-          .select({
-            projectId: projectMember.projectId,
-            userId: projectMember.userId,
-            relation: projectMember.relation,
-          })
-          .from(projectMember),
-        db
-          .select({
-            id: fileObject.id,
-            organizationId: fileObject.organizationId,
-            ownerId: fileObject.ownerId,
-          })
-          .from(fileObject),
+        ds.manager.find(User, { select: { id: true, role: true } }),
+        ds.manager.find(Organization, { select: { id: true } }),
+        ds.manager.find(Member, {
+          select: { organizationId: true, userId: true },
+        }),
+        ds.manager.find(Project, {
+          select: { id: true, organizationId: true },
+        }),
+        ds.manager.find(ProjectMember, {
+          select: { projectId: true, userId: true, relation: true },
+        }),
+        ds.manager.find(FileObject, {
+          select: { id: true, organizationId: true, ownerId: true },
+        }),
       ]);
 
     const tuples: TupleKey[] = [];
@@ -116,7 +109,7 @@ async function desiredTuples(databaseUrl: string): Promise<TupleKey[]> {
         object: ref.project(row.id),
       });
     }
-    // The relation ladder comes from project_member rows, not project.ownerId.
+    // The relation ladder comes from projectMember rows, not project.ownerId.
     for (const row of relations) {
       tuples.push({
         user: ref.user(row.userId),
@@ -140,7 +133,7 @@ async function desiredTuples(databaseUrl: string): Promise<TupleKey[]> {
     }
     return tuples;
   } finally {
-    await pool.end();
+    await ds.destroy();
   }
 }
 

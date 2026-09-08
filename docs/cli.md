@@ -42,7 +42,7 @@ npx create-industry-app my-app -- --yes --ui=base --authz=rebac --org=single --i
 
 ## Requirements
 
-- Node **≥ 22.12** (the generated api relies on stable `require(esm)`)
+- Node **≥ 22.13** (the generated api relies on stable `require(esm)`)
 - pnpm 10 (`corepack enable` or `npm i -g pnpm`)
 - Docker (for the generated app's dev infra and integration tests)
 
@@ -109,7 +109,7 @@ documented inside the generated app under `docs/` and `README.md`.
 ## Troubleshooting
 
 - **`pnpm install failed`** — the CLI continues and prints the manual step;
-  usually a Node/pnpm version mismatch (check `node -v` ≥ 22.12).
+  usually a Node/pnpm version mismatch (check `node -v` ≥ 22.13).
 - **Windows** — supported; the CLI shells out with `shell: true` for
   git/pnpm. Line endings are normalized to LF by the shipped
   `.gitattributes`.

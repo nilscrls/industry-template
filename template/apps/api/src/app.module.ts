@@ -5,6 +5,7 @@ import { BullModule } from "@nestjs/bullmq";
 import { Module } from "@nestjs/common";
 import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
+import { ORPCModule } from "@orpc/nest";
 import type { Redis } from "ioredis";
 import { LoggerModule } from "nestjs-pino";
 import { AnalyticsModule } from "./analytics/analytics.module";
@@ -14,6 +15,7 @@ import { AuthModule } from "./auth/auth.module";
 import { PermissionsGuard } from "./auth/permissions.guard";
 import { AllExceptionsFilter } from "./common/exception.filter";
 import { loggerOptions } from "./common/logger";
+import { validationErrorInterceptor } from "./common/validation-error.interceptor";
 import { env } from "./config/env";
 import { DbModule } from "./db/db.module";
 import { DocsModule } from "./docs/docs.module";
@@ -28,6 +30,7 @@ import { ProjectsModule } from "./projects/projects.module";
 import { REDIS } from "./redis/redis.constants";
 import { RedisModule } from "./redis/redis.module";
 import { UsersModule } from "./users/users.module";
+import { WalletModule } from "./wallet/wallet.module";
 
 /** Plain options keep BullMQ decoupled from our ioredis instance's version. */
 function redisConnectionOptions(url: string) {
@@ -47,6 +50,9 @@ function redisConnectionOptions(url: string) {
 @Module({
   imports: [
     LoggerModule.forRoot(loggerOptions),
+    // Every oRPC procedure runs through this: input-validation failures come
+    // back as the contract's typed VALIDATION_FAILED payload.
+    ORPCModule.forRoot({ interceptors: [validationErrorInterceptor] }),
     DbModule,
     RedisModule,
     ThrottlerModule.forRootAsync({
@@ -72,6 +78,7 @@ function redisConnectionOptions(url: string) {
     OrganizationsModule,
     PrivacyModule,
     FlagsModule,
+    WalletModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

@@ -11,15 +11,13 @@ import {
   systemCapabilities,
   type User,
 } from "@repo/contracts";
-import { user } from "@repo/db";
-import { count, desc, eq, ilike, or } from "drizzle-orm";
+import { User as UserEntity } from "@repo/db";
 import { notFound } from "../common/app-error";
 import { activeOrganizationId } from "../common/request-context";
 import { DbService } from "../db/db.module";
 import { FgaService } from "../fga/fga.service";
 
 type ListQuery = PaginationQuery & { search?: string | undefined };
-type UserRow = typeof user.$inferSelect;
 
 @Injectable()
 export class UsersService {
@@ -28,30 +26,24 @@ export class UsersService {
     private readonly fga: FgaService
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
   async list(query: ListQuery): Promise<Paginated<User>> {
-    const where = query.search
-      ? or(
-          ilike(user.email, `%${query.search}%`),
-          ilike(user.name, `%${query.search}%`)
-        )
-      : undefined;
+    // `user` carries no RLS (D1) — a plain query against the app_user
+    // DataSource, no tenant() needed.
+    const qb = this.dbService.dataSource
+      .createQueryBuilder(UserEntity, "u")
+      .orderBy("u.createdAt", "DESC");
+    if (query.search) {
+      qb.andWhere("(u.email ILIKE :search OR u.name ILIKE :search)", {
+        search: `%${query.search}%`,
+      });
+    }
 
-    const [rows, totals] = await Promise.all([
-      this.db
-        .select()
-        .from(user)
-        .where(where)
-        .orderBy(desc(user.createdAt))
-        .limit(query.pageSize)
-        .offset((query.page - 1) * query.pageSize),
-      this.db.select({ value: count() }).from(user).where(where),
-    ]);
+    const total = await qb.getCount();
+    const rows = await qb
+      .limit(query.pageSize)
+      .offset((query.page - 1) * query.pageSize)
+      .getMany();
 
-    const total = totals[0]?.value ?? 0;
     return {
       items: rows.map((row) => this.toDto(row)),
       total,
@@ -65,14 +57,20 @@ export class UsersService {
     await this.findRow(input.id);
     // Note: Better-Auth's signed cookie cache may serve the old role for up
     // to its maxAge (5 min). Sessions in redis pick it up on next refresh.
-    const [updated] = await this.db
-      .update(user)
-      .set({ role: input.role })
-      .where(eq(user.id, input.id))
-      .returning();
-    if (!updated) {
+    const result = await this.dbService.dataSource
+      .createQueryBuilder()
+      .update(UserEntity)
+      .set({ role: input.role, updatedAt: () => "now()" })
+      .where("id = :id", { id: input.id })
+      .returning("*")
+      .execute();
+    if (result.affected !== 1) {
       throw notFound("User");
     }
+    const updated = this.dbService.dataSource.manager.create(
+      UserEntity,
+      result.raw[0] as UserEntity
+    );
     // Mirror the role into FGA system tuples (write after the DB commit;
     // pnpm fga:sync reconciles if this write is lost).
     const subject = this.fga.ref.user(input.id);
@@ -109,22 +107,24 @@ export class UsersService {
     };
   }
 
-  private async findRow(id: string): Promise<UserRow> {
-    const [row] = await this.db.select().from(user).where(eq(user.id, id));
+  private async findRow(id: string): Promise<UserEntity> {
+    const row = await this.dbService.dataSource.manager.findOneBy(UserEntity, {
+      id,
+    });
     if (!row) {
       throw notFound("User");
     }
     return row;
   }
 
-  private toDto(row: UserRow): User {
+  private toDto(row: UserEntity): User {
     const role = roleSchema.safeParse(row.role);
     return {
       id: row.id,
       name: row.name,
       email: row.email,
       emailVerified: row.emailVerified,
-      role: role.success ? role.data : "member",
+      role: role.success ? role.data : "user",
       createdAt: row.createdAt.toISOString(),
     };
   }

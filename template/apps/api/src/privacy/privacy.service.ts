@@ -1,17 +1,20 @@
 import { Injectable } from "@nestjs/common";
 import type { MeExport } from "@repo/contracts";
 import {
-  auditLog,
-  fileObject,
-  member,
-  organization,
-  project,
-  user,
+  AuditLog,
+  FileObject,
+  Member,
+  Organization,
+  Project,
+  User,
+  Wallet,
+  WalletEntry,
 } from "@repo/db";
-import { desc, eq } from "drizzle-orm";
 import { notFound } from "../common/app-error";
-import { currentUser } from "../common/request-context";
+import { activeOrganizationId, currentUser } from "../common/request-context";
 import { DbService } from "../db/db.module";
+
+const WALLET_EXPORT_ENTRY_LIMIT = 20;
 
 /**
  * GDPR self-service: data export (portability). Account deletion goes
@@ -25,32 +28,70 @@ export class PrivacyService {
 
   async exportMyData(): Promise<MeExport> {
     const me = currentUser();
+    // The wallet is org-scoped (one row per organizationId+userId); the
+    // export reports the ACTIVE organization's wallet — a user with no
+    // active organization has no wallet to report (balance 0, no entries).
+    const orgId = activeOrganizationId();
     // tenant() also pins app.current_user_id — the RLS "own rows" clauses
-    // are what make this export span the user's organizations.
-    const [[row], memberships, projects, files, auditEntries] =
-      await this.dbService.tenant((db) =>
-        Promise.all([
-          db.select().from(user).where(eq(user.id, me.id)),
-          db
-            .select({
-              organizationId: member.organizationId,
-              organizationName: organization.name,
-              role: member.role,
-              createdAt: member.createdAt,
+    // are what make this export span the user's organizations. Sequential
+    // (not Promise.all): one TypeORM QueryRunner executes queries serially
+    // over its single connection inside this transaction.
+    const { row, memberships, projects, files, auditEntries, wallet } =
+      await this.dbService.tenant(async (m) => {
+        const foundRow = await m.findOne(User, { where: { id: me.id } });
+        const foundMemberships = await m
+          .createQueryBuilder(Member, "member")
+          .innerJoin(
+            Organization,
+            "organization",
+            "organization.id = member.organizationId"
+          )
+          .select("member.organizationId", "organizationId")
+          .addSelect("organization.name", "organizationName")
+          .addSelect("member.role", "role")
+          .addSelect("member.createdAt", "createdAt")
+          .where("member.userId = :userId", { userId: me.id })
+          .getRawMany<{
+            createdAt: Date;
+            organizationId: string;
+            organizationName: string;
+            role: string;
+          }>();
+        const foundProjects = await m.find(Project, {
+          where: { ownerId: me.id },
+        });
+        const foundFiles = await m.find(FileObject, {
+          where: { ownerId: me.id },
+        });
+        // The user's own activity across all organizations — their data.
+        const foundAuditEntries = await m.find(AuditLog, {
+          where: { actorId: me.id },
+          order: { createdAt: "DESC" },
+        });
+        const foundWallet = orgId
+          ? await m.findOne(Wallet, {
+              where: { organizationId: orgId, userId: me.id },
             })
-            .from(member)
-            .innerJoin(organization, eq(organization.id, member.organizationId))
-            .where(eq(member.userId, me.id)),
-          db.select().from(project).where(eq(project.ownerId, me.id)),
-          db.select().from(fileObject).where(eq(fileObject.ownerId, me.id)),
-          // The user's own activity across all organizations — their data.
-          db
-            .select()
-            .from(auditLog)
-            .where(eq(auditLog.actorId, me.id))
-            .orderBy(desc(auditLog.createdAt)),
-        ])
-      );
+          : null;
+        const foundEntries = foundWallet
+          ? await m.find(WalletEntry, {
+              where: { walletId: foundWallet.id },
+              order: { createdAt: "DESC" },
+              take: WALLET_EXPORT_ENTRY_LIMIT,
+            })
+          : [];
+        return {
+          row: foundRow,
+          memberships: foundMemberships,
+          projects: foundProjects,
+          files: foundFiles,
+          auditEntries: foundAuditEntries,
+          wallet: {
+            balance: foundWallet?.balance ?? 0,
+            entries: foundEntries,
+          },
+        };
+      });
     if (!row) {
       throw notFound("User");
     }
@@ -62,11 +103,13 @@ export class PrivacyService {
         name: row.name,
         email: row.email,
         emailVerified: row.emailVerified,
-        role: row.role ?? "member",
+        role: row.role ?? "user",
         createdAt: row.createdAt.toISOString(),
       },
       memberships: memberships.map((m) => ({
-        ...m,
+        organizationId: m.organizationId,
+        organizationName: m.organizationName,
+        role: m.role,
         createdAt: m.createdAt.toISOString(),
       })),
       projects: projects.map((p) => ({
@@ -93,6 +136,16 @@ export class PrivacyService {
         organizationId: entry.organizationId,
         createdAt: entry.createdAt.toISOString(),
       })),
+      wallet: {
+        balance: wallet.balance,
+        entries: wallet.entries.map((entry) => ({
+          id: entry.id,
+          amount: entry.amount,
+          reason: entry.reason,
+          actorId: entry.actorId,
+          createdAt: entry.createdAt.toISOString(),
+        })),
+      },
     };
   }
 }

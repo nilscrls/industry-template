@@ -8,10 +8,14 @@ import { ProjectsService } from "./projects.service";
 /**
  * Called with no active organization (no request scope), stats() takes the
  * empty branch — no DB or FGA access — so the dense 30-day series shape can
- * be pinned without Postgres.
+ * be pinned without Postgres. Keep this branch DB-free in both the rbac and
+ * rebac projects.service (this spec must pass against either).
  */
 const service = new ProjectsService(
-  { db: {} } as unknown as DbService,
+  {
+    dataSource: {},
+    tenant: (fn: (m: unknown) => unknown) => fn({}),
+  } as unknown as DbService,
   {} as unknown as CacheService,
   {} as unknown as FgaService
 );

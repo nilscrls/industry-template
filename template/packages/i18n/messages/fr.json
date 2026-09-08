@@ -161,7 +161,17 @@
     "createdPerDay": "Projets créés",
     "createdPerDayDescription": "30 derniers jours",
     "byStatus": "Projets par statut",
-    "byStatusDescription": "Répartition actuelle"
+    "byStatusDescription": "Répartition actuelle",
+    "points": {
+      "title": "Portefeuille de points",
+      "description": "Dépensez des points de votre solde.",
+      "balance": "{balance} pts",
+      "fields": {
+        "amount": "Montant",
+        "reason": "Motif"
+      },
+      "spendAction": "Dépenser"
+    }
   },
   "projects": {
     "title": "Projets",
@@ -197,7 +207,8 @@
     "flagOverrideSaved": "Override de feature flag enregistré",
     "projectCreated": "Projet créé",
     "projectUpdated": "Projet mis à jour",
-    "projectDeleted": "Projet supprimé"
+    "projectDeleted": "Projet supprimé",
+    "pointsSpent": "Points dépensés"
   },
   "errors": {
     "AUTH_UNAUTHORIZED": "Vous devez vous connecter pour continuer.",
@@ -208,6 +219,7 @@
     "FILE_TOO_LARGE": "Fichier trop volumineux (max {maxSizeMb} Mo).",
     "FILE_TYPE_NOT_ALLOWED": "Type de fichier non autorisé. Autorisés : {allowed}.",
     "RATE_LIMITED": "Trop de requêtes — réessayez dans {retryAfterSeconds}s.",
+    "WALLET_INSUFFICIENT_BALANCE": "Solde insuffisant : vous avez {balance}, il en faut {requested}.",
     "INTERNAL": "Une erreur est survenue. Veuillez réessayer."
   },
   "publicPages": {

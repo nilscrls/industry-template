@@ -3,19 +3,20 @@
 This project uses the **RBAC** flavor of the OpenFGA setup (chosen at
 scaffold time; the alternative is a relationship-based ReBAC model).
 
-Three global roles (`admin`, `manager`, `member`) defined in the
+Three global roles (`admin`, `manager`, `user`) defined in the
 authorization model, plus per-user allow/deny **grants** on individual
 resources. Deny wins.
 
 Underneath the application layer, **Postgres row-level security** enforces
 tenant isolation as defense in depth: org-scoped tables (`project`,
-`file_object`, `audit_log`, `member`, `invitation`) carry policies matching
-`current_setting('app.current_org_id')`, set per request by
-`DbService.tenant(...)` (SET LOCAL inside a transaction). The API connects
-as the restricted `app_user` role; a query that forgets its WHERE clause
-returns zero foreign rows instead of leaking them. Better-Auth uses the
-`app_auth` BYPASSRLS role (it reads `member` before a tenant exists);
-migrations/seeds run as the owner. See `packages/db/src/schema/roles.ts`.
+`fileObject`, `auditLog`, `wallet`, `walletEntry`, `member`, `invitation`)
+carry policies matching `current_setting('app.current_org_id')`, set per
+request by `DbService.tenant(...)` (SET LOCAL inside a transaction). The API
+connects as the restricted `app_user` role; a query that forgets its WHERE
+clause returns zero foreign rows instead of leaking them. Better-Auth uses
+the `app_auth` BYPASSRLS role (it reads `member` before a tenant exists);
+migrations/seeds run as the owner. See `docs/database.md` and
+`packages/db/src/migrations/1700000000000-Roles.ts`.
 
 ## How it works
 

@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { createDb, member, organization, project, user } from "@repo/db";
-import { and, count, eq } from "drizzle-orm";
+import {
+  createDataSource,
+  createPool,
+  Member,
+  Organization,
+  Project,
+  User,
+} from "@repo/db";
 import { createAuth } from "./auth.js";
 
 const PASSWORD = "Password123!";
@@ -8,7 +14,7 @@ const ORG = { name: "Acme Inc", slug: "acme" } as const;
 const FIXTURES = [
   { email: "admin@example.com", name: "Ada Admin", role: "admin" },
   { email: "manager@example.com", name: "Manny Manager", role: "manager" },
-  { email: "member@example.com", name: "Mia Member", role: "member" },
+  { email: "user@example.com", name: "Uma User", role: "user" },
 ] as const;
 
 /** Dev fixtures — refuses to run in production. Idempotent. */
@@ -35,9 +41,11 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const { db, pool } = createDb(connectionString);
+  const ds = createDataSource(connectionString);
+  const pool = createPool(connectionString);
+  await ds.initialize();
   const auth = createAuth({
-    db,
+    pool,
     secret,
     baseUrl: `${webUrl}/api/auth`,
     trustedOrigins: [webUrl],
@@ -45,12 +53,16 @@ async function main(): Promise<void> {
   });
 
   try {
+    const userRepo = ds.manager.getRepository(User);
+    const orgRepo = ds.manager.getRepository(Organization);
+    const memberRepo = ds.manager.getRepository(Member);
+    const projectRepo = ds.manager.getRepository(Project);
+
     for (const fixture of FIXTURES) {
-      const existing = await db
-        .select({ id: user.id })
-        .from(user)
-        .where(eq(user.email, fixture.email));
-      if (existing.length === 0) {
+      const existing = await userRepo.findOne({
+        where: { email: fixture.email },
+      });
+      if (!existing) {
         await auth.api.signUpEmail({
           body: {
             email: fixture.email,
@@ -59,49 +71,40 @@ async function main(): Promise<void> {
           },
         });
       }
-      await db
-        .update(user)
-        .set({ role: fixture.role, emailVerified: true })
-        .where(eq(user.email, fixture.email));
+      await userRepo.update(
+        { email: fixture.email },
+        { role: fixture.role, emailVerified: true }
+      );
     }
 
     // One shared demo organization: every fixture user is a member, so all
     // demo data lives in a single tenant out of the box.
-    let [org] = await db
-      .select({ id: organization.id })
-      .from(organization)
-      .where(eq(organization.slug, ORG.slug));
+    let org = await orgRepo.findOne({ where: { slug: ORG.slug } });
     if (!org) {
       // Adopt the earliest organization if one already exists — the
       // single-org variant bootstraps the workspace on first signup.
-      [org] = await db
-        .select({ id: organization.id })
-        .from(organization)
-        .orderBy(organization.createdAt)
-        .limit(1);
+      org = await orgRepo
+        .createQueryBuilder("organization")
+        .orderBy("organization.createdAt", "ASC")
+        .limit(1)
+        .getOne();
     }
     if (!org) {
-      [org] = await db
-        .insert(organization)
-        .values({ id: randomUUID(), name: ORG.name, slug: ORG.slug })
-        .returning({ id: organization.id });
+      org = await orgRepo.save(
+        orgRepo.create({ id: randomUUID(), name: ORG.name, slug: ORG.slug })
+      );
     }
     if (!org) {
       throw new Error("Failed to seed the demo organization");
     }
     const orgId = org.id;
-    const allUsers = await db
-      .select({ id: user.id, email: user.email })
-      .from(user);
+    const allUsers = await userRepo.find({ select: { id: true, email: true } });
     for (const row of allUsers) {
-      const existing = await db
-        .select({ id: member.id })
-        .from(member)
-        .where(
-          and(eq(member.userId, row.id), eq(member.organizationId, orgId))
-        );
-      if (existing.length === 0) {
-        await db.insert(member).values({
+      const existing = await memberRepo.findOne({
+        where: { userId: row.id, organizationId: orgId },
+      });
+      if (!existing) {
+        await memberRepo.insert({
           id: randomUUID(),
           organizationId: orgId,
           userId: row.id,
@@ -110,8 +113,8 @@ async function main(): Promise<void> {
       }
     }
 
-    const [projectCount] = await db.select({ value: count() }).from(project);
-    if (projectCount && projectCount.value === 0) {
+    const projectCount = await projectRepo.count();
+    if (projectCount === 0) {
       const owners = allUsers.filter(
         (row) => row.email !== "admin@example.com"
       );
@@ -133,7 +136,7 @@ async function main(): Promise<void> {
           };
         })
       );
-      await db.insert(project).values(rows);
+      await projectRepo.insert(rows);
     }
 
     console.log("Dev fixtures ready:");
@@ -141,6 +144,7 @@ async function main(): Promise<void> {
       console.log(`  ${fixture.role.padEnd(8)} ${fixture.email} / ${PASSWORD}`);
     }
   } finally {
+    await ds.destroy();
     await pool.end();
   }
 }

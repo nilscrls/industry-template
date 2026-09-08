@@ -3,8 +3,15 @@ import {
   grantSchema,
   orgCapabilities,
   permissionSnapshotSchema,
+  roles,
   systemCapabilities,
 } from "./permissions";
+
+describe("roles", () => {
+  it("is exactly admin/manager/user", () => {
+    expect(roles).toEqual(["admin", "manager", "user"]);
+  });
+});
 
 describe("grantSchema", () => {
   it("accepts an FGA object ref with a known relation", () => {
