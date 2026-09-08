@@ -161,7 +161,17 @@
     "createdPerDay": "Projects created",
     "createdPerDayDescription": "Last 30 days",
     "byStatus": "Projects by status",
-    "byStatusDescription": "Current distribution"
+    "byStatusDescription": "Current distribution",
+    "points": {
+      "title": "Points wallet",
+      "description": "Spend points from your balance.",
+      "balance": "{balance} pts",
+      "fields": {
+        "amount": "Amount",
+        "reason": "Reason"
+      },
+      "spendAction": "Spend"
+    }
   },
   "projects": {
     "title": "Projects",
@@ -197,7 +207,8 @@
     "flagOverrideSaved": "Feature flag override saved",
     "projectCreated": "Project created",
     "projectUpdated": "Project updated",
-    "projectDeleted": "Project deleted"
+    "projectDeleted": "Project deleted",
+    "pointsSpent": "Points spent"
   },
   "errors": {
     "AUTH_UNAUTHORIZED": "You need to sign in to continue.",
@@ -208,6 +219,7 @@
     "FILE_TOO_LARGE": "File is too large (max {maxSizeMb} MB).",
     "FILE_TYPE_NOT_ALLOWED": "File type not allowed. Allowed: {allowed}.",
     "RATE_LIMITED": "Too many requests — try again in {retryAfterSeconds}s.",
+    "WALLET_INSUFFICIENT_BALANCE": "Not enough points: you have {balance}, needed {requested}.",
     "INTERNAL": "Something went wrong. Please try again."
   },
   "publicPages": {

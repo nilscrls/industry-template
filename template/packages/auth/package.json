@@ -15,18 +15,20 @@
     "check-types": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "seed:dev": "tsx src/seed-dev.ts",
-    "generate-schema": "pnpm dlx @better-auth/cli generate --config src/schema-generation.ts --output ../db/src/schema/auth.generated.ts"
+    "generate-schema": "pnpm dlx @better-auth/cli@latest generate --config src/auth-cli.ts --output ../db/better-auth-diff.sql"
   },
   "dependencies": {
     "@repo/contracts": "workspace:*",
     "@repo/db": "workspace:*",
-    "better-auth": "^1.3.4",
-    "drizzle-orm": "^0.44.2",
+    "better-auth": "1.6.23",
+    "pg": "^8.16.0",
     "zod": "^4.0.5"
   },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",
+    "@types/pg": "^8.15.4",
     "tsx": "^4.20.0",
+    "typeorm": "1.1.1",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   }

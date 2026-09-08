@@ -1,5 +1,4 @@
-import path from "node:path";
-import { createDb } from "@repo/db";
+import { createDataSource } from "@repo/db";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
@@ -8,8 +7,8 @@ import {
   RedisContainer,
   type StartedRedisContainer,
 } from "@testcontainers/redis";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import request from "supertest";
+import type { DataSource } from "typeorm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
@@ -28,9 +27,7 @@ let postgres: StartedPostgreSqlContainer;
 let redis: StartedRedisContainer;
 let app: Awaited<ReturnType<typeof import("../src/app.setup.js")["createApp"]>>;
 let server: Parameters<typeof request>[0];
-
-// vitest runs with cwd = apps/api
-const MIGRATIONS = path.resolve(process.cwd(), "../../packages/db/drizzle");
+let owner: DataSource;
 
 beforeAll(async () => {
   [postgres, redis] = await Promise.all([
@@ -92,11 +89,11 @@ beforeAll(async () => {
   process.env.LOG_FILE_ENABLED = "false";
   process.env.LOG_DIR = "./logs";
 
-  const { pool, db } = createDb(ownerUrl);
-  await migrate(db, { migrationsFolder: MIGRATIONS });
-  await pool.query("ALTER ROLE app_user LOGIN PASSWORD 'app_user'");
-  await pool.query("ALTER ROLE app_auth LOGIN PASSWORD 'app_auth'");
-  await pool.end();
+  owner = createDataSource(ownerUrl);
+  await owner.initialize();
+  await owner.runMigrations();
+  await owner.query("ALTER ROLE app_user LOGIN PASSWORD 'app_user'");
+  await owner.query("ALTER ROLE app_auth LOGIN PASSWORD 'app_auth'");
 
   const { createApp } = await import("../src/app.setup.js");
   app = await createApp();
@@ -105,6 +102,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app?.close();
+  await owner?.destroy();
   await Promise.all([postgres?.stop(), redis?.stop()]);
 });
 

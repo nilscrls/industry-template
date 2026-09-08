@@ -10,14 +10,16 @@ pnpm gen feature        # prompts: singular name, plural
 ```
 
 Generated and auto-registered: contract file (list/find/create/update/remove
-with search + `sortBy`) + router/index/subjects entries, drizzle table +
-schema index entry, api module/controller/service + `it.todo` integration
-specs, a URL-state web table page (TanStack Table + nuqs) with its
-`search-params.ts` + unit test, i18n keys in `messages/en.json` AND
-`fr.json`, and a nav item in `apps/web/src/components/app-shell.tsx`. Then:
+with search + `sortBy`) + router/index/subjects entries, a TypeORM entity +
+a migration stub (registered in `packages/db/src/entities/index.ts` and
+`packages/db/src/migrations/index.ts`), api module/controller/service +
+`it.todo` integration specs, a URL-state web table page (TanStack Table +
+nuqs) with its `search-params.ts` + unit test, i18n keys in
+`messages/en.json` AND `fr.json`, and a nav item in
+`apps/web/src/components/app-shell.tsx`. Then:
 
 1. `pnpm lint:fix` — normalize the generated import order.
-2. `pnpm db:generate && pnpm db:migrate` — create/apply the migration.
+2. Review the generated migration stub, then `pnpm db:migrate`.
 3. Grant permissions for the new subject — see `docs/authorization.md` for
    this project's model.
 4. Review the inserted i18n copy (the French strings are real, the entity
@@ -30,7 +32,8 @@ specs, a URL-state web table page (TanStack Table + nuqs) with its
 1. **Contract** — add the procedure in `packages/contracts/src/<feature>.ts`
    (route needs an explicit `method` + `path`; input/output are zod).
 2. **Api** — new controller method with `@Implement(contract.x.y)` +
-   `@RequireAbility(...)`, delegate to the service. Type service params with
+   `@RequirePermission({ relation, scope })`, delegate to the service. Type
+   service params with
    the schema **output** types.
 3. **Web** — it's already on the typed client:
    `useQuery(orpc.x.y.queryOptions({ input }))` or `client.x.y(input)`.
@@ -39,8 +42,11 @@ specs, a URL-state web table page (TanStack Table + nuqs) with its
 
 ## Add / change permissions
 
-Authorization rules live in `packages/contracts/src/permissions.ts` and are
-enforced by the api's `AbilityFactory`. The exact workflow depends on the
+Authorization rules live in `packages/fga/model.fga` (the OpenFGA model);
+`packages/contracts/src/permissions.ts` carries the shared vocabulary (roles
+and capability names). Both are enforced at request time by the api's
+`PermissionsGuard` (`apps/api/src/auth/permissions.guard.ts`), which reads
+the `@RequirePermission` metadata. The exact workflow depends on the
 model chosen at scaffold time — `docs/authorization.md` documents this
 project's setup (rule sources, management endpoints, cache invalidation).
 
@@ -123,9 +129,12 @@ Rules:
 
 ## Regenerate the Better-Auth schema
 
-After enabling a Better-Auth plugin: `pnpm auth:schema` writes a fresh
-drizzle schema to `packages/db/src/schema/auth.generated.ts` — diff it
-against `auth.ts`, merge, then `pnpm db:generate`.
+After enabling a Better-Auth plugin: start compose, run `pnpm db:migrate`,
+then `pnpm auth:schema` — it introspects the **live** database and writes
+only the missing DDL to `packages/db/better-auth-diff.sql` (empty output
+means no drift). Paste the diff into a new hand-written TypeORM migration
+and mirror the new columns onto the matching entity in
+`packages/db/src/entities/`. See `docs/database.md`.
 
 ## Conventions
 

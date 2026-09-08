@@ -25,7 +25,7 @@ reasons, not against habits.
 | NestJS 11 (express, CJS) | HTTP framework, DI, guards | the structured-team framework; oRPC implements the contract inside real controllers |
 | Better-Auth | authentication | framework-agnostic, owns its schema, admin plugin, Redis secondary storage |
 | OpenFGA | authorization | Zanzibar-style relation model (`packages/fga/model.fga`), tuples mirror the DB, deny-wins grants; Postgres RLS underneath for tenant isolation |
-| Drizzle ORM | Postgres access | fully inferred types (the point of this stack), `drizzle-kit` migrations, first-class better-auth adapter. TypeORM was rejected for weak inference and migration DX |
+| TypeORM | Postgres access | decorator entities, hand-written SQL migrations keep row-level security policies and grants first-class (see `docs/database.md`); Better-Auth runs on its own built-in `pg` adapter, unrelated to this ORM |
 | ioredis | cache, ability-rule cache, better-auth storage, throttle storage | one Redis, many jobs |
 | BullMQ (`@nestjs/bullmq`) | background jobs (auth emails) | retries + exponential backoff off the request path |
 | nestjs-pino / pino 9 | logging | JSON to stdout (12-factor); `pino-pretty` in dev; optional `pino-roll` daily file rotation behind `LOG_FILE_ENABLED` |
@@ -66,6 +66,9 @@ reasons, not against habits.
 ## Version policy
 
 Ranges are carets against known-good majors; Renovate keeps them current.
-Before accepting majors of **biome/ultracite, oRPC, TanStack Query, drizzle,
+Before accepting majors of **biome/ultracite, oRPC, TanStack Query, typeorm,
 better-auth**, run the full verification (`docs/testing.md`) — these five are
-the ones with template-visible integration surface.
+the ones with template-visible integration surface. `better-auth` is pinned
+exact (not a caret range): its hand-written tables in `@repo/db` must not
+drift silently on a Renovate bump — `pnpm auth:schema` against a live,
+migrated database is the drift check (see `docs/database.md`).

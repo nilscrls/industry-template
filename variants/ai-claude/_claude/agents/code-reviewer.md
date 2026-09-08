@@ -32,12 +32,17 @@ order:
    the api; `.js`-suffixed relative imports inside those two source-ESM
    packages; `"type": "module"` or top-level await added to a CJS package.
 6. **i18n and schema hygiene.** User-facing strings not in BOTH
-   `packages/i18n/messages/en.json` and `fr.json`; schema edits without a
-   generated migration (`packages/db/drizzle/` + `meta/_journal.json`);
-   hand-edited migration files.
+   `packages/i18n/messages/en.json` and `fr.json`; an entity column added
+   in `packages/db/src/entities/` without a matching hand-written
+   migration in `packages/db/src/migrations/`; a raw-SQL identifier that
+   isn't double-quoted (camelCase columns break unquoted in migrations and
+   `manager.query`); a `db:generate` diff committed unreviewed (it drops
+   every FK — see `docs/database.md`).
 7. **Test coverage.** Changes to DI wiring, auth, or the HTTP surface
    without integration-test coverage; generated TDD skeletons left as
-   todos.
+   todos; a new `tenant()` call site with more than one query inside it
+   using `Promise.all` instead of sequential awaits, or a `tenant()` called
+   from inside another `tenant()` callback.
 
 Report findings ordered by severity, each with `file:line`, what breaks and
 when (many of these fail only at runtime or under vitest, not at compile

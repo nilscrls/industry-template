@@ -11,7 +11,7 @@
 The base `docker-compose.yml` defines services only. Overlays add ports (dev)
 or the reverse-proxy network (prod). Startup ordering is enforced with
 healthchecks: postgres/redis/minio healthy → `migrate` (one-shot, applies
-drizzle migrations) completes → api healthy (`/health/live`) → web.
+the TypeORM migrations) completes → api healthy (`/health/live`) → web.
 
 ## Images
 
@@ -76,8 +76,9 @@ changes.
 ## Day-2 operations
 
 - **Migrations** ship with the image and run as the `migrate` one-shot
-  before the api starts; rollbacks are forward-fixes (generate a new
-  migration) — drizzle SQL migrations are append-only.
+  before the api starts; rollbacks are forward-fixes (hand-write a new
+  migration) — treat shipped migrations as append-only, never edit one
+  that has run anywhere but a throwaway dev database.
 - **Seeding in prod**: only the baseline
   (`pnpm --filter @repo/db seed` resets role permissions to the contract
   defaults). The dev-fixture seeder refuses `NODE_ENV=production`.

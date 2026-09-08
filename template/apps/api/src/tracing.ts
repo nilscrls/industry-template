@@ -25,7 +25,7 @@ if (env.OTEL_ENABLED && env.NODE_ENV !== "test") {
         "@opentelemetry/instrumentation-dns": { enabled: false },
         "@opentelemetry/instrumentation-net": { enabled: false },
       }),
-      // Drizzle is covered by the pg instrumentation; BullMQ needs its own.
+      // TypeORM is covered by the pg instrumentation; BullMQ needs its own.
       new BullMQInstrumentation(),
     ],
   });

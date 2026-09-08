@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { Injectable } from "@nestjs/common";
 import type { FileObject, Paginated, PaginationQuery } from "@repo/contracts";
-import { fileObject } from "@repo/db";
-import { and, count, desc, eq, ilike } from "drizzle-orm";
+import { FileObject as FileObjectEntity } from "@repo/db";
+import type { EntityManager } from "typeorm";
 import { forbidden, notFound } from "../common/app-error";
 import { activeOrganizationId, currentUser } from "../common/request-context";
 import { DbService } from "../db/db.module";
@@ -14,7 +14,6 @@ import {
 
 type ListQuery = PaginationQuery & { search?: string | undefined };
 type PresignInput = Pick<FileObject, "fileName" | "contentType" | "sizeBytes">;
-type FileRow = typeof fileObject.$inferSelect;
 
 @Injectable()
 export class FilesService {
@@ -43,26 +42,34 @@ export class FilesService {
       "can_read_all_files",
       this.fga.ref.org(orgId)
     );
-    const where = and(
-      eq(fileObject.organizationId, orgId),
-      readsAll ? undefined : eq(fileObject.ownerId, user.id),
-      query.search ? ilike(fileObject.fileName, `%${query.search}%`) : undefined
-    );
 
-    const [rows, totals] = await this.dbService.tenant((db) =>
-      Promise.all([
-        db
-          .select()
-          .from(fileObject)
-          .where(where)
-          .orderBy(desc(fileObject.createdAt))
-          .limit(query.pageSize)
-          .offset((query.page - 1) * query.pageSize),
-        db.select({ value: count() }).from(fileObject).where(where),
-      ])
-    );
+    const buildQuery = (m: EntityManager) => {
+      const qb = m
+        .createQueryBuilder(FileObjectEntity, "f")
+        .where("f.organizationId = :orgId", { orgId });
+      if (!readsAll) {
+        qb.andWhere("f.ownerId = :userId", { userId: user.id });
+      }
+      if (query.search) {
+        qb.andWhere("f.fileName ILIKE :search", {
+          search: `%${query.search}%`,
+        });
+      }
+      return qb;
+    };
 
-    const total = totals[0]?.value ?? 0;
+    // Sequential — one QueryRunner/connection serves both queries inside
+    // this transaction.
+    const [rows, total] = await this.dbService.tenant(async (m) => {
+      const foundRows = await buildQuery(m)
+        .orderBy("f.createdAt", "DESC")
+        .skip((query.page - 1) * query.pageSize)
+        .take(query.pageSize)
+        .getMany();
+      const rowCount = await buildQuery(m).getCount();
+      return [foundRows, rowCount] as const;
+    });
+
     return {
       items: rows.map((row) => this.toDto(row)),
       total,
@@ -83,9 +90,11 @@ export class FilesService {
     const safeName = input.fileName.replace(/[^\w.\- ]/g, "_");
     const storageKey = `${orgId}/${user.id}/${id}/${safeName}`;
 
-    const row = await this.dbService.tenant(async (db) => {
-      const [created] = await db
-        .insert(fileObject)
+    const row = await this.dbService.tenant(async (m) => {
+      const result = await m
+        .createQueryBuilder()
+        .insert()
+        .into(FileObjectEntity)
         .values({
           id,
           fileName: safeName,
@@ -95,11 +104,25 @@ export class FilesService {
           organizationId: orgId,
           ownerId: user.id,
         })
-        .returning();
+        .returning('"createdAt"')
+        .execute();
+      // RETURNING hands back DRIVER rows: column transformers do NOT run, so
+      // `sizeBytes` (bigint) would arrive as a string. Only the DB-generated
+      // `createdAt` is read back; every other value is the one just written.
+      const created = result.raw[0] as { createdAt: Date } | undefined;
       if (!created) {
         throw notFound("File");
       }
-      return created;
+      return {
+        id,
+        fileName: safeName,
+        contentType: input.contentType,
+        sizeBytes: input.sizeBytes,
+        storageKey,
+        organizationId: orgId,
+        ownerId: user.id,
+        createdAt: created.createdAt,
+      } satisfies FileObjectEntity;
     });
 
     // Tuples AFTER the DB commit (Postgres is the source of truth). A
@@ -157,24 +180,26 @@ export class FilesService {
       throw forbidden("delete", "File");
     }
     await this.storage.deleteObject(row.storageKey);
-    await this.dbService.tenant((db) =>
-      db.delete(fileObject).where(eq(fileObject.id, id))
-    );
+    await this.dbService.tenant(async (m) => {
+      const result = await m.delete(FileObjectEntity, { id });
+      if (result.affected !== 1) {
+        throw notFound("File");
+      }
+    });
     await this.fga.deleteObjectTuples(this.fga.ref.file(id));
     return { id };
   }
 
   /** Rows outside the active organization do not exist for this request. */
-  private async findRow(id: string): Promise<FileRow> {
+  private async findRow(id: string): Promise<FileObjectEntity> {
     const orgId = activeOrganizationId();
     if (!orgId) {
       throw notFound("File");
     }
-    const [row] = await this.dbService.tenant((db) =>
-      db
-        .select()
-        .from(fileObject)
-        .where(and(eq(fileObject.id, id), eq(fileObject.organizationId, orgId)))
+    const row = await this.dbService.tenant((m) =>
+      m.findOne(FileObjectEntity, {
+        where: { id, organizationId: orgId },
+      })
     );
     if (!row) {
       throw notFound("File");
@@ -182,7 +207,7 @@ export class FilesService {
     return row;
   }
 
-  private toDto(row: FileRow): FileObject {
+  private toDto(row: FileObjectEntity): FileObject {
     return {
       id: row.id,
       fileName: row.fileName,

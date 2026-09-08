@@ -10,6 +10,7 @@ const CODE_TO_HTTP: Record<ErrorCode, string> = {
   FILE_TOO_LARGE: "PAYLOAD_TOO_LARGE",
   FILE_TYPE_NOT_ALLOWED: "BAD_REQUEST",
   RATE_LIMITED: "TOO_MANY_REQUESTS",
+  WALLET_INSUFFICIENT_BALANCE: "CONFLICT",
   INTERNAL: "INTERNAL_SERVER_ERROR",
 };
 
@@ -37,4 +38,11 @@ export function forbidden(
   subject: string
 ): ORPCError<string, unknown> {
   return appError("AUTH_FORBIDDEN", { action, subject });
+}
+
+export function insufficientBalance(
+  balance: number,
+  requested: number
+): ORPCError<string, unknown> {
+  return appError("WALLET_INSUFFICIENT_BALANCE", { balance, requested });
 }

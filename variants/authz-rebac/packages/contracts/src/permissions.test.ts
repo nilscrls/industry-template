@@ -4,8 +4,15 @@ import {
   permissionSnapshotSchema,
   projectRelationSchema,
   projectRelations,
+  roles,
   systemCapabilities,
 } from "./permissions";
+
+describe("roles", () => {
+  it("is exactly admin/user", () => {
+    expect(roles).toEqual(["admin", "user"]);
+  });
+});
 
 describe("projectRelationSchema", () => {
   it("accepts the relation ladder", () => {

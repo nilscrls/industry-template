@@ -4,8 +4,8 @@ import type {
   Paginated,
   PaginationQuery,
 } from "@repo/contracts";
-import { member, organization } from "@repo/db";
-import { count, desc, eq, ilike } from "drizzle-orm";
+import { Member, Organization } from "@repo/db";
+import type { EntityManager } from "typeorm";
 import { DbService } from "../db/db.module";
 
 type ListQuery = PaginationQuery & { search?: string | undefined };
@@ -20,38 +20,50 @@ export class OrganizationsService {
    * context marks the session admin (guarded by @RequireAbility upstream).
    */
   async list(query: ListQuery): Promise<Paginated<OrganizationSummary>> {
-    const where = query.search
-      ? ilike(organization.name, `%${query.search}%`)
-      : undefined;
+    const buildCountQuery = (m: EntityManager) => {
+      const qb = m.createQueryBuilder(Organization, "o");
+      if (query.search) {
+        qb.andWhere("o.name ILIKE :search", { search: `%${query.search}%` });
+      }
+      return qb;
+    };
 
-    const [rows, totals] = await this.dbService.tenant((db) =>
-      Promise.all([
-        db
-          .select({
-            id: organization.id,
-            name: organization.name,
-            slug: organization.slug,
-            createdAt: organization.createdAt,
-            memberCount: count(member.id),
-          })
-          .from(organization)
-          .leftJoin(member, eq(member.organizationId, organization.id))
-          .where(where)
-          .groupBy(organization.id)
-          .orderBy(desc(organization.createdAt))
-          .limit(query.pageSize)
-          .offset((query.page - 1) * query.pageSize),
-        db.select({ value: count() }).from(organization).where(where),
-      ])
-    );
+    // Sequential — one QueryRunner/connection serves both queries inside
+    // this transaction.
+    const [rows, total] = await this.dbService.tenant(async (m) => {
+      const qb = m
+        .createQueryBuilder(Organization, "o")
+        .leftJoin(Member, "member", "member.organizationId = o.id")
+        .select("o.id", "id")
+        .addSelect("o.name", "name")
+        .addSelect("o.slug", "slug")
+        .addSelect("o.createdAt", "createdAt")
+        .addSelect("count(member.id)", "memberCount")
+        .groupBy("o.id")
+        .orderBy("o.createdAt", "DESC");
+      if (query.search) {
+        qb.andWhere("o.name ILIKE :search", { search: `%${query.search}%` });
+      }
+      const foundRows = await qb
+        .offset((query.page - 1) * query.pageSize)
+        .limit(query.pageSize)
+        .getRawMany<{
+          createdAt: Date;
+          id: string;
+          memberCount: string;
+          name: string;
+          slug: string;
+        }>();
+      const rowCount = await buildCountQuery(m).getCount();
+      return [foundRows, rowCount] as const;
+    });
 
-    const total = totals[0]?.value ?? 0;
     return {
       items: rows.map((row) => ({
         id: row.id,
         name: row.name,
         slug: row.slug,
-        memberCount: row.memberCount,
+        memberCount: Number(row.memberCount),
         createdAt: row.createdAt.toISOString(),
       })),
       total,

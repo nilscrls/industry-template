@@ -5,15 +5,15 @@ import type { DbService } from "../db/db.module";
 import { AuditService } from "./audit.service";
 
 function makeService() {
-  const values = vi.fn().mockResolvedValue(undefined);
-  const db = { insert: vi.fn().mockReturnValue({ values }) };
+  const insert = vi.fn().mockResolvedValue(undefined);
+  const fakeManager = { insert };
   const dbService = {
-    db,
+    dataSource: {},
     // The real tenant() opens an RLS-scoped transaction; here it just hands
-    // the same mock db to the callback.
-    tenant: (fn: (tx: typeof db) => unknown) => fn(db),
+    // the same fake manager to the callback.
+    tenant: (fn: (m: typeof fakeManager) => unknown) => fn(fakeManager),
   } as unknown as DbService;
-  return { service: new AuditService(dbService), values };
+  return { service: new AuditService(dbService), insert };
 }
 
 function contextFor(organizationId: string | null) {
@@ -29,7 +29,7 @@ function contextFor(organizationId: string | null) {
 
 describe("AuditService.audited", () => {
   it("records after the handler succeeds, with context and default entity id", async () => {
-    const { service, values } = makeService();
+    const { service, insert } = makeService();
     const middleware = service.audited({
       action: "project.update",
       entityType: "Project",
@@ -43,7 +43,8 @@ describe("AuditService.audited", () => {
     );
 
     expect(result.output).toEqual({ id: "entity-1", name: "n" });
-    expect(values).toHaveBeenCalledWith(
+    expect(insert).toHaveBeenCalledWith(
+      expect.anything(),
       expect.objectContaining({
         organizationId: "org-1",
         actorId: "user-1",
@@ -57,7 +58,7 @@ describe("AuditService.audited", () => {
   });
 
   it("prefers the explicit entityId extractor", async () => {
-    const { service, values } = makeService();
+    const { service, insert } = makeService();
     const middleware = service.audited<
       { fileName: string },
       { file: { id: string } }
@@ -74,13 +75,14 @@ describe("AuditService.audited", () => {
       )
     );
 
-    expect(values).toHaveBeenCalledWith(
+    expect(insert).toHaveBeenCalledWith(
+      expect.anything(),
       expect.objectContaining({ entityId: "file-9" })
     );
   });
 
   it("does not write when the handler throws", async () => {
-    const { service, values } = makeService();
+    const { service, insert } = makeService();
     const middleware = service.audited({
       action: "project.delete",
       entityType: "Project",
@@ -98,6 +100,6 @@ describe("AuditService.audited", () => {
         )
       )
     ).rejects.toThrow("boom");
-    expect(values).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
   });
 });

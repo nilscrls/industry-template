@@ -1,7 +1,7 @@
 #!/bin/sh
 # Runs once on the FIRST postgres boot (docker-entrypoint-initdb.d).
 # Creates the RLS principals with their passwords; the grants migration
-# (packages/db/drizzle) later grants table privileges — it also creates the
+# (packages/db/src/migrations) later grants table privileges — it also creates the
 # roles NOLOGIN if this script never ran (e.g. managed Postgres), in which
 # case the operator sets LOGIN + passwords manually:
 #   ALTER ROLE app_user LOGIN PASSWORD '...';

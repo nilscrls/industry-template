@@ -9,9 +9,11 @@ paths:
 # Authorization — RBAC on OpenFGA (this scaffold's model)
 
 - The model is `packages/fga/model.fga` (OpenFGA DSL). Global roles
-  (`admin`, `manager`, `member`) hang off `system:global`; tenants are
+  (`admin`, `manager`, `user`) hang off `system:global`; tenants are
   `org:<id>`; resources carry `org` + `owner` relations. Only `can_*`
   capability relations are ever checked — never structural relations.
+  `can_manage_wallet` is `manager or admin` — see the points wallet in
+  `docs/database.md` ("Transactions").
 - **Postgres is the source of truth, FGA a derived index**: write the DB
   row first, the tuple after commit (FgaService writes are idempotent).
   `pnpm fga:sync` rebuilds derived tuples; per-user grants

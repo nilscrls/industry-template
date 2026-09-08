@@ -1,0 +1,27 @@
+import { Column, Entity, Index, PrimaryGeneratedColumn } from "typeorm";
+
+/**
+ * Generated entity: user-scoped (owner-only capabilities in model.fga), no
+ * RLS policy — a plain repository is enough. If it becomes tenant-shared,
+ * add an `organizationId` column + RLS policy (see docs/database.md), an
+ * `org` link in the model, and run queries through dbService.tenant()
+ * instead of the repository directly.
+ */
+@Entity({ name: "{{ camelCase name }}" })
+export class {{ pascalCase name }} {
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
+
+  @Column({ type: "varchar", length: 120 })
+  name!: string;
+
+  @Index("{{ camelCase name }}_ownerId_idx")
+  @Column({ type: "text" })
+  ownerId!: string;
+
+  @Column({ type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+}

@@ -30,11 +30,11 @@ export const AUTH = "BETTER_AUTH_INSTANCE";
         storage: StorageService,
         fga: FgaService
       ): Auth => {
-        // authDb (BYPASSRLS): the hooks run inside the auth flow, outside
-        // any tenant transaction — the sole-owner check must see every
-        // membership and the blob prefetch every file row.
+        // authDataSource (BYPASSRLS): the hooks run inside the auth flow,
+        // outside any tenant transaction — the sole-owner check must see
+        // every membership and the blob prefetch every file row.
         const deletion = createUserDeletionHooks(
-          dbService.authDb,
+          dbService.authDataSource,
           storage,
           // Erasure also removes the user's tuples (memberships, roles,
           // grants) from the FGA store.
@@ -45,8 +45,9 @@ export const AUTH = "BETTER_AUTH_INSTANCE";
         );
         return createAuth({
           // BYPASSRLS pool: Better-Auth reads member pre-tenant and owns
-          // the user-scoped auth tables (see DbService.authDb).
-          db: dbService.authDb,
+          // the user-scoped auth tables (see DbService.authPool). Better-Auth
+          // manages this pool with its own pg adapter, never through TypeORM.
+          pool: dbService.authPool,
           secret: env.BETTER_AUTH_SECRET,
           baseUrl: `${env.WEB_URL}/api/auth`,
           trustedOrigins: [env.WEB_URL],

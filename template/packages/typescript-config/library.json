@@ -3,7 +3,7 @@
   "extends": "./base.json",
   "compilerOptions": {
     // Internal packages compile to CJS so NestJS and Next.js share one
-    // type identity for every dependency (drizzle, orpc, …).
+    // type identity for every dependency (typeorm, orpc, …).
     "verbatimModuleSyntax": false,
     "rootDir": "${configDir}/src",
     "outDir": "${configDir}/dist"

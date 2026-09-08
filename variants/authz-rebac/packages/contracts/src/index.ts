@@ -79,3 +79,12 @@ export {
   updateProjectSchema,
 } from "./projects.js";
 export { meContract, type User, userSchema, usersContract } from "./users.js";
+export {
+  creditSchema,
+  spendSchema,
+  type Wallet,
+  type WalletEntry,
+  walletContract,
+  walletEntrySchema,
+  walletSchema,
+} from "./wallet.js";

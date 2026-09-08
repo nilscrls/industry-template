@@ -6,7 +6,7 @@ import { z } from "zod";
  * capabilities and relations so contracts, guards and the web app share
  * one typed list.
  */
-export const roles = ["admin", "member"] as const;
+export const roles = ["admin", "user"] as const;
 export type Role = (typeof roles)[number];
 export const roleSchema = z.enum(roles);
 
@@ -31,6 +31,7 @@ export const orgCapabilities = [
   "can_read_all_files",
   "can_read_audit_log",
   "can_manage_feature_flag",
+  "can_manage_wallet",
 ] as const;
 export type OrgCapability = (typeof orgCapabilities)[number];
 

@@ -11,7 +11,7 @@ This file is the source of truth for AI coding agents. `CLAUDE.md` imports it
 ## What this repository is
 
 A full-stack TypeScript monorepo (pnpm 10 workspaces + Turborepo 2,
-Node >= 22.12) scaffolded by create-industry-app with these choices:
+Node >= 22.13) scaffolded by create-industry-app with these choices:
 
 - UI primitives: __UI_VARIANT__
 - Authorization model: __AUTHZ_VARIANT__
@@ -26,18 +26,19 @@ Node >= 22.12) scaffolded by create-industry-app with these choices:
 Layout:
 
 - `apps/api` — NestJS 11 (Express, **CommonJS**), oRPC contract-first API,
-  Drizzle ORM (Postgres 17, row-level security), Better-Auth, OpenFGA,
+  TypeORM (Postgres 17, row-level security), Better-Auth, OpenFGA,
   BullMQ + ioredis (API logger: see scaffold choices above).
 - `apps/web` — Next.js 16 App Router, TanStack Query/Table, next-intl,
   react-hook-form, nuqs.
-- `packages/` — `contracts` (oRPC contracts + Zod schemas), `db` (Drizzle
-  schema/migrations/seeds), `auth`, `emails` (react-email), `i18n`
+- `packages/` — `contracts` (oRPC contracts + Zod schemas), `db` (TypeORM
+  entities/migrations/seeds), `auth`, `emails` (react-email), `i18n`
   (next-intl config + message catalogs), `ui` (owned shadcn/ui source),
   `typescript-config`.
 
 Deeper documentation ships in `docs/` — `architecture.md`, `stack.md`,
-`features.md`, `authorization.md`, `testing.md`, `guides.md`,
-`deployment.md`. Read the relevant one before structural changes.
+`features.md`, `authorization.md`, `database.md`, `testing.md`,
+`guides.md`, `deployment.md`. Read the relevant one before structural
+changes.
 The scaffold-time choices above are baked in — do not re-introduce the org
 switcher in single-org apps, cookie routing in URL-prefixed apps, or the
 other logger; behavior flags (email verification, email sending) are
@@ -61,8 +62,8 @@ never bypass them by exporting env vars manually.
 | `pnpm test` | unit tests (Vitest) |
 | `pnpm test:integration` | api integration tests (Testcontainers — needs Docker) |
 | `pnpm test:e2e` | Playwright e2e |
-| `pnpm db:generate` / `db:migrate` / `db:seed` | Drizzle migration flow |
-| `pnpm auth:schema` | regenerate the Better-Auth Drizzle schema |
+| `pnpm db:generate` / `db:migrate` / `db:seed` | TypeORM migration flow (`db:generate` needs a live migrated DB and writes a draft migration — see `docs/database.md`) |
+| `pnpm auth:schema` | drift-check the Better-Auth tables against a live, migrated database |
 | `pnpm gen` | scaffold a new feature module (contract + Nest module + tests + page) |
 | `pnpm commit` | conventional commit prompt (commitlint enforces the format) |
 

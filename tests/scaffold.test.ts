@@ -152,8 +152,8 @@ describe("scaffold", () => {
       "apps/web/src/components/consent.tsx",
       "apps/api/src/privacy/privacy.module.ts",
       "docs/compliance.md",
-      "packages/db/drizzle/0000_roles.sql",
-      "packages/db/drizzle/0001_init.sql",
+      "packages/db/src/migrations/1700000000000-Roles.ts",
+      "packages/db/src/migrations/1700000000001-Init.ts",
       "packages/db/sql/init-roles.sh",
       "scripts/backup/backup-db.mjs",
       "scripts/backup/restore-db.mjs",
@@ -182,12 +182,16 @@ describe("scaffold", () => {
       readFileSync(path.join(targetDir, "packages/ui/package.json"), "utf8")
     ).dependencies;
     expect(uiDeps["@radix-ui/react-dialog"]).toBeDefined();
-    expect(
-      readFileSync(
-        path.join(targetDir, "packages/contracts/src/permissions.ts"),
-        "utf8"
-      )
-    ).toContain('"manager"');
+    const rbacPermissions = readFileSync(
+      path.join(targetDir, "packages/contracts/src/permissions.ts"),
+      "utf8"
+    );
+    expect(rbacPermissions).toContain('"manager"');
+    // roles = ["admin", "manager", "user"] — Better-Auth's admin plugin
+    // defaultRole is "user"; the org-plugin membership role ("member") is a
+    // separate, unrenamed vocabulary (see D6/D1).
+    expect(rbacPermissions).toContain('"user"');
+    expect(rbacPermissions).not.toMatch(/roles = \[[^\]]*"member"/);
     // RBAC flavor of the FGA model: global roles + per-user deny grants.
     const model = readFileSync(
       path.join(targetDir, "packages/fga/model.fga"),
@@ -239,9 +243,21 @@ describe("scaffold", () => {
     );
     expect(permissions).toContain("projectRelations");
     expect(permissions).not.toContain('"manager"');
+    // roles = ["admin", "user"] in the rebac overlay — no "manager", no
+    // "member" (see D6).
+    expect(permissions).toContain('"user"');
+    expect(permissions).not.toMatch(/roles = \[[^\]]*"member"/);
+    expect(
+      existsSync(
+        path.join(targetDir, "packages/db/src/entities/project-member.ts")
+      )
+    ).toBe(true);
     expect(
       readFileSync(
-        path.join(targetDir, "packages/db/src/schema/permissions.ts"),
+        path.join(
+          targetDir,
+          "packages/db/src/migrations/1700000000001-Init.ts"
+        ),
         "utf8"
       )
     ).toContain("projectMember");
@@ -254,13 +270,12 @@ describe("scaffold", () => {
     expect(model).not.toContain("granted_read");
     // The RBAC migrations are replaced wholesale by the manifest.
     expect(
-      readFileSync(
-        path.join(targetDir, "packages/db/drizzle/0001_init.sql"),
-        "utf8"
+      existsSync(
+        path.join(
+          targetDir,
+          "packages/db/src/migrations/1700000000000-Roles.ts"
+        )
       )
-    ).toContain("project_member");
-    expect(
-      existsSync(path.join(targetDir, "packages/db/drizzle/0000_roles.sql"))
     ).toBe(true);
   });
 
@@ -544,10 +559,13 @@ describe("scaffold", () => {
     expect(permissions).not.toContain('"manager"');
     expect(
       readFileSync(
-        path.join(targetDir, "packages/db/drizzle/0001_init.sql"),
+        path.join(
+          targetDir,
+          "packages/db/src/migrations/1700000000001-Init.ts"
+        ),
         "utf8"
       )
-    ).toContain("project_member");
+    ).toContain("projectMember");
 
     // French fallback locale.
     expect(

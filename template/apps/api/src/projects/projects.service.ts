@@ -8,8 +8,8 @@ import {
   projectStatuses,
   type updateProjectSchema,
 } from "@repo/contracts";
-import { type Database, project } from "@repo/db";
-import { and, asc, count, desc, eq, gte, ilike, sql } from "drizzle-orm";
+import { Project as ProjectEntity } from "@repo/db";
+import type { EntityManager } from "typeorm";
 import type { z } from "zod";
 import { forbidden, notFound } from "../common/app-error";
 import { activeOrganizationId, currentUser } from "../common/request-context";
@@ -21,7 +21,6 @@ type ListQuery = z.infer<typeof listProjectsQuerySchema>;
 type CreateInput = z.infer<typeof createProjectSchema>;
 type UpdateInput = z.infer<typeof updateProjectSchema> & { id: string };
 type Stats = z.infer<typeof projectStatsSchema>;
-type ProjectRow = typeof project.$inferSelect;
 
 const STATS_TTL_SECONDS = 60;
 const STATS_WINDOW_DAYS = 30;
@@ -32,6 +31,12 @@ interface RowFlags {
   canDelete: boolean;
   canUpdate: boolean;
 }
+
+const SORT_COLUMNS = {
+  name: "name",
+  createdAt: "createdAt",
+  updatedAt: "updatedAt",
+} as const;
 
 /**
  * Authorization is two-layered: OpenFGA row checks here (can_update /
@@ -52,34 +57,27 @@ export class ProjectsService {
     if (!orgId) {
       return this.emptyPage(query);
     }
-    const where = and(
-      eq(project.organizationId, orgId),
-      query.search ? ilike(project.name, `%${query.search}%`) : undefined,
-      query.status ? eq(project.status, query.status) : undefined
-    );
-    const sortColumn = {
-      name: project.name,
-      createdAt: project.createdAt,
-      updatedAt: project.updatedAt,
-    }[query.sortBy];
-    const orderBy =
-      query.sortOrder === "asc" ? asc(sortColumn) : desc(sortColumn);
+    const sortColumn = SORT_COLUMNS[query.sortBy];
 
-    const [rows, totals] = await this.dbService.tenant((db) =>
-      Promise.all([
-        db
-          .select()
-          .from(project)
-          .where(where)
-          .orderBy(orderBy)
-          .limit(query.pageSize)
-          .offset((query.page - 1) * query.pageSize),
-        db.select({ value: count() }).from(project).where(where),
-      ])
-    );
+    const [rows, total] = await this.dbService.tenant(async (m) => {
+      const qb = this.baseQuery(m, orgId, query.search, query.status).orderBy(
+        `p.${sortColumn}`,
+        query.sortOrder === "asc" ? "ASC" : "DESC"
+      );
+      const foundRows = await qb
+        .skip((query.page - 1) * query.pageSize)
+        .take(query.pageSize)
+        .getMany();
+      const rowCount = await this.baseQuery(
+        m,
+        orgId,
+        query.search,
+        query.status
+      ).getCount();
+      return [foundRows, rowCount] as const;
+    });
     const flags = await this.flagsFor(rows);
 
-    const total = totals[0]?.value ?? 0;
     return {
       items: rows.map((row) => this.toDto(row, flags.get(row.id))),
       total,
@@ -90,7 +88,7 @@ export class ProjectsService {
   }
 
   async find(id: string): Promise<Project> {
-    const row = await this.dbService.tenant((db) => this.findRow(db, id));
+    const row = await this.dbService.tenant((m) => this.findRow(m, id));
     const [canRead] = await this.fga.batchCheck([
       {
         user: this.fga.me(),
@@ -112,9 +110,11 @@ export class ProjectsService {
       throw forbidden("create", "Project");
     }
     const me = currentUser();
-    const row = await this.dbService.tenant(async (db) => {
-      const [created] = await db
-        .insert(project)
+    const row = await this.dbService.tenant(async (m) => {
+      const result = await m
+        .createQueryBuilder()
+        .insert()
+        .into(ProjectEntity)
         .values({
           name: input.name,
           description: input.description ?? null,
@@ -122,7 +122,9 @@ export class ProjectsService {
           organizationId: orgId,
           ownerId: me.id,
         })
-        .returning();
+        .returning("*")
+        .execute();
+      const created = result.raw[0] as ProjectEntity | undefined;
       if (!created) {
         throw notFound("Project");
       }
@@ -148,13 +150,14 @@ export class ProjectsService {
   }
 
   async update(input: UpdateInput): Promise<Project> {
-    const row = await this.dbService.tenant((db) => this.findRow(db, input.id));
+    const row = await this.dbService.tenant((m) => this.findRow(m, input.id));
     if (!(await this.can("can_update", row.id))) {
       throw forbidden("update", "Project");
     }
 
-    const patch: Partial<Pick<ProjectRow, "name" | "description" | "status">> =
-      {};
+    const patch: Partial<
+      Pick<ProjectEntity, "name" | "description" | "status">
+    > = {};
     if (input.name !== undefined) {
       patch.name = input.name;
     }
@@ -167,13 +170,18 @@ export class ProjectsService {
     const updated =
       Object.keys(patch).length === 0
         ? row
-        : await this.dbService.tenant(async (db) => {
-            const [next] = await db
-              .update(project)
-              .set(patch)
-              .where(eq(project.id, input.id))
-              .returning();
-            if (!next) {
+        : await this.dbService.tenant(async (m) => {
+            const result = await m
+              .createQueryBuilder()
+              .update(ProjectEntity)
+              // The entity keeps `updatedAt` a plain column (no @UpdateDateColumn)
+              // so migration:generate stays quiet — writers bump it explicitly.
+              .set({ ...patch, updatedAt: () => "now()" })
+              .where("id = :id", { id: input.id })
+              .returning("*")
+              .execute();
+            const next = result.raw[0] as ProjectEntity | undefined;
+            if (!next || result.affected !== 1) {
               throw notFound("Project");
             }
             return next;
@@ -184,13 +192,16 @@ export class ProjectsService {
   }
 
   async remove(id: string): Promise<{ id: string }> {
-    const row = await this.dbService.tenant((db) => this.findRow(db, id));
+    const row = await this.dbService.tenant((m) => this.findRow(m, id));
     if (!(await this.can("can_delete", row.id))) {
       throw forbidden("delete", "Project");
     }
-    await this.dbService.tenant((db) =>
-      db.delete(project).where(eq(project.id, id))
-    );
+    await this.dbService.tenant(async (m) => {
+      const result = await m.delete(ProjectEntity, { id });
+      if (result.affected !== 1) {
+        throw notFound("Project");
+      }
+    });
     // Drop every tuple attached to the deleted resource (org link, owner,
     // any per-user grants).
     await this.fga.deleteObjectTuples(this.fga.ref.project(id));
@@ -217,7 +228,9 @@ export class ProjectsService {
   }
 
   /** Row-level UI hints, one BatchCheck for the whole page. */
-  private async flagsFor(rows: ProjectRow[]): Promise<Map<string, RowFlags>> {
+  private async flagsFor(
+    rows: ProjectEntity[]
+  ): Promise<Map<string, RowFlags>> {
     if (rows.length === 0) {
       return new Map();
     }
@@ -246,36 +259,74 @@ export class ProjectsService {
     );
   }
 
+  /** Shared WHERE for list()'s page query and its count query. */
+  private baseQuery(
+    manager: EntityManager,
+    orgId: string,
+    search: string | undefined,
+    status: (typeof projectStatuses)[number] | undefined
+  ) {
+    const qb = manager
+      .createQueryBuilder(ProjectEntity, "p")
+      .where("p.organizationId = :orgId", { orgId });
+    if (search) {
+      qb.andWhere("p.name ILIKE :search", { search: `%${search}%` });
+    }
+    if (status) {
+      qb.andWhere("p.status = :status", { status });
+    }
+    return qb;
+  }
+
   private async computeStats(orgId: string): Promise<Stats> {
     const since = new Date();
     since.setUTCHours(0, 0, 0, 0);
     since.setUTCDate(since.getUTCDate() - (STATS_WINDOW_DAYS - 1));
-    const dayExpr = sql<string>`to_char(date_trunc('day', ${project.createdAt}), 'YYYY-MM-DD')`;
-    const inOrg = eq(project.organizationId, orgId);
 
-    const [totals, byStatusRows, perDayRows] = await this.dbService.tenant(
-      (db) =>
-        Promise.all([
-          db.select({ value: count() }).from(project).where(inOrg),
-          db
-            .select({ status: project.status, count: count() })
-            .from(project)
-            .where(inOrg)
-            .groupBy(project.status),
-          db
-            .select({ date: dayExpr, count: count() })
-            .from(project)
-            .where(and(inOrg, gte(project.createdAt, since)))
-            .groupBy(dayExpr),
-        ])
+    // Sequential (not Promise.all): one TypeORM QueryRunner executes
+    // queries serially over its single connection inside a transaction —
+    // concurrent queries against the same manager would race, not parallelize.
+    const [total, byStatusRows, perDayRows] = await this.dbService.tenant(
+      async (m) => {
+        const totalCount = await m
+          .createQueryBuilder(ProjectEntity, "p")
+          .where("p.organizationId = :orgId", { orgId })
+          .getCount();
+        const byStatus = await m
+          .createQueryBuilder(ProjectEntity, "p")
+          .select("p.status", "status")
+          .addSelect("count(*)", "count")
+          .where("p.organizationId = :orgId", { orgId })
+          .groupBy("p.status")
+          .getRawMany<{
+            count: string;
+            status: Stats["byStatus"][number]["status"];
+          }>();
+        const perDay = await m
+          .createQueryBuilder(ProjectEntity, "p")
+          .select(
+            "to_char(date_trunc('day', p.createdAt), 'YYYY-MM-DD')",
+            "date"
+          )
+          .addSelect("count(*)", "count")
+          .where("p.organizationId = :orgId", { orgId })
+          .andWhere("p.createdAt >= :since", { since })
+          .groupBy("date")
+          .getRawMany<{ count: string; date: string }>();
+        return [totalCount, byStatus, perDay] as const;
+      }
     );
 
     const byStatus = projectStatuses.map((status) => ({
       status,
-      count: byStatusRows.find((row) => row.status === status)?.count ?? 0,
+      count: Number(
+        byStatusRows.find((row) => row.status === status)?.count ?? 0
+      ),
     }));
 
-    const counts = new Map(perDayRows.map((row) => [row.date, row.count]));
+    const counts = new Map(
+      perDayRows.map((row) => [row.date, Number(row.count)])
+    );
     const createdPerDay = Array.from(
       { length: STATS_WINDOW_DAYS },
       (_, index) => {
@@ -286,19 +337,21 @@ export class ProjectsService {
       }
     );
 
-    return { total: totals[0]?.value ?? 0, byStatus, createdPerDay };
+    return { total, byStatus, createdPerDay };
   }
 
   /** Rows outside the active organization do not exist for this request. */
-  private async findRow(db: Database, id: string): Promise<ProjectRow> {
+  private async findRow(
+    manager: EntityManager,
+    id: string
+  ): Promise<ProjectEntity> {
     const orgId = activeOrganizationId();
     if (!orgId) {
       throw notFound("Project");
     }
-    const [row] = await db
-      .select()
-      .from(project)
-      .where(and(eq(project.id, id), eq(project.organizationId, orgId)));
+    const row = await manager.findOne(ProjectEntity, {
+      where: { id, organizationId: orgId },
+    });
     if (!row) {
       throw notFound("Project");
     }
@@ -330,7 +383,7 @@ export class ProjectsService {
     };
   }
 
-  private toDto(row: ProjectRow, flags?: RowFlags): Project {
+  private toDto(row: ProjectEntity, flags?: RowFlags): Project {
     return {
       id: row.id,
       name: row.name,

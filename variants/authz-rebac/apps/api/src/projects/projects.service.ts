@@ -12,18 +12,12 @@ import {
   projectStatuses,
   type updateProjectSchema,
 } from "@repo/contracts";
-import { type Database, project, projectMember, user } from "@repo/db";
 import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  gte,
-  ilike,
-  inArray,
-  sql,
-} from "drizzle-orm";
+  Project as ProjectEntity,
+  ProjectMember as ProjectMemberEntity,
+  User,
+} from "@repo/db";
+import type { EntityManager } from "typeorm";
 import type { z } from "zod";
 import { forbidden, notFound } from "../common/app-error";
 import { activeOrganizationId, currentUser } from "../common/request-context";
@@ -35,7 +29,6 @@ type ListQuery = z.infer<typeof listProjectsQuerySchema>;
 type CreateInput = z.infer<typeof createProjectSchema>;
 type UpdateInput = z.infer<typeof updateProjectSchema> & { id: string };
 type Stats = z.infer<typeof projectStatsSchema>;
-type ProjectRow = typeof project.$inferSelect;
 
 const STATS_TTL_SECONDS = 60;
 const STATS_WINDOW_DAYS = 30;
@@ -48,10 +41,11 @@ interface RowFlags {
 }
 
 /**
- * ReBAC: the `project_member` table is the DB source of truth for
+ * ReBAC: the `projectMember` table is the DB source of truth for
  * relations; every write mirrors into an OpenFGA tuple (owner/editor/
  * viewer on `project:<id>`). Row checks ask FGA; Postgres RLS runs
- * underneath via dbService.tenant(...).
+ * underneath via dbService.tenant(...) (projectMember itself has NO RLS —
+ * see docs/authorization.md).
  */
 @Injectable()
 export class ProjectsService {
@@ -67,48 +61,46 @@ export class ProjectsService {
     if (!orgId) {
       return this.emptyPage(query);
     }
-    // ReBAC: non-admins only ever see projects they hold a relation on.
-    // The DB join stays (pageable, index-friendly); FGA re-answers the
-    // same question per row via the can_* checks.
-    const membershipScope =
-      (me.role ?? "member") === "admin"
-        ? undefined
-        : inArray(
-            project.id,
-            this.dbService.db
-              .select({ id: projectMember.projectId })
-              .from(projectMember)
-              .where(eq(projectMember.userId, me.id))
-          );
-    const where = and(
-      eq(project.organizationId, orgId),
-      membershipScope,
-      query.search ? ilike(project.name, `%${query.search}%`) : undefined,
-      query.status ? eq(project.status, query.status) : undefined
-    );
-    const sortColumn = {
-      name: project.name,
-      createdAt: project.createdAt,
-      updatedAt: project.updatedAt,
-    }[query.sortBy];
-    const orderBy =
-      query.sortOrder === "asc" ? asc(sortColumn) : desc(sortColumn);
 
-    const [rows, totals] = await this.dbService.tenant((db) =>
-      Promise.all([
-        db
-          .select()
-          .from(project)
-          .where(where)
-          .orderBy(orderBy)
-          .limit(query.pageSize)
-          .offset((query.page - 1) * query.pageSize),
-        db.select({ value: count() }).from(project).where(where),
-      ])
-    );
+    const [rows, total] = await this.dbService.tenant(async (m) => {
+      const qb = m
+        .createQueryBuilder(ProjectEntity, "p")
+        .where("p.organizationId = :orgId", { orgId });
+
+      // ReBAC: non-admins only ever see projects they hold a relation on.
+      // `qb.subQuery()` shares the outer query builder's parameter bag, so
+      // this is a true SQL subquery in the same statement (one round trip,
+      // same tenant() transaction/RLS context) — not a second query.
+      if ((me.role ?? "user") !== "admin") {
+        const membershipSub = qb
+          .subQuery()
+          .select("pm.projectId")
+          .from(ProjectMemberEntity, "pm")
+          .where("pm.userId = :userId", { userId: me.id })
+          .getQuery();
+        qb.andWhere(`p.id IN ${membershipSub}`);
+      }
+      if (query.search) {
+        qb.andWhere("p.name ILIKE :search", { search: `%${query.search}%` });
+      }
+      if (query.status) {
+        qb.andWhere("p.status = :status", { status: query.status });
+      }
+      qb.orderBy(
+        `p.${query.sortBy}`,
+        query.sortOrder === "asc" ? "ASC" : "DESC"
+      );
+
+      // Sequential inside one tenant(): count first, then the page.
+      const rowCount = await qb.getCount();
+      const page = await qb
+        .limit(query.pageSize)
+        .offset((query.page - 1) * query.pageSize)
+        .getMany();
+      return [page, rowCount] as const;
+    });
+
     const flags = await this.flagsFor(rows);
-
-    const total = totals[0]?.value ?? 0;
     return {
       items: rows.map((row) => this.toDto(row, flags.get(row.id))),
       total,
@@ -119,7 +111,7 @@ export class ProjectsService {
   }
 
   async find(id: string): Promise<Project> {
-    const row = await this.dbService.tenant((db) => this.findRow(db, id));
+    const row = await this.dbService.tenant((m) => this.findRow(m, id));
     if (!(await this.can("can_read", row.id))) {
       throw forbidden("read", "Project");
     }
@@ -134,22 +126,16 @@ export class ProjectsService {
       // Creating requires a tenant to create into.
       throw forbidden("create", "Project");
     }
-    const row = await this.dbService.tenant(async (tx) => {
-      const [created] = await tx
-        .insert(project)
-        .values({
-          name: input.name,
-          description: input.description ?? null,
-          status: input.status,
-          organizationId: orgId,
-          ownerId: me.id,
-        })
-        .returning();
-      if (!created) {
-        throw notFound("Project");
-      }
+    const row = await this.dbService.tenant(async (m) => {
+      const created = await m.save(ProjectEntity, {
+        name: input.name,
+        description: input.description ?? null,
+        status: input.status,
+        organizationId: orgId,
+        ownerId: me.id,
+      });
       // The creator's `owner` relation IS the permission grant.
-      await tx.insert(projectMember).values({
+      await m.insert(ProjectMemberEntity, {
         projectId: created.id,
         userId: me.id,
         relation: "owner",
@@ -175,13 +161,14 @@ export class ProjectsService {
   }
 
   async update(input: UpdateInput): Promise<Project> {
-    const row = await this.dbService.tenant((db) => this.findRow(db, input.id));
+    const row = await this.dbService.tenant((m) => this.findRow(m, input.id));
     if (!(await this.can("can_update", row.id))) {
       throw forbidden("update", "Project");
     }
 
-    const patch: Partial<Pick<ProjectRow, "name" | "description" | "status">> =
-      {};
+    const patch: Partial<
+      Pick<ProjectEntity, "name" | "description" | "status">
+    > = {};
     if (input.name !== undefined) {
       patch.name = input.name;
     }
@@ -194,16 +181,18 @@ export class ProjectsService {
     const updated =
       Object.keys(patch).length === 0
         ? row
-        : await this.dbService.tenant(async (db) => {
-            const [next] = await db
-              .update(project)
-              .set(patch)
-              .where(eq(project.id, input.id))
-              .returning();
-            if (!next) {
+        : await this.dbService.tenant(async (m) => {
+            const result = await m
+              .createQueryBuilder()
+              .update(ProjectEntity)
+              .set({ ...patch, updatedAt: () => "now()" })
+              .where("id = :id", { id: input.id })
+              .returning("*")
+              .execute();
+            if (result.affected !== 1) {
               throw notFound("Project");
             }
-            return next;
+            return m.create(ProjectEntity, result.raw[0] as ProjectEntity);
           });
     await this.cache.forOrg(updated.organizationId).del(STATS_KEY);
     const flags = await this.flagsFor([updated]);
@@ -211,14 +200,17 @@ export class ProjectsService {
   }
 
   async remove(id: string): Promise<{ id: string }> {
-    const row = await this.dbService.tenant((db) => this.findRow(db, id));
+    const row = await this.dbService.tenant((m) => this.findRow(m, id));
     if (!(await this.can("can_delete", row.id))) {
       throw forbidden("delete", "Project");
     }
     // FK cascade removes the membership rows with the project.
-    await this.dbService.tenant((db) =>
-      db.delete(project).where(eq(project.id, id))
-    );
+    await this.dbService.tenant(async (m) => {
+      const result = await m.delete(ProjectEntity, { id });
+      if (result.affected !== 1) {
+        throw notFound("Project");
+      }
+    });
     // Drop every tuple attached to the deleted resource (org link and all
     // owner/editor/viewer relations).
     await this.fga.deleteObjectTuples(this.fga.ref.project(id));
@@ -227,27 +219,36 @@ export class ProjectsService {
   }
 
   async listMembers(projectId: string): Promise<{ members: ProjectMember[] }> {
-    const row = await this.dbService.tenant((db) =>
-      this.findRow(db, projectId)
-    );
+    const row = await this.dbService.tenant((m) => this.findRow(m, projectId));
     if (!(await this.can("can_read", row.id))) {
       throw forbidden("read", "Project");
     }
-    const rows = await this.dbService.tenant((db) =>
-      db
-        .select({
-          userId: projectMember.userId,
-          name: user.name,
-          email: user.email,
-          relation: projectMember.relation,
-        })
-        .from(projectMember)
-        .innerJoin(user, eq(user.id, projectMember.userId))
-        .where(eq(projectMember.projectId, projectId))
+    const rows = await this.dbService.tenant((m) =>
+      m
+        .createQueryBuilder(ProjectMemberEntity, "pm")
+        .innerJoin(User, "u", "u.id = pm.userId")
+        .where("pm.projectId = :projectId", { projectId })
+        .select([
+          // Raw aliases must be double-quoted or Postgres folds them to
+          // lowercase and getRawMany()'s keys stop matching these camelCase
+          // properties (naming rule, D1).
+          'pm.userId AS "userId"',
+          'u.name AS "name"',
+          'u.email AS "email"',
+          'pm.relation AS "relation"',
+        ])
+        .getRawMany<{
+          email: string;
+          name: string;
+          relation: string;
+          userId: string;
+        }>()
     );
     return {
       members: rows.map((member) => ({
-        ...member,
+        userId: member.userId,
+        name: member.name,
+        email: member.email,
         relation: projectRelationSchema.parse(member.relation),
       })),
     };
@@ -258,29 +259,24 @@ export class ProjectsService {
     userId: string;
     relation: ProjectRelation;
   }): Promise<ProjectMember> {
-    const target = await this.dbService.tenant(async (db) => {
-      const row = await this.requireManage(db, input.id);
-      const [found] = await db
-        .select()
-        .from(user)
-        .where(eq(user.id, input.userId));
+    const target = await this.dbService.tenant(async (m) => {
+      const row = await this.requireManage(m, input.id);
+      const found = await m.findOneBy(User, { id: input.userId });
       if (!found) {
         throw notFound("User");
       }
       if (input.relation !== "owner") {
-        await this.assertAnotherOwnerRemains(db, row.id, input.userId);
+        await this.assertAnotherOwnerRemains(m, row.id, input.userId);
       }
-      await db
-        .insert(projectMember)
-        .values({
-          projectId: row.id,
-          userId: input.userId,
-          relation: input.relation,
-        })
-        .onConflictDoUpdate({
-          target: [projectMember.projectId, projectMember.userId],
-          set: { relation: input.relation },
-        });
+      // Composite conflict target: TypeORM's Repository.upsert doesn't
+      // accept a multi-column conflict target portably across drivers, so
+      // this is raw SQL (naming rule: double-quote every camelCase ident).
+      await m.query(
+        `insert into "projectMember" ("projectId", "userId", "relation")
+         values ($1, $2, $3)
+         on conflict ("projectId", "userId") do update set "relation" = $3`,
+        [row.id, input.userId, input.relation]
+      );
       return found;
     });
     // Mirror the row: exactly one relation tuple per (user, project).
@@ -297,17 +293,13 @@ export class ProjectsService {
     id: string;
     userId: string;
   }): Promise<{ userId: string }> {
-    await this.dbService.tenant(async (db) => {
-      const row = await this.requireManage(db, input.id);
-      await this.assertAnotherOwnerRemains(db, row.id, input.userId);
-      await db
-        .delete(projectMember)
-        .where(
-          and(
-            eq(projectMember.projectId, row.id),
-            eq(projectMember.userId, input.userId)
-          )
-        );
+    await this.dbService.tenant(async (m) => {
+      const row = await this.requireManage(m, input.id);
+      await this.assertAnotherOwnerRemains(m, row.id, input.userId);
+      await m.delete(ProjectMemberEntity, {
+        projectId: row.id,
+        userId: input.userId,
+      });
     });
     await this.syncMemberTuples(input.id, input.userId, null);
     return { userId: input.userId };
@@ -350,7 +342,9 @@ export class ProjectsService {
   }
 
   /** Row-level UI hints, one BatchCheck for the whole page. */
-  private async flagsFor(rows: ProjectRow[]): Promise<Map<string, RowFlags>> {
+  private async flagsFor(
+    rows: ProjectEntity[]
+  ): Promise<Map<string, RowFlags>> {
     if (rows.length === 0) {
       return new Map();
     }
@@ -383,32 +377,44 @@ export class ProjectsService {
     const since = new Date();
     since.setUTCHours(0, 0, 0, 0);
     since.setUTCDate(since.getUTCDate() - (STATS_WINDOW_DAYS - 1));
-    const dayExpr = sql<string>`to_char(date_trunc('day', ${project.createdAt}), 'YYYY-MM-DD')`;
-    const inOrg = eq(project.organizationId, orgId);
 
-    const [totals, byStatusRows, perDayRows] = await this.dbService.tenant(
-      (db) =>
-        Promise.all([
-          db.select({ value: count() }).from(project).where(inOrg),
-          db
-            .select({ status: project.status, count: count() })
-            .from(project)
-            .where(inOrg)
-            .groupBy(project.status),
-          db
-            .select({ date: dayExpr, count: count() })
-            .from(project)
-            .where(and(inOrg, gte(project.createdAt, since)))
-            .groupBy(dayExpr),
-        ])
+    // Sequential inside one tenant(): three round trips, one transaction.
+    const [total, byStatusRows, perDayRows] = await this.dbService.tenant(
+      async (m) => {
+        const base = () =>
+          m
+            .createQueryBuilder(ProjectEntity, "p")
+            .where("p.organizationId = :orgId", { orgId });
+
+        const totalCount = await base().getCount();
+        const byStatus = await base()
+          .select("p.status", "status")
+          .addSelect("count(*)", "count")
+          .groupBy("p.status")
+          .getRawMany<{ count: string; status: string }>();
+        const perDay = await base()
+          .andWhere("p.createdAt >= :since", { since })
+          .select(
+            "to_char(date_trunc('day', p.createdAt), 'YYYY-MM-DD')",
+            "date"
+          )
+          .addSelect("count(*)", "count")
+          .groupBy("date")
+          .getRawMany<{ count: string; date: string }>();
+        return [totalCount, byStatus, perDay] as const;
+      }
     );
 
     const byStatus = projectStatuses.map((status) => ({
       status,
-      count: byStatusRows.find((row) => row.status === status)?.count ?? 0,
+      count:
+        Number(byStatusRows.find((row) => row.status === status)?.count ?? 0) ||
+        0,
     }));
 
-    const counts = new Map(perDayRows.map((row) => [row.date, row.count]));
+    const counts = new Map(
+      perDayRows.map((row) => [row.date, Number(row.count) || 0])
+    );
     const createdPerDay = Array.from(
       { length: STATS_WINDOW_DAYS },
       (_, index) => {
@@ -419,15 +425,15 @@ export class ProjectsService {
       }
     );
 
-    return { total: totals[0]?.value ?? 0, byStatus, createdPerDay };
+    return { total, byStatus, createdPerDay };
   }
 
   /** Membership writes require manage rights (owner or admin). */
   private async requireManage(
-    db: Database,
+    m: EntityManager,
     projectId: string
-  ): Promise<ProjectRow> {
-    const row = await this.findRow(db, projectId);
+  ): Promise<ProjectEntity> {
+    const row = await this.findRow(m, projectId);
     if (!(await this.can("can_manage_members", row.id))) {
       throw forbidden("manage", "Project");
     }
@@ -436,19 +442,14 @@ export class ProjectsService {
 
   /** A project must always keep at least one owner. */
   private async assertAnotherOwnerRemains(
-    db: Database,
+    m: EntityManager,
     projectId: string,
     excludedUserId: string
   ): Promise<void> {
-    const owners = await db
-      .select({ userId: projectMember.userId })
-      .from(projectMember)
-      .where(
-        and(
-          eq(projectMember.projectId, projectId),
-          eq(projectMember.relation, "owner")
-        )
-      );
+    const owners = await m.find(ProjectMemberEntity, {
+      where: { projectId, relation: "owner" },
+      select: { userId: true },
+    });
     const remaining = owners.filter((owner) => owner.userId !== excludedUserId);
     if (remaining.length === 0) {
       throw forbidden("remove the last owner of", "Project");
@@ -456,15 +457,15 @@ export class ProjectsService {
   }
 
   /** Rows outside the active organization do not exist for this request. */
-  private async findRow(db: Database, id: string): Promise<ProjectRow> {
+  private async findRow(m: EntityManager, id: string): Promise<ProjectEntity> {
     const orgId = activeOrganizationId();
     if (!orgId) {
       throw notFound("Project");
     }
-    const [row] = await db
-      .select()
-      .from(project)
-      .where(and(eq(project.id, id), eq(project.organizationId, orgId)));
+    const row = await m.findOneBy(ProjectEntity, {
+      id,
+      organizationId: orgId,
+    });
     if (!row) {
       throw notFound("Project");
     }
@@ -496,7 +497,7 @@ export class ProjectsService {
     };
   }
 
-  private toDto(row: ProjectRow, flags?: RowFlags): Project {
+  private toDto(row: ProjectEntity, flags?: RowFlags): Project {
     return {
       id: row.id,
       name: row.name,

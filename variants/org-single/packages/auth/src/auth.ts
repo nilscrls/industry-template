@@ -1,11 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { Database } from "@repo/db";
-import * as schema from "@repo/db/schema";
 import { betterAuth } from "better-auth";
-import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError } from "better-auth/api";
 import { admin, organization, twoFactor } from "better-auth/plugins";
-import { eq } from "drizzle-orm";
+import type { Pool } from "pg";
 
 export interface DeletedUser {
   email: string;
@@ -67,7 +64,6 @@ export interface CreateAuthOptions {
    * its own subdomain instead of through the web app's /api proxy.
    */
   cookieDomain?: string;
-  db: Database;
   /**
    * Microsoft Entra ID OIDC connection. Adding another provider later is a
    * config addition here + a `socialProviders` entry, not a rewrite.
@@ -93,6 +89,12 @@ export interface CreateAuthOptions {
   onOrganizationCreated?: (event: MembershipEvent) => Promise<void>;
   onOrganizationDeleted?: (event: { organizationId: string }) => Promise<void>;
   /**
+   * Better-Auth's own connection — its built-in Kysely adapter takes a raw
+   * `pg.Pool` directly (no ORM in between) and double-quotes every
+   * camelCase identifier itself.
+   */
+  pool: Pool;
+  /**
    * Turn on Better-Auth's built-in rate limiter (the api wires this to
    * AUTH_RATE_LIMIT_ENABLED). Off by default so seeds and scripts that
    * call createAuth() directly never trip it.
@@ -107,10 +109,76 @@ export interface CreateAuthOptions {
   trustedOrigins: string[];
 }
 
+/**
+ * Idempotently joins `userId` to the single workspace and returns its id.
+ *
+ * Better-Auth 1.6.23 queues every `*.create.after` hook as an
+ * after-transaction hook (`db/with-hooks.ts` → `queueAfterTransactionHook`),
+ * so on sign-up `user.create.after` runs AFTER the handler finished — that is,
+ * after `session.create.before` already picked the session's active
+ * organization. Both hooks therefore go through this helper: whichever runs
+ * first provisions the workspace and fires the FGA mirror callbacks, the other
+ * one finds the membership and does nothing. Without the fallback the sign-up
+ * session would start with `activeOrganizationId: null` and every org-scoped
+ * request made with the fresh cookie would 403 until the next sign-in.
+ *
+ * The membership insert is guarded by a `where not exists`, so a re-entry can
+ * never leave a user with two rows in `member`.
+ */
+async function joinDefaultOrganization(
+  options: CreateAuthOptions,
+  userId: string
+): Promise<string> {
+  // Deterministic "first" membership: order by createdAt then id so the
+  // choice is stable even when two rows share a timestamp.
+  const membership = await options.pool.query<{ organizationId: string }>(
+    'select "organizationId" from "member" where "userId" = $1 order by "createdAt" asc, "id" asc limit 1',
+    [userId]
+  );
+  if (membership.rows[0]) {
+    return membership.rows[0].organizationId;
+  }
+  const existing = await options.pool.query<{ id: string }>(
+    'select "id" from "organization" order by "createdAt" asc limit 1'
+  );
+  let organizationId = existing.rows[0]?.id;
+  let bootstrapped = false;
+  if (!organizationId) {
+    const inserted = await options.pool.query<{ id: string }>(
+      'insert into "organization" ("id","name","slug","createdAt") values ($1,$2,$3,now()) on conflict ("slug") do nothing returning "id"',
+      [randomUUID(), DEFAULT_ORG.name, DEFAULT_ORG.slug]
+    );
+    if (inserted.rows[0]) {
+      organizationId = inserted.rows[0].id;
+      bootstrapped = true;
+    } else {
+      // Lost a concurrent bootstrap race — join the winner's org.
+      const winner = await options.pool.query<{ id: string }>(
+        'select "id" from "organization" where "slug" = $1',
+        [DEFAULT_ORG.slug]
+      );
+      organizationId = winner.rows[0]?.id;
+    }
+  }
+  if (!organizationId) {
+    throw new Error("Could not provision the default organization");
+  }
+  await options.pool.query(
+    'insert into "member" ("id","organizationId","userId","role","createdAt") select $1,$2,$3,$4,now() where not exists (select 1 from "member" where "organizationId" = $2 and "userId" = $3)',
+    [randomUUID(), organizationId, userId, bootstrapped ? "owner" : "member"]
+  );
+  if (bootstrapped) {
+    await options.onOrganizationCreated?.({ organizationId, userId });
+  } else {
+    await options.onMemberAdded?.({ organizationId, userId });
+  }
+  return organizationId;
+}
+
 export function createAuth(options: CreateAuthOptions) {
   return betterAuth({
     appName: "Industry App",
-    database: drizzleAdapter(options.db, { provider: "pg", schema }),
+    database: options.pool,
     secret: options.secret,
     // NOTE: a path inside baseURL replaces basePath entirely — the path of
     // baseUrl IS the mount path better-auth matches requests against, and
@@ -234,73 +302,28 @@ export function createAuth(options: CreateAuthOptions) {
           // inserts — the organization plugin's hooks do NOT fire — so the
           // FGA mirror callbacks are invoked explicitly (the api wires them
           // to tuple writes; seeds pass nothing and run `pnpm fga:sync`).
+          // On sign-up this hook runs AFTER session.create.before, which
+          // already provisioned through the same helper — see its doc block.
           after: async (user) => {
-            const [existing] = await options.db
-              .select({ id: schema.organization.id })
-              .from(schema.organization)
-              .orderBy(schema.organization.createdAt)
-              .limit(1);
-            let organizationId = existing?.id;
-            let bootstrapped = false;
-            if (!organizationId) {
-              const inserted = await options.db
-                .insert(schema.organization)
-                .values({
-                  id: randomUUID(),
-                  name: DEFAULT_ORG.name,
-                  slug: DEFAULT_ORG.slug,
-                })
-                .onConflictDoNothing({ target: schema.organization.slug })
-                .returning({ id: schema.organization.id });
-              if (inserted[0]) {
-                organizationId = inserted[0].id;
-                bootstrapped = true;
-              } else {
-                // Lost a concurrent bootstrap race — join the winner's org.
-                const [winner] = await options.db
-                  .select({ id: schema.organization.id })
-                  .from(schema.organization)
-                  .where(eq(schema.organization.slug, DEFAULT_ORG.slug));
-                organizationId = winner?.id;
-              }
-            }
-            if (!organizationId) {
-              throw new Error("Could not provision the default organization");
-            }
-            await options.db.insert(schema.member).values({
-              id: randomUUID(),
-              organizationId,
-              userId: user.id,
-              role: bootstrapped ? "owner" : "member",
-            });
-            if (bootstrapped) {
-              await options.onOrganizationCreated?.({
-                organizationId,
-                userId: user.id,
-              });
-            } else {
-              await options.onMemberAdded?.({
-                organizationId,
-                userId: user.id,
-              });
-            }
+            await joinDefaultOrganization(options, user.id);
           },
         },
       },
       session: {
         create: {
           // New sessions start in the user's first organization — in
-          // single-org mode that is always the workspace (auto-joined above).
+          // single-org mode that is always the workspace. Sign-up sessions
+          // are created BEFORE the deferred user.create.after hook runs, so
+          // this provisions the membership itself when it finds none.
           before: async (session) => {
-            const memberships = await options.db
-              .select({ organizationId: schema.member.organizationId })
-              .from(schema.member)
-              .where(eq(schema.member.userId, session.userId))
-              .limit(1);
+            const organizationId = await joinDefaultOrganization(
+              options,
+              session.userId
+            );
             return {
               data: {
                 ...session,
-                activeOrganizationId: memberships[0]?.organizationId ?? null,
+                activeOrganizationId: organizationId,
               },
             };
           },
@@ -308,7 +331,11 @@ export function createAuth(options: CreateAuthOptions) {
       },
     },
     plugins: [
-      admin({ defaultRole: "member", adminRoles: ["admin"] }),
+      // "manager" is an app-level role (contracts + OpenFGA), not a
+      // Better-Auth admin-plugin concept — adding it to adminRoles would
+      // require a custom `roles` map (createAccessControl) or createAuth
+      // throws, since the plugin only knows the roles it's told about.
+      admin({ defaultRole: "user", adminRoles: ["admin"] }),
       organization({
         // Single-org mode: the workspace is provisioned by the signup hook
         // above; nobody creates organizations from the client.

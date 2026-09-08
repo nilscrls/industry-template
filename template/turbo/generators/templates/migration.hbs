@@ -1,0 +1,32 @@
+// biome-ignore-all lint/style/useFilenamingConvention: TypeORM orders migrations by the 13 trailing digits of the CLASS name, so the filename must carry them too (1700000000001-Init.ts, not kebab-case).
+import type { MigrationInterface, QueryRunner } from "typeorm";
+
+/**
+ * Generated migration stub — review before running `pnpm db:migrate`.
+ * TypeORM orders migrations by the 13 trailing digits of the CLASS name
+ * (not the filename), so keep both in sync if you rename this file. The
+ * matching entity was already scaffolded at
+ * packages/db/src/entities/{{ kebabCase name }}.ts — keep its columns and
+ * this DDL in sync. See docs/database.md for the naming/quoting rule
+ * (camelCase identifiers stay double-quoted in raw SQL).
+ */
+export class Add{{ pascalCase plural }}{{ timestamp }} implements MigrationInterface {
+  async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
+      CREATE TABLE "{{ camelCase name }}" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "name" varchar(120) NOT NULL,
+        "ownerId" text NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+        "createdAt" timestamptz NOT NULL DEFAULT now(),
+        "updatedAt" timestamptz NOT NULL DEFAULT now()
+      );
+    `);
+    await queryRunner.query(
+      `CREATE INDEX "{{ camelCase name }}_ownerId_idx" ON "{{ camelCase name }}" ("ownerId");`
+    );
+  }
+
+  async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`DROP TABLE "{{ camelCase name }}";`);
+  }
+}

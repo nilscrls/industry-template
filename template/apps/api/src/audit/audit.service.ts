@@ -4,8 +4,8 @@ import type {
   listAuditLogsQuerySchema,
   Paginated,
 } from "@repo/contracts";
-import { auditLog, user } from "@repo/db";
-import { and, count, desc, eq } from "drizzle-orm";
+import { AuditLog, User } from "@repo/db";
+import type { EntityManager, QueryDeepPartialEntity } from "typeorm";
 import type { z } from "zod";
 import {
   activeOrganizationId,
@@ -15,7 +15,6 @@ import {
 import { DbService } from "../db/db.module";
 
 type ListQuery = z.infer<typeof listAuditLogsQuerySchema>;
-type AuditRow = typeof auditLog.$inferSelect;
 
 export interface AuditedMeta<TInput, TOutput> {
   action: string;
@@ -70,29 +69,40 @@ export class AuditService {
         totalPages: 0,
       };
     }
-    const where = and(
-      eq(auditLog.organizationId, orgId),
-      query.action ? eq(auditLog.action, query.action) : undefined,
-      query.entityType ? eq(auditLog.entityType, query.entityType) : undefined
-    );
 
-    const [rows, totals] = await this.dbService.tenant((db) =>
-      Promise.all([
-        db
-          .select({ entry: auditLog, actorEmail: user.email })
-          .from(auditLog)
-          .leftJoin(user, eq(user.id, auditLog.actorId))
-          .where(where)
-          .orderBy(desc(auditLog.createdAt))
-          .limit(query.pageSize)
-          .offset((query.page - 1) * query.pageSize),
-        db.select({ value: count() }).from(auditLog).where(where),
-      ])
-    );
+    const buildQuery = (m: EntityManager) => {
+      const qb = m
+        .createQueryBuilder(AuditLog, "a")
+        .where("a.organizationId = :orgId", { orgId });
+      if (query.action) {
+        qb.andWhere("a.action = :action", { action: query.action });
+      }
+      if (query.entityType) {
+        qb.andWhere("a.entityType = :entityType", {
+          entityType: query.entityType,
+        });
+      }
+      return qb;
+    };
 
-    const total = totals[0]?.value ?? 0;
+    // Sequential — one QueryRunner/connection serves both queries inside
+    // this transaction.
+    const [rows, total] = await this.dbService.tenant(async (m) => {
+      const foundRows = await buildQuery(m)
+        .leftJoin(User, "u", "u.id = a.actorId")
+        .addSelect("u.email", "actorEmail")
+        .orderBy("a.createdAt", "DESC")
+        .skip((query.page - 1) * query.pageSize)
+        .take(query.pageSize)
+        .getRawAndEntities<{ actorEmail: string | null }>();
+      const rowCount = await buildQuery(m).getCount();
+      return [foundRows, rowCount] as const;
+    });
+
     return {
-      items: rows.map((row) => this.toDto(row.entry, row.actorEmail)),
+      items: rows.entities.map((entry, index) =>
+        this.toDto(entry, rows.raw[index]?.actorEmail ?? null)
+      ),
       total,
       page: query.page,
       pageSize: query.pageSize,
@@ -113,20 +123,25 @@ export class AuditService {
       input && typeof input === "object" && !Array.isArray(input)
         ? (input as Record<string, unknown>)
         : null;
-    await this.dbService.tenant((db) =>
-      db.insert(auditLog).values({
-        organizationId: activeOrganizationId(),
-        actorId: me.id,
-        action: meta.action,
-        entityType: meta.entityType,
-        entityId: entityId ?? null,
-        payload,
-        requestId: currentRequestId() ?? null,
-      })
+    const row: Partial<AuditLog> = {
+      organizationId: activeOrganizationId(),
+      actorId: me.id,
+      action: meta.action,
+      entityType: meta.entityType,
+      entityId: entityId ?? null,
+      payload,
+      requestId: currentRequestId() ?? null,
+    };
+    // TypeORM's QueryDeepPartialEntity recurses into plain-object columns
+    // (the jsonb `payload`), which a `Partial<AuditLog>` doesn't structurally
+    // satisfy at the type level even though the runtime value is a plain
+    // JSON object — cast at the insert boundary only.
+    await this.dbService.tenant((m) =>
+      m.insert(AuditLog, row as QueryDeepPartialEntity<AuditLog>)
     );
   }
 
-  private toDto(row: AuditRow, actorEmail: string | null): AuditLogEntry {
+  private toDto(row: AuditLog, actorEmail: string | null): AuditLogEntry {
     return {
       id: row.id,
       organizationId: row.organizationId,

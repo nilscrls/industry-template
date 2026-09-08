@@ -34,8 +34,12 @@ while the integration suite stays the outer check.
 - CRUD honors ownership (member ≠ owner → typed 403), 404s are typed,
   stats return a dense 30-day series;
 - presigned uploads work and file listings are owner-scoped per role;
-- admin endpoints reject members, role promotion applies after re-sign-in
-  (documents the 5-minute session cookie cache).
+- admin endpoints reject non-admins, role promotion applies after re-sign-in
+  (documents the 5-minute session cookie cache);
+- the points wallet cannot be double-spent: 10 concurrent
+  `POST /wallet/spend` requests against the same balance resolve to exactly
+  one success and nine typed `WALLET_INSUFFICIENT_BALANCE` (see
+  `docs/database.md`, "Transactions").
 
 Suites run with `fileParallelism: false` — each file boots a full app.
 First run pulls container images; timeouts are sized for that.

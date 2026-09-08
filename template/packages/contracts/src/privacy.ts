@@ -54,6 +54,18 @@ export const meExportSchema = z.object({
       createdAt: z.iso.datetime(),
     })
   ),
+  wallet: z.object({
+    balance: z.number(),
+    entries: z.array(
+      z.object({
+        id: z.string(),
+        amount: z.number(),
+        reason: z.string(),
+        actorId: z.string().nullable(),
+        createdAt: z.iso.datetime(),
+      })
+    ),
+  }),
 });
 
 export type MeExport = z.infer<typeof meExportSchema>;

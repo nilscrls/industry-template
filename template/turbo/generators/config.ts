@@ -7,6 +7,12 @@ function toCamel(value: string): string {
   return value.replace(/-([a-z0-9])/g, (_, char: string) => char.toUpperCase());
 }
 
+/** kebab-case → PascalCase, matching plop's `pascalCase` helper for our inputs. */
+function toPascal(value: string): string {
+  const camel = toCamel(value);
+  return camel.charAt(0).toUpperCase() + camel.slice(1);
+}
+
 /**
  * `pnpm gen feature` — scaffolds a vertical slice for a new entity:
  * contract → db schema → nest module (with TDD spec skeletons) → web page,
@@ -89,16 +95,60 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
         ].join("\n"),
       },
       // ── db ───────────────────────────────────────────────────────────
+      // Computed once so the migration's filename and its class name (which
+      // TypeORM actually orders by — the trailing 13 digits) share the same
+      // timestamp. Date.now() is fine here: this runs once per `gen`
+      // invocation, not in a hot path.
+      function computeMigrationTimestamp(answers) {
+        (answers as { timestamp?: string }).timestamp = String(Date.now());
+        return `migration timestamp: ${(answers as { timestamp: string }).timestamp}`;
+      },
       {
         type: "add",
-        path: "{{ turbo.paths.root }}/packages/db/src/schema/{{ plural }}.ts",
-        templateFile: "templates/schema.hbs",
+        path: "{{ turbo.paths.root }}/packages/db/src/entities/{{ kebabCase name }}.ts",
+        templateFile: "templates/entity.hbs",
       },
       {
         type: "modify",
-        path: "{{ turbo.paths.root }}/packages/db/src/schema/index.ts",
-        pattern: /$/,
-        template: 'export * from "./{{ plural }}.js";\n',
+        path: "{{ turbo.paths.root }}/packages/db/src/entities/index.ts",
+        pattern: /(\/\/ gen-marker: entity exports)/,
+        template:
+          'export { {{ pascalCase name }} } from "./{{ kebabCase name }}.js";\n$1',
+      },
+      {
+        // The barrel imports every entity a second time (the re-exports above
+        // do not bind the names) to build the ENTITIES array — without this
+        // action the generated ENTITIES entry references an undeclared name
+        // and packages/db no longer compiles.
+        type: "modify",
+        path: "{{ turbo.paths.root }}/packages/db/src/entities/index.ts",
+        pattern: /(\/\/ gen-marker: entity imports)/,
+        template:
+          'import { {{ pascalCase name }} } from "./{{ kebabCase name }}.js";\n\n$1',
+      },
+      {
+        type: "modify",
+        path: "{{ turbo.paths.root }}/packages/db/src/entities/index.ts",
+        pattern: /( {2}\/\/ gen-marker: entity registrations)/,
+        template: "  {{ pascalCase name }},\n$1",
+      },
+      {
+        type: "add",
+        path: "{{ turbo.paths.root }}/packages/db/src/migrations/{{ timestamp }}-Add{{ pascalCase plural }}.ts",
+        templateFile: "templates/migration.hbs",
+      },
+      {
+        type: "modify",
+        path: "{{ turbo.paths.root }}/packages/db/src/migrations/index.ts",
+        pattern: /(export const MIGRATIONS = \[)/,
+        template:
+          'import { Add{{ pascalCase plural }}{{ timestamp }} } from "./{{ timestamp }}-Add{{ pascalCase plural }}.js";\n\n$1',
+      },
+      {
+        type: "modify",
+        path: "{{ turbo.paths.root }}/packages/db/src/migrations/index.ts",
+        pattern: /( {2}\/\/ gen-marker: migration registrations)/,
+        template: "  Add{{ pascalCase plural }}{{ timestamp }},\n$1",
       },
       // ── api ──────────────────────────────────────────────────────────
       {
@@ -202,13 +252,15 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
         type: "modify",
         path: "{{ turbo.paths.root }}/packages/i18n/messages/en.json",
         pattern: /("nav": \{\n {6}"dashboard": "[^"]+",)/,
-        template: '$1\n      "{{ camelCase plural }}": "{{ titleCase plural }}",',
+        template:
+          '$1\n      "{{ camelCase plural }}": "{{ titleCase plural }}",',
       },
       {
         type: "modify",
         path: "{{ turbo.paths.root }}/packages/i18n/messages/fr.json",
         pattern: /("nav": \{\n {6}"dashboard": "[^"]+",)/,
-        template: '$1\n      "{{ camelCase plural }}": "{{ titleCase plural }}",',
+        template:
+          '$1\n      "{{ camelCase plural }}": "{{ titleCase plural }}",',
       },
       // ── nav ──────────────────────────────────────────────────────────
       // Anchor exists verbatim in both UI variants of app-shell.tsx (the
@@ -226,11 +278,15 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
       // verify the automated registrations really landed.
       function verifyRegistrations(answers) {
         const data = answers as {
+          name: string;
           plural: string;
+          timestamp: string;
           turbo: { paths: { root: string } };
         };
         const root = data.turbo.paths.root;
         const camelPlural = toCamel(data.plural);
+        const pascalName = toPascal(data.name);
+        const pascalPlural = toPascal(data.plural);
         const checks: [string, string][] = [
           [
             path.join(root, "packages/i18n/messages/en.json"),
@@ -243,6 +299,22 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
           [
             path.join(root, "apps/web/src/components/app-shell.tsx"),
             `href: "/${data.plural}"`,
+          ],
+          [
+            path.join(root, "packages/db/src/entities/index.ts"),
+            `export { ${pascalName} }`,
+          ],
+          [
+            path.join(root, "packages/db/src/entities/index.ts"),
+            `import { ${pascalName} }`,
+          ],
+          [
+            path.join(root, "packages/db/src/entities/index.ts"),
+            `  ${pascalName},`,
+          ],
+          [
+            path.join(root, "packages/db/src/migrations/index.ts"),
+            `Add${pascalPlural}${data.timestamp}`,
           ],
         ];
         const missed = checks
@@ -261,7 +333,7 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
         return [
           "Next steps:",
           "  1. pnpm lint:fix                          # normalize generated import order",
-          "  2. pnpm db:generate && pnpm db:migrate    # create the migration",
+          "  2. Review the generated migration stub, then pnpm db:migrate",
           "  3. Review the generated type in packages/fga/model.fga, then pnpm fga:bootstrap",
           "  4. i18n keys (en+fr) and the nav item were inserted automatically —",
           "     review the copy and swap the nav icon in apps/web/src/components/app-shell.tsx",

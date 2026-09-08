@@ -4,8 +4,7 @@ import type {
   Paginated,
   {{ pascalCase name }},
 } from "@repo/contracts";
-import { {{ camelCase name }} } from "@repo/db";
-import { and, asc, count, desc, eq, ilike } from "drizzle-orm";
+import { {{ pascalCase name }} as {{ pascalCase name }}Entity } from "@repo/db";
 import type { z } from "zod";
 import { forbidden, notFound } from "../common/app-error";
 import { currentUser } from "../common/request-context";
@@ -13,12 +12,13 @@ import { DbService } from "../db/db.module";
 import { FgaService } from "../fga/fga.service";
 
 type ListQuery = z.infer<typeof list{{ pascalCase plural }}QuerySchema>;
-type Row = typeof {{ camelCase name }}.$inferSelect;
+type Row = {{ pascalCase name }}Entity;
 
 /**
- * Generated entity: user-scoped (owner-only capabilities in model.fga).
- * If it becomes tenant-shared, add an organizationId column + RLS policy,
- * an `org` link in the model, and run queries through dbService.tenant().
+ * Generated entity: user-scoped (owner-only capabilities in model.fga), no
+ * RLS policy — a plain repository is enough. If it becomes tenant-shared,
+ * add an organizationId column + RLS policy (see docs/database.md) and run
+ * queries through dbService.tenant() instead of the repository directly.
  */
 @Injectable()
 export class {{ pascalCase plural }}Service {
@@ -27,34 +27,26 @@ export class {{ pascalCase plural }}Service {
     private readonly fga: FgaService
   ) {}
 
-  private get db() {
-    return this.dbService.db;
+  private get repo() {
+    return this.dbService.dataSource.getRepository({{ pascalCase name }}Entity);
   }
 
   async list(query: ListQuery): Promise<Paginated<{{ pascalCase name }}>> {
     // Owner-scoped: the model grants can_read to the owner only.
-    const where = and(
-      eq({{ camelCase name }}.ownerId, currentUser().id),
-      query.search ? ilike({{ camelCase name }}.name, `%${query.search}%`) : undefined
+    const qb = this.repo
+      .createQueryBuilder("row")
+      .where("row.ownerId = :ownerId", { ownerId: currentUser().id });
+    if (query.search) {
+      qb.andWhere("row.name ILIKE :search", { search: `%${query.search}%` });
+    }
+    qb.orderBy(
+      `row.${query.sortBy}`,
+      query.sortOrder === "asc" ? "ASC" : "DESC"
     );
-    const sortColumn = {
-      name: {{ camelCase name }}.name,
-      createdAt: {{ camelCase name }}.createdAt,
-      updatedAt: {{ camelCase name }}.updatedAt,
-    }[query.sortBy];
-    const orderBy =
-      query.sortOrder === "asc" ? asc(sortColumn) : desc(sortColumn);
-    const [rows, totals] = await Promise.all([
-      this.db
-        .select()
-        .from({{ camelCase name }})
-        .where(where)
-        .orderBy(orderBy)
-        .limit(query.pageSize)
-        .offset((query.page - 1) * query.pageSize),
-      this.db.select({ value: count() }).from({{ camelCase name }}).where(where),
-    ]);
-    const total = totals[0]?.value ?? 0;
+    const [rows, total] = await qb
+      .skip((query.page - 1) * query.pageSize)
+      .take(query.pageSize)
+      .getManyAndCount();
     return {
       items: rows.map((row) => this.toDto(row)),
       total,
@@ -74,34 +66,40 @@ export class {{ pascalCase plural }}Service {
 
   async create(input: { name: string }): Promise<{{ pascalCase name }}> {
     const me = currentUser();
-    const [row] = await this.db
-      .insert({{ camelCase name }})
-      .values({ name: input.name, ownerId: me.id })
-      .returning();
-    if (!row) {
-      throw notFound("{{ pascalCase name }}");
-    }
+    const row = await this.repo.save(
+      this.repo.create({ name: input.name, ownerId: me.id })
+    );
     // Tuple AFTER the DB commit (Postgres is the source of truth).
     await this.fga.writeTuples([
-      { user: this.fga.ref.user(me.id), relation: "owner", object: this.ref(row.id) },
+      {
+        user: this.fga.ref.user(me.id),
+        relation: "owner",
+        object: this.ref(row.id),
+      },
     ]);
     return this.toDto(row);
   }
 
-  async update(input: { id: string; name?: string | undefined }): Promise<{{ pascalCase name }}> {
+  async update(input: {
+    id: string;
+    name?: string | undefined;
+  }): Promise<{{ pascalCase name }}> {
     const row = await this.findRow(input.id);
     if (!(await this.can("can_update", row.id))) {
       throw forbidden("update", "{{ pascalCase name }}");
     }
-    const [updated] = await this.db
-      .update({{ camelCase name }})
-      .set({ ...(input.name === undefined ? {} : { name: input.name }) })
-      .where(eq({{ camelCase name }}.id, input.id))
-      .returning();
-    if (!updated) {
-      throw notFound("{{ pascalCase name }}");
+    if (input.name !== undefined) {
+      const result = await this.repo.update(
+        { id: row.id },
+        { name: input.name }
+      );
+      // A row can vanish between findRow and the update racing a delete.
+      if (result.affected !== 1) {
+        throw notFound("{{ pascalCase name }}");
+      }
+      row.name = input.name;
     }
-    return this.toDto(updated);
+    return this.toDto(row);
   }
 
   async remove(id: string): Promise<{ id: string }> {
@@ -109,7 +107,7 @@ export class {{ pascalCase plural }}Service {
     if (!(await this.can("can_delete", row.id))) {
       throw forbidden("delete", "{{ pascalCase name }}");
     }
-    await this.db.delete({{ camelCase name }}).where(eq({{ camelCase name }}.id, id));
+    await this.repo.delete({ id });
     await this.fga.deleteObjectTuples(this.ref(id));
     return { id };
   }
@@ -123,7 +121,7 @@ export class {{ pascalCase plural }}Service {
   }
 
   private async findRow(id: string): Promise<Row> {
-    const [row] = await this.db.select().from({{ camelCase name }}).where(eq({{ camelCase name }}.id, id));
+    const row = await this.repo.findOneBy({ id });
     if (!row) {
       throw notFound("{{ pascalCase name }}");
     }

@@ -1,4 +1,10 @@
 {
   "extends": "@repo/typescript-config/library.json",
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "strictPropertyInitialization": false,
+    "useDefineForClassFields": false
+  },
   "include": ["src"]
 }

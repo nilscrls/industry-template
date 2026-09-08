@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import path from "node:path";
 import {
-  auditLog,
-  createDb,
-  member,
-  project,
-  user,
+  AuditLog,
+  createDataSource,
+  createPool,
+  Member,
+  Project,
+  User,
+  Wallet,
   withTenant,
 } from "@repo/db";
 import { createFgaClient, loadModelJson, ref } from "@repo/fga";
@@ -17,14 +18,15 @@ import {
   RedisContainer,
   type StartedRedisContainer,
 } from "@testcontainers/redis";
-import { eq } from "drizzle-orm";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { betterAuth } from "better-auth";
+import { admin, organization, twoFactor } from "better-auth/plugins";
 import request from "supertest";
 import {
   GenericContainer,
   type StartedTestContainer,
   Wait,
 } from "testcontainers";
+import type { DataSource } from "typeorm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
@@ -38,8 +40,11 @@ let openfga: StartedTestContainer;
 let app: Awaited<ReturnType<typeof import("../src/app.setup.js")["createApp"]>>;
 let server: Parameters<typeof request>[0];
 
-// vitest runs with cwd = apps/api
-const MIGRATIONS = path.resolve(process.cwd(), "../../packages/db/drizzle");
+/**
+ * Owner (unrestricted) DataSource: runs the migrations, then backs every
+ * fixture/assertion query for the rest of the suite (`owner.manager`).
+ */
+let owner: DataSource;
 
 /** Operator-style FGA access for test fixtures (mirrors `pnpm fga:sync`). */
 function fgaClient() {
@@ -117,13 +122,13 @@ beforeAll(async () => {
   process.env.LOG_FILE_ENABLED = "false";
   process.env.LOG_DIR = "./logs";
 
-  const { db, pool } = createDb(ownerUrl);
-  await migrate(db, { migrationsFolder: MIGRATIONS });
+  owner = createDataSource(ownerUrl);
+  await owner.initialize();
+  await owner.runMigrations();
   // The roles migration creates them NOLOGIN (no init script inside
   // Testcontainers) — enable them exactly like an operator would.
-  await pool.query("ALTER ROLE app_user LOGIN PASSWORD 'app_user'");
-  await pool.query("ALTER ROLE app_auth LOGIN PASSWORD 'app_auth'");
-  await pool.end();
+  await owner.query("ALTER ROLE app_user LOGIN PASSWORD 'app_user'");
+  await owner.query("ALTER ROLE app_auth LOGIN PASSWORD 'app_auth'");
 
   // Same as `pnpm fga:bootstrap`: create the store + write the model.
   const admin = createFgaClient({
@@ -145,6 +150,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app?.close();
+  await owner?.destroy();
   await Promise.all([postgres?.stop(), redis?.stop(), openfga?.stop()]);
 });
 
@@ -196,22 +202,16 @@ async function addMemberByEmail(
   organizationId: string,
   email: string
 ): Promise<void> {
-  const { db, pool } = createDb(process.env.DATABASE_URL_MIGRATIONS as string);
-  const [target] = await db
-    .select({ id: user.id })
-    .from(user)
-    .where(eq(user.email, email));
+  const target = await owner.manager.findOneBy(User, { email });
   if (!target) {
-    await pool.end();
     throw new Error(`no user with email ${email}`);
   }
-  await db.insert(member).values({
+  await owner.manager.insert(Member, {
     id: randomUUID(),
     organizationId,
     userId: target.id,
     role: "member",
   });
-  await pool.end();
   // Direct inserts bypass the Better-Auth hooks — mirror the tuple by hand
   // (operators would run `pnpm fga:sync`).
   await fgaClient().writeTuples([
@@ -221,6 +221,16 @@ async function addMemberByEmail(
       object: ref.org(organizationId),
     },
   ]);
+}
+
+/** Operator-style app-level role change straight into the database. */
+async function setAppRole(
+  email: string,
+  role: "admin" | "manager" | "user"
+): Promise<string> {
+  const target = await owner.manager.findOneByOrFail(User, { email });
+  await owner.manager.update(User, { id: target.id }, { role });
+  return target.id;
 }
 
 /** Join the organization and make it the agent's active tenant. */
@@ -276,8 +286,13 @@ describe("api integration", () => {
     expect(response.body.data.traceId).toBeTruthy();
   });
 
-  it("gives users without an organization empty lists, not errors", async () => {
+  it("gives a fresh sign-up the default 'user' role and empty lists, not errors", async () => {
     const noorg = await signUp("Norg", "noorg@example.com");
+
+    const noorgRow = await owner.manager.findOneByOrFail(User, {
+      email: "noorg@example.com",
+    });
+    expect(noorgRow.role).toBe("user");
 
     const listed = await noorg.get("/projects");
     expect(listed.status).toBe(200);
@@ -429,20 +444,9 @@ describe("api integration", () => {
 
     // Promote via db + tuple, as an operator would (db row is the source
     // of truth; the tuple is what fga:sync would derive from it).
-    const { db, pool } = createDb(
-      process.env.DATABASE_URL_MIGRATIONS as string
-    );
-    const [eveRow] = await db
-      .update(user)
-      .set({ role: "admin" })
-      .where(eq(user.email, "eve@example.com"))
-      .returning({ id: user.id });
-    await pool.end();
-    if (!eveRow) {
-      throw new Error("expected eve to exist");
-    }
+    const eveId = await setAppRole("eve@example.com", "admin");
     await fgaClient().writeTuples([
-      { user: ref.user(eveRow.id), relation: "admin", object: ref.system() },
+      { user: ref.user(eveId), relation: "admin", object: ref.system() },
     ]);
 
     // The signed cookie cache still carries the old role — a fresh sign-in
@@ -503,17 +507,18 @@ describe("api integration", () => {
   it("enforces row-level security even on queries with no WHERE clause", async () => {
     // Simulates a forgotten organization filter: connect as the runtime
     // role (app_user) and select everything.
-    const { db, pool } = createDb(process.env.DATABASE_URL as string);
+    const appUser = createDataSource(process.env.DATABASE_URL as string);
+    await appUser.initialize();
     try {
       // No tenant context → the policies match nothing.
-      const bare = await db.select().from(project);
+      const bare = await appUser.manager.find(Project);
       expect(bare).toHaveLength(0);
 
       // Tenant context → only that tenant's rows, without any WHERE.
       const scoped = await withTenant(
-        db,
+        appUser,
         { organizationId: acmeOrgId, userId: null },
-        (tx) => tx.select().from(project)
+        (m) => m.find(Project)
       );
       expect(scoped.length).toBeGreaterThan(0);
       expect(scoped.every((row) => row.organizationId === acmeOrgId)).toBe(
@@ -521,21 +526,16 @@ describe("api integration", () => {
       );
 
       // Cross-tenant writes violate the WITH CHECK clause.
-      const [foreign] = await withTenant(
-        db,
-        { organizationId: acmeOrgId, userId: null },
-        (tx) => tx.select().from(project).limit(1)
-      );
+      const [foreign] = scoped;
       if (!foreign) {
         throw new Error("expected an acme project to exist");
       }
-      // Drizzle wraps the pg error — the RLS violation is the cause.
       await expect(
         withTenant(
-          db,
+          appUser,
           { organizationId: "some-other-org", userId: null },
-          (tx) =>
-            tx.insert(project).values({
+          (m) =>
+            m.insert(Project, {
               name: "smuggled",
               status: "draft",
               organizationId: foreign.organizationId,
@@ -543,12 +543,10 @@ describe("api integration", () => {
             })
         )
       ).rejects.toMatchObject({
-        cause: expect.objectContaining({
-          message: expect.stringMatching(/row-level security/),
-        }),
+        message: expect.stringMatching(/row-level security/),
       });
     } finally {
-      await pool.end();
+      await appUser.destroy();
     }
   });
 
@@ -608,20 +606,143 @@ describe("api integration", () => {
     expect(signIn.status).not.toBe(200);
 
     // The user row is gone; the erasure left an anonymized audit event.
-    const { db, pool } = createDb(
-      process.env.DATABASE_URL_MIGRATIONS as string
-    );
-    const users = await db
-      .select({ id: user.id })
-      .from(user)
-      .where(eq(user.email, "erin@example.com"));
-    const events = await db
-      .select()
-      .from(auditLog)
-      .where(eq(auditLog.action, "user.delete"));
-    await pool.end();
+    const users = await owner.manager.find(User, {
+      where: { email: "erin@example.com" },
+    });
+    const events = await owner.manager.find(AuditLog, {
+      where: { action: "user.delete" },
+    });
     expect(users).toHaveLength(0);
     expect(events.length).toBeGreaterThanOrEqual(1);
     expect(events.at(-1)?.actorId).toBeNull();
+  });
+
+  it("guards the points wallet against concurrent double-spends", async () => {
+    // ReBAC has no 'manager' role — only admins may credit another
+    // member's wallet (model.fga: `define can_manage_wallet: admin`).
+    const admin1 = await signUp("Wally", "wally@example.com");
+    const wallyId = await setAppRole("wally@example.com", "admin");
+    await fgaClient().writeTuples([
+      { user: ref.user(wallyId), relation: "admin", object: ref.system() },
+    ]);
+    await joinOrganization(admin1, acmeOrgId, "wally@example.com");
+    // The signed cookie cache still carries the old role — re-sign-in picks
+    // up the promotion (same pattern as the admin-promotion test above).
+    const wallyAdmin = request.agent(server);
+    await wallyAdmin
+      .post("/auth/sign-in/email")
+      .send({ email: "wally@example.com", password: "Password123!" });
+    await wallyAdmin
+      .post("/auth/organization/set-active")
+      .send({ organizationId: acmeOrgId });
+
+    // Bob is a plain member (no admin relation) and already in acme
+    // (earlier test).
+    const bob = request.agent(server);
+    await bob
+      .post("/auth/sign-in/email")
+      .send({ email: "bob@example.com", password: "Password123!" });
+    await bob
+      .post("/auth/organization/set-active")
+      .send({ organizationId: acmeOrgId });
+    const bobRow = await owner.manager.findOneByOrFail(User, {
+      email: "bob@example.com",
+    });
+
+    // A plain member may not credit — only admins.
+    const nonAdminCredit = await bob
+      .post("/wallet/credit")
+      .send({ userId: bobRow.id, amount: 10, reason: "self-serve" });
+    expect(nonAdminCredit.status).toBe(403);
+
+    const credited = await wallyAdmin
+      .post("/wallet/credit")
+      .send({ userId: bobRow.id, amount: 100, reason: "welcome bonus" });
+    expect(credited.status).toBe(200);
+    expect(credited.body.balance).toBe(100);
+
+    // Ten concurrent spends of 60 against a balance of 100: exactly one can
+    // succeed; the row lock + atomic conditional UPDATE serialize the rest
+    // into a clean 409, never a negative balance.
+    const attempts = await Promise.all(
+      Array.from({ length: 10 }, () =>
+        bob.post("/wallet/spend").send({ amount: 60, reason: "spree" })
+      )
+    );
+    const ok = attempts.filter((r) => r.status === 200);
+    const conflicts = attempts.filter((r) => r.status === 409);
+    expect(ok).toHaveLength(1);
+    expect(conflicts).toHaveLength(9);
+    for (const conflict of conflicts) {
+      expect(conflict.body.data.code).toBe("WALLET_INSUFFICIENT_BALANCE");
+    }
+
+    const me = await bob.get("/wallet/me");
+    expect(me.status).toBe(200);
+    expect(me.body.balance).toBe(40);
+    expect(me.body.entries).toHaveLength(2);
+    for (const entry of me.body.entries) {
+      expect(entry.id).toBeTruthy();
+    }
+
+    // Zero (and negative) amounts fail contract validation, not the
+    // balance check.
+    const zeroSpend = await bob
+      .post("/wallet/spend")
+      .send({ amount: 0, reason: "nothing" });
+    expect(zeroSpend.status).toBe(400);
+    expect(zeroSpend.body.data.code).toBe("VALIDATION_FAILED");
+
+    // The CHECK constraint is a backstop of last resort, not a user-facing
+    // path: an owner-connection write that slips past application logic
+    // still can't drive the balance negative.
+    const bobWallet = await owner.manager.findOneByOrFail(Wallet, {
+      organizationId: acmeOrgId,
+      userId: bobRow.id,
+    });
+    await expect(
+      owner.query('update "wallet" set "balance" = -1 where "id" = $1', [
+        bobWallet.id,
+      ])
+    ).rejects.toMatchObject({ code: "23514" });
+  });
+});
+
+describe("better-auth schema drift", () => {
+  it("stays in sync with the hand-written auth tables (pnpm auth:schema)", async () => {
+    // Introspects the LIVE database via a plain pg Pool — no
+    // secondaryStorage, so this mirrors exactly what `pnpm auth:schema`
+    // (the @better-auth/cli) would report against packages/auth's
+    // auth-cli.ts config. Any non-empty result means the entities in
+    // packages/db/src/entities have drifted from what Better-Auth expects.
+    const pool = createPool(process.env.DATABASE_URL_MIGRATIONS as string);
+    try {
+      const { getMigrations } = await import("better-auth/db/migration");
+      const { toBeCreated, toBeAdded } = await getMigrations({
+        database: pool,
+        emailAndPassword: { enabled: true },
+        plugins: [
+          admin({ defaultRole: "user", adminRoles: ["admin"] }),
+          organization(),
+          twoFactor(),
+        ],
+      });
+      expect(toBeCreated).toHaveLength(0);
+      expect(toBeAdded).toHaveLength(0);
+      // betterAuth() is constructed (not just the config object) so a
+      // plugin/schema mismatch that only surfaces at instantiation time
+      // (not at getMigrations time) also fails this test.
+      betterAuth({
+        database: pool,
+        emailAndPassword: { enabled: true },
+        plugins: [
+          admin({ defaultRole: "user", adminRoles: ["admin"] }),
+          organization(),
+          twoFactor(),
+        ],
+      });
+    } finally {
+      await pool.end();
+    }
   });
 });

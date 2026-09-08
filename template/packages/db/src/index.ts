@@ -1,7 +1,6 @@
-export {
-  createDb,
-  type Database,
-  type TenantContext,
-  withTenant,
-} from "./client.js";
-export * from "./schema/index.js";
+import "reflect-metadata";
+
+export { createDataSource, createPool } from "./data-source.js";
+export * from "./entities/index.js";
+export type { IsolationLevel, TenantContext } from "./tenant.js";
+export { withTenant } from "./tenant.js";

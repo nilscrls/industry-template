@@ -14,10 +14,11 @@ import {
   ByStatusChart,
   CreatedPerDayChart,
 } from "@/components/dashboard/charts";
+import { PointsCard } from "@/components/dashboard/points-card";
 import { orpc } from "@/lib/api";
 import { useApiErrorMessage } from "@/lib/use-app-mutation";
 
-function DashboardSkeleton() {
+function StatsSkeleton() {
   return (
     <div className="grid gap-4">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -33,7 +34,12 @@ function DashboardSkeleton() {
   );
 }
 
-export default function DashboardPage() {
+/**
+ * The stats query's pending/error states only replace the stats section —
+ * the points wallet has its own query and must render either way (a stats
+ * outage shouldn't take the wallet down with it, and vice versa).
+ */
+function Stats() {
   const t = useTranslations("dashboard");
   const tStatus = useTranslations("projects.status");
   const errorMessage = useApiErrorMessage();
@@ -42,7 +48,7 @@ export default function DashboardPage() {
   );
 
   if (isPending) {
-    return <DashboardSkeleton />;
+    return <StatsSkeleton />;
   }
   if (error) {
     return <p className="text-destructive text-sm">{errorMessage(error)}</p>;
@@ -50,8 +56,6 @@ export default function DashboardPage() {
 
   return (
     <div className="grid gap-4">
-      <h1 className="font-semibold text-2xl">{t("title")}</h1>
-
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader>
@@ -93,6 +97,18 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+    </div>
+  );
+}
+
+export default function DashboardPage() {
+  const t = useTranslations("dashboard");
+
+  return (
+    <div className="grid gap-4">
+      <h1 className="font-semibold text-2xl">{t("title")}</h1>
+      <PointsCard />
+      <Stats />
     </div>
   );
 }
