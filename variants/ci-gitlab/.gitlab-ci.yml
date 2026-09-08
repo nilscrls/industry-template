@@ -91,6 +91,7 @@ e2e:
     - sed -i "s|localhost:5432|docker:5432|g; s|localhost:6379|docker:6379|g; s|localhost:9000|docker:9000|g; s|localhost:8080|docker:8080|g; s|^SMTP_HOST=localhost$|SMTP_HOST=docker|" .env
     - docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile dev up -d --wait
     - pnpm build
+    - pnpm fga:bootstrap
     - pnpm db:migrate
     - pnpm db:seed
     - (cd apps/api && nohup node dist/main.js > /tmp/api.log 2>&1 &)

@@ -99,6 +99,7 @@ allowed, so you can scaffold into a freshly created repo).
 ```sh
 cd my-app
 docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile dev up -d
+pnpm fga:bootstrap          # OpenFGA store + model (writes FGA_STORE_ID to .env)
 pnpm db:migrate && pnpm db:seed
 pnpm dev          # web :3000, api :3001
 ```
