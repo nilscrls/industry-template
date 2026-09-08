@@ -16,6 +16,7 @@ Industrial-grade full-stack TypeScript monorepo, scaffolded by `create-industry-
 ```sh
 pnpm install
 pnpm compose:dev            # postgres, redis, minio, maildev (ports exposed)
+pnpm fga:bootstrap          # OpenFGA store + model (writes FGA_STORE_ID to .env)
 pnpm db:migrate && pnpm db:seed
 pnpm dev                    # web on :3000, api on :3001
 ```
@@ -70,6 +71,7 @@ pnpm dev / build / lint / check-types / test
 pnpm test:integration       # Testcontainers (needs Docker)
 pnpm test:e2e               # Playwright against a running stack
 pnpm db:generate            # draft a TypeORM migration from a live DB (review before committing)
+pnpm fga:bootstrap          # OpenFGA store + model → FGA_STORE_ID in .env
 pnpm db:migrate / db:seed
 pnpm gen feature            # scaffold a vertical slice (contract → db → api → web)
 pnpm commit                 # commitizen-style guided commit (cz-git)

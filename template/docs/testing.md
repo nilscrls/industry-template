@@ -49,7 +49,7 @@ First run pulls container images; timeouts are sized for that.
 Runs against a live stack:
 
 ```sh
-pnpm compose:dev && pnpm db:migrate && pnpm db:seed && pnpm dev
+pnpm compose:dev && pnpm fga:bootstrap && pnpm db:migrate && pnpm db:seed && pnpm dev
 # other terminal
 pnpm test:e2e
 ```

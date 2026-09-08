@@ -487,7 +487,7 @@ function printNextSteps(targetDir: string, installed: boolean): void {
       `cd ${relative}`,
       installed ? undefined : "pnpm install",
       "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile dev up -d",
-      "pnpm db:migrate && pnpm db:seed",
+      "pnpm fga:bootstrap && pnpm db:migrate && pnpm db:seed",
       "pnpm dev",
     ]
       .filter(Boolean)
